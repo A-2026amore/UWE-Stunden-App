@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#087f89">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="chef-manifest.json">
+<title>UWE · Chef Mobil</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#153c40;background:#edf6f6;font-size:16px}
+*{box-sizing:border-box}body{margin:0}header{background:#087f89;color:#fff;text-align:center;padding:calc(23px + env(safe-area-inset-top)) 18px 22px}header h1{margin:0;font-size:24px}header small{display:block;margin-top:5px;opacity:.9;font-size:13px}
+main{max-width:670px;margin:auto;padding:14px 14px calc(26px + env(safe-area-inset-bottom))}.card{background:white;border-radius:17px;padding:20px;margin:12px 0;box-shadow:0 4px 16px #123c4110}h2{font-size:20px;line-height:1.3;margin:0 0 15px}h3{font-size:17px;margin:0 0 10px}
+p{line-height:1.5}p.small{font-size:13px;color:#527177;margin:10px 0}.warning{background:#fff6e7;border-left:4px solid #d19135;padding:12px;border-radius:8px;color:#67491c;font-size:13px}label{font-weight:700;display:block;font-size:13px;margin:17px 0 7px;color:#355c62}
+input,textarea{display:block;width:100%;border:1px solid #b6cdcf;background:white;border-radius:10px;padding:13px;font:inherit;min-height:46px;color:#153c40}textarea{height:94px;resize:vertical;font-size:12px;overflow-wrap:anywhere}button{appearance:none;background:#087f89;color:white;border:0;border-radius:11px;padding:14px 18px;font:inherit;font-weight:700;min-height:48px;cursor:pointer}button.secondary{background:#e2efef;color:#15535a}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #42a6ba;outline-offset:2px}.stack{display:grid;gap:10px;margin:18px 0}.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 15px}.full{grid-column:1/-1}.notice{color:#087363;font-size:14px;font-weight:700;padding:0 6px;line-height:1.5}.notice.bad{color:#af3636}[hidden]{display:none!important}.pill{display:inline-block;font-size:12px;background:#d7f1ed;color:#006975;border-radius:20px;padding:6px 10px;font-weight:700}.footer{text-align:center;font-size:12px;color:#678084;margin:28px 0}
+@media(max-width:540px){.cols{grid-template-columns:1fr}.card{padding:18px 16px}button{width:100%}.stack{gap:9px}}
+</style>
+<script defer src="uwe-config.js"></script>
+<script defer src="chef-mobil.js"></script>
+</head>
+<body>
+<header><h1>UWE · CHEF MOBIL</h1><small>KRANKENTRANSPORTE · Personalzugänge verwalten</small></header>
+<main>
+<div class="card"><span class="pill">Nur für den Arbeitgeber</span><h2 style="margin-top:13px">Zugänge vom Handy erstellen</h2>
+<p class="small">Diese Seite benötigt bei jeder neuen Sitzung deine verschlüsselte Chef-Sicherung und dein Chef-Passwort. Dein privater Schlüssel und dein Passwort werden nicht auf dem Server gespeichert und nicht von der Seite hochgeladen.</p>
+<div class="warning"><strong>Wichtig:</strong> Gib die Chef-Sicherung niemals an Mitarbeiter weiter. Verwende diese Seite nur über die richtige GitHub-Pages-Adresse und nicht auf fremden Geräten.</div>
+</div>
+<section class="card" id="login">
+<h2>1. Chef-Verwaltung entsperren</h2>
+<label for="backup">Chef-Sicherung (.json)</label>
+<input id="backup" type="file" accept=".json,application/json" autocomplete="off">
+<p class="small">Auf dem iPhone: „Datei auswählen“ → „Dateien durchsuchen“ → Sicherung im geschützten Ordner auswählen.</p>
+<label for="password">Dein Chef-Passwort</label>
+<input id="password" type="password" autocomplete="current-password" placeholder="Chef-Passwort eingeben">
+<div class="stack"><button id="unlock">Chef-Verwaltung entsperren</button></div>
+<p class="small">Die App prüft, ob deine Sicherung zum öffentlichen Schlüssel deiner veröffentlichten Mitarbeiter-App gehört.</p>
+</section>
+<section id="dashboard" hidden>
+<div class="card">
+<div class="pill">Chef-Verwaltung entsperrt</div>
+<h2 style="margin-top:13px">2. Mitarbeiterzugang erstellen</h2>
+<div class="cols">
+<div><label for="name">Vor- und Nachname</label><input id="name" maxlength="80" placeholder="Vorname Nachname" autocomplete="off"></div>
+<div><label for="eid">Personalnummer</label><input id="eid" maxlength="30" placeholder="z. B. M001" autocomplete="off"></div>
+<div><label for="pin">Persönliche PIN (6–12 Ziffern)</label><input id="pin" type="password" inputmode="numeric" maxlength="12" placeholder="Neue PIN festlegen" autocomplete="new-password"></div>
+<div><label for="expiry">Gültig bis</label><input id="expiry" type="date"></div>
+</div>
+<div class="stack"><button id="issue">Persönlichen Zugang erstellen</button></div>
+</div>
+<div class="card" id="result" hidden>
+<h2>3. Zugang verschicken</h2>
+<p class="small">Versende den Einladungslink an den Mitarbeiter. Die PIN bitte separat mitteilen. Erster Aufruf des Links öffnet die Mitarbeiter-Anmeldung.</p>
+<label for="link">Einladungslink</label><textarea id="link" readonly></textarea>
+<div class="stack"><button id="share">Einladungslink teilen</button><button id="copyLink" class="secondary">Link kopieren</button></div>
+<label for="code">Zugangscode (Alternative)</label><textarea id="code" readonly></textarea>
+<div class="stack"><button id="copyCode" class="secondary">Zugangscode kopieren</button></div>
+</div>
+<div class="card"><h2>Verwaltung beenden</h2><button id="lock" class="secondary">Chef-Verwaltung sperren</button></div>
+</section>
+<div class="card"><h3>Adresse der Mitarbeiter-App</h3><p id="appAddress" class="small" style="overflow-wrap:anywhere"></p><p class="small">Keine Live-Übertragung von Arbeitszeiten. Mitarbeiter verschicken ihre Nachweise selbst. Bereits ausgestellte Offline-Zugänge sind nicht sofort aus der Ferne sperrbar.</p></div>
+<p id="notice" class="notice" role="status" aria-live="polite"></p>
+<div class="footer">UWE · Chef Mobil · Keine automatische Speicherung von Zugangsdaten</div>
+</main>
+</body></html>
