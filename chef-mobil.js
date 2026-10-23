@@ -4,6 +4,7 @@ const $ = id => document.getElementById(id);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 let signingKey = null;
+let previewMode = false;
 let publicKey = null;
 let codeForSharing = "";
 let linkForSharing = "";
@@ -32,6 +33,11 @@ function appUrl(){
   return url.href;
 }
 function lock(){
+  previewMode=false;
+  $("modeLabel").textContent="Chef-Verwaltung entsperrt";
+  $("previewWarning").hidden=true;
+  $("issueHint").hidden=true;
+  $("issue").disabled=false;
   signingKey=null;
   publicKey=null;
   codeForSharing="";
@@ -73,6 +79,11 @@ async function openBackup(){
   if(jwk.x!==published.x||jwk.y!==published.y)
     throw Error("Der private Schlüssel stimmt nicht mit der veröffentlichten Mitarbeiter-App überein.");
   signingKey=await crypto.subtle.importKey("jwk",jwk,{name:"ECDSA",namedCurve:"P-256"},false,["sign"]);
+  previewMode=false;
+  $("modeLabel").textContent="Chef-Verwaltung entsperrt";
+  $("previewWarning").hidden=true;
+  $("issueHint").hidden=true;
+  $("issue").disabled=false;
   publicKey=info.publicJwk;
   $("password").value="";
   $("backup").value="";
@@ -82,6 +93,7 @@ async function openBackup(){
   setMessage("Chef-Verwaltung entsperrt. Du kannst jetzt Mitarbeiter-Zugänge erstellen.");
 }
 async function createInvite(){
+  if(previewMode)throw Error("Testmodus: echte Mitarbeiter-Zugangscodes benötigen deine Chef-Sicherung.");
   if(!signingKey)throw Error("Bitte zuerst die Chef-Verwaltung entsperren.");
   const name=$("name").value.trim();
   const eid=$("eid").value.trim();
@@ -123,6 +135,23 @@ async function share(){
 async function perform(fn){
   try{await fn();}catch(e){setMessage(e.message||"Aktion fehlgeschlagen.",true);}
 }
+function openPreview(){
+  previewMode=true;
+  signingKey=null;
+  publicKey=null;
+  codeForSharing="";
+  linkForSharing="";
+  $("pin").value="";
+  $("login").hidden=true;
+  $("dashboard").hidden=false;
+  $("result").hidden=true;
+  $("modeLabel").textContent="Nur Vorschau – kein Chef-Login";
+  $("previewWarning").hidden=false;
+  $("issueHint").hidden=false;
+  $("issue").disabled=true;
+  setMessage("Testmodus geöffnet. Die Verwaltung kann angesehen, aber nicht für echte Mitarbeiterzugänge genutzt werden.");
+}
+$("preview").addEventListener("click",openPreview);
 $("unlock").addEventListener("click",()=>perform(openBackup));
 $("issue").addEventListener("click",()=>perform(createInvite));
 $("share").addEventListener("click",()=>perform(share));
