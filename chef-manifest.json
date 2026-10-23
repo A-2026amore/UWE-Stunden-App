@@ -1,0 +1,17 @@
+{
+  "name": "UWE Chef-Verwaltung",
+  "short_name": "UWE Chef",
+  "id": "uwe-chef-mobil-v1",
+  "start_url": "./chef-mobil.html",
+  "display": "standalone",
+  "background_color": "#edf6f6",
+  "theme_color": "#087f89",
+  "lang": "de",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
