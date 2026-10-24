@@ -164,7 +164,6 @@ async function addIssued(invitations){
   for(const invite of invitations){
     if(!invite||!invite.name)continue;
     checkId(invite.eid);
-    if(remote?.revoked?.includes(invite.eid))throw Error("Die Personalnummer "+invite.eid+" ist zentral gesperrt. Bitte für einen neuen Mitarbeiter eine neue Nummer verwenden.");
   }
   const backup=[...employees];
   try{
