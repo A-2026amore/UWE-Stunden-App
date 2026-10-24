@@ -48,7 +48,7 @@ function validateEmployees(items){
     checkId(item.eid);
     if(item.exp!=null&&typeof item.exp!=="string")throw Error("Ungültiges Ablaufdatum im Verzeichnis.");
     if(item.exp&&!/^\d{4}-\d{2}-\d{2}$/.test(item.exp))throw Error("Ungültiges Ablaufdatum.");
-    map.set(item.eid.toUpperCase(),{name:item.name.trim(),eid:item.eid,exp:item.exp||null,issuedAt:item.issuedAt||null,desiredActive:typeof item.desiredActive==="boolean"?item.desiredActive:null});
+    map.set(item.eid.toUpperCase(),{name:item.name.trim(),eid:item.eid,exp:item.exp||null,issuedAt:item.issuedAt||null,desiredActive:typeof item.desiredActive==="boolean"?item.desiredActive:null,source:["issued","verified","manual"].includes(item.source)?item.source:"manual"});
   }
   return [...map.values()];
 }
@@ -212,6 +212,7 @@ function render(){
     const info=element("div","staff-info");
     info.append(element("div","staff-name",item.name));
     info.append(element("div","staff-meta","Personalnummer: "+item.eid+" · Gültig bis: "+(item.exp?item.exp.slice(8,10)+"."+item.exp.slice(5,7)+"."+item.exp.slice(0,4):"unbekannt")));
+    info.append(element("div","staff-meta",item.source==="verified"?"UWE-Einladungslink digital geprüft":item.source==="issued"?"Zugang mit dieser Chef-App erstellt":"Manuell erfasst – ursprüngliche Einladung nicht geprüft"));
     const current=status(item);
     info.append(element("div","staff-status "+current.className,current.text));
     if(typeof item.desiredActive==="boolean"&&
@@ -262,12 +263,60 @@ async function addIssued(invitations){
       employees=employees.filter(e=>e.eid.toUpperCase()!==key);
       employees.push({name:inv.name.trim(),eid:inv.eid,exp:inv.exp||existing?.exp||null,
         issuedAt:existing?.issuedAt||new Date().toISOString(),
-        desiredActive:existing?.desiredActive??null});
+        desiredActive:existing?.desiredActive??null,
+        source:inv.source||(inv.code?"issued":existing?.source||"manual")});
     }
     await persist();
   }catch(e){employees=backup;throw e;}
   render();
 }
+
+function decodeUrl64(data){
+  const normalized=String(data||"").replace(/-/g,"+").replace(/_/g,"/");
+  const raw=atob(normalized);
+  return Uint8Array.from(raw,ch=>ch.charCodeAt(0));
+}
+async function importSignedLinks(){
+  if(!unlocked||demo)throw Error("Bitte zuerst Chef-Verwaltung entsperren.");
+  const content=$("staffInviteLinks").value.trim();
+  if(!content)throw Error("Bitte die verschickten Einladungslinks einfügen.");
+  if(content.length>100000)throw Error("Bitte maximal 100.000 Zeichen auf einmal einfügen.");
+  const found=[...content.matchAll(/https?:\/\/[^\s<>"']+|[A-Za-z0-9_-]{40,}\.[A-Za-z0-9_-]{30,}/g)].map(x=>x[0]);
+  if(!found.length)throw Error("Kein Einladungslink erkannt. Bitte den vollständigen WhatsApp-Link mit code= einfügen.");
+  if(found.length>100)throw Error("Bitte maximal 100 Einladungslinks auf einmal prüfen.");
+  const pub=window.UWE_ACCESS_PUBLIC_KEY;
+  if(!pub)throw Error("Öffentlicher UWE-Schlüssel fehlt. Links können nicht geprüft werden.");
+  const verifier=await crypto.subtle.importKey("jwk",pub,{name:"ECDSA",namedCurve:"P-256"},false,["verify"]);
+  const batch=[];
+  const unique=new Set();
+  for(const [idx,raw] of found.entries()){
+    let code=raw;
+    if(/^https?:\/\//i.test(raw)){
+      let url;
+      try{url=new URL(raw);}catch{throw Error("Einladungslink "+(idx+1)+" ist beschädigt.");}
+      code=url.searchParams.get("code");
+    }
+    const parts=String(code||"").trim().split(".");
+    if(parts.length!==2)throw Error("Im Link "+(idx+1)+" fehlt der gültige Zugangscode.");
+    let payload;
+    try{payload=JSON.parse(DEC.decode(decodeUrl64(parts[0])));}
+    catch{throw Error("Der Zugangscode in Link "+(idx+1)+" ist beschädigt.");}
+    if(!payload||payload.v!==1||!payload.eid||!payload.name||!payload.exp)
+      throw Error("Der Zugangscode in Link "+(idx+1)+" hat ein unbekanntes Format.");
+    checkId(payload.eid);
+    if(typeof payload.name!=="string"||payload.name.length>80)throw Error("Im Link "+(idx+1)+" ist der Name ungültig.");
+    const signatureOK=await crypto.subtle.verify({name:"ECDSA",hash:"SHA-256"},verifier,decodeUrl64(parts[1]),ENC.encode(parts[0]));
+    if(!signatureOK)throw Error("Der Link "+(idx+1)+" wurde nicht mit dem UWE-Chef-Schlüssel signiert.");
+    const exp=normalizeExpiry(payload.exp);
+    if(unique.has(payload.eid.toUpperCase()))continue;
+    unique.add(payload.eid.toUpperCase());
+    batch.push({name:payload.name,eid:payload.eid,exp,source:"verified"});
+  }
+  await addIssued(batch);
+  $("staffInviteLinks").value="";
+  note(batch.length+" digital signierte UWE-Einladungen geprüft und übernommen. Die PINs wurden nicht gespeichert. Ob die Links bereits geöffnet wurden, kann die App nicht feststellen.");
+}
+
 function normalizeExpiry(raw){
   const value=String(raw||"").trim();
   if(!value)return null;
@@ -322,6 +371,7 @@ async function unlock(password){
 function lock(){
   encryptionKey=null;employees=[];remote=null;unlocked=false;demo=false;
   $("staffImport").value="";
+  $("staffInviteLinks").value="";
   $("staffArea").hidden=true;
   $("issueArea").hidden=false;
   render();
@@ -348,6 +398,7 @@ $("staffRefresh").addEventListener("click",()=>refreshStatus());
 $("staffRefreshChanges").addEventListener("click",()=>refreshStatus());
 $("staffCopyChanges").addEventListener("click",()=>copyChanges().catch(e=>note(e.message||"Kopieren fehlgeschlagen.",true)));
 $("staffImportBtn").addEventListener("click",()=>importExisting().catch(e=>note(e.message||"Import fehlgeschlagen.",true)));
+$("staffImportLinks").addEventListener("click",()=>importSignedLinks().catch(e=>note(e.message||"Link-Import fehlgeschlagen.",true)));
 $("showIssue").addEventListener("click",()=>showTab("issue"));
 $("showStaff").addEventListener("click",()=>showTab("staff"));
 $("showActive").addEventListener("click",()=>showTab("active"));
