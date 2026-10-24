@@ -314,6 +314,8 @@ function openPreview(){
 $("preview").addEventListener("click",openPreview);
 $("unlock").addEventListener("click",()=>perform(openBackup));
 $("issue").addEventListener("click",()=>perform(createInvite));
+$("generatePin").addEventListener("click",generatePinForSingle);
+$("togglePin").addEventListener("click",toggleSinglePin);
 $("bulkIssue").addEventListener("click",()=>perform(createBulk));
 $("share").addEventListener("click",()=>perform(share));
 $("whatsappSingle").addEventListener("click",()=>perform(()=>openWhatsAppInvite(singleInvite)));
