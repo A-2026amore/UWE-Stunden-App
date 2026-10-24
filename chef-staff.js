@@ -11,7 +11,7 @@ let remote=null;
 let readError="";
 let unlocked=false;
 let demo=false;
-let publishing=false;
+let view="staff";
 function b64(buf){
   const data=new Uint8Array(buf);
   let raw="";
@@ -48,7 +48,7 @@ function validateEmployees(items){
     checkId(item.eid);
     if(item.exp!=null&&typeof item.exp!=="string")throw Error("Ungültiges Ablaufdatum im Verzeichnis.");
     if(item.exp&&!/^\d{4}-\d{2}-\d{2}$/.test(item.exp))throw Error("Ungültiges Ablaufdatum.");
-    map.set(item.eid.toUpperCase(),{name:item.name.trim(),eid:item.eid,exp:item.exp||null,issuedAt:item.issuedAt||null});
+    map.set(item.eid.toUpperCase(),{name:item.name.trim(),eid:item.eid,exp:item.exp||null,issuedAt:item.issuedAt||null,desiredActive:typeof item.desiredActive==="boolean"?item.desiredActive:null});
   }
   return [...map.values()];
 }
@@ -100,25 +100,57 @@ async function latestRemote(token=""){
 async function refreshStatus(){
   if(!unlocked)return;
   $("staffRefresh").disabled=true;
+  $("staffRefreshChanges").disabled=true;
   try{
-    const latest=await latestRemote();
-    remote=latest.data;
+    let result;
+    try{result=await latestRemote();}
+    catch(apiError){
+      // A public status file remains readable even if unauthenticated GitHub API is rate-limited.
+      const url=new URL("./uwe-access-control.json",location.href);
+      url.searchParams.set("_online",String(Date.now()));
+      const response=await fetch(url.href,{cache:"no-store"});
+      if(!response.ok)throw apiError;
+      result={data:validateList(await response.json())};
+    }
+    remote=result.data;
     readError="";
-    note("Sperrliste von GitHub geprüft. Gesperrte Personalnummern werden zentral geprüft.");
+    let reconciled=0;
+    for(const entry of employees){
+      if(entry.desiredActive===null)continue;
+      const actual=centralActive(entry);
+      if(entry.desiredActive===actual){
+        entry.desiredActive=null;
+        reconciled++;
+      }
+    }
+    if(reconciled)await persist();
+    note("Zugangsstatus online aktualisiert."+(reconciled?" "+reconciled+" veröffentlichte Änderungen bestätigt.":""));
   }catch(e){
+    remote=null;
     readError=e.message||"Zentrale Sperrliste nicht erreichbar.";
-    note(readError,true);
+    note("Die zentrale Sperrliste ist nicht erreichbar. Eine wirksame Sperre kann zurzeit nicht geprüft werden.",true);
   }finally{
     $("staffRefresh").disabled=false;
+    $("staffRefreshChanges").disabled=false;
     render();
   }
 }
+function centralRevoked(entry){
+  return !!remote?.revoked.some(id=>id.toUpperCase()===entry.eid.toUpperCase());
+}
+function centralActive(entry){
+  return !!remote&&!centralRevoked(entry)&&(!entry.exp||entry.exp>=isoToday());
+}
+function pendingItems(){
+  return employees.filter(e=>typeof e.desiredActive==="boolean"&&
+    (remote===null||e.desiredActive!==centralActive(e)));
+}
 function status(entry){
-  if(remote===null)return {text:"Online-Status noch nicht bestätigt",className:"staff-uncertain"};
-  if(remote.revoked.some(id=>id.toUpperCase()===entry.eid.toUpperCase()))return {text:"Gesperrt",className:"staff-blocked"};
-  if(entry.exp&&entry.exp<isoToday())return {text:"Abgelaufen",className:"staff-uncertain"};
-  if(!entry.exp)return {text:"Erfasst · Ablaufdatum unbekannt",className:"staff-uncertain"};
-  return {text:"Aktiv (laut erfassten Zugangsdaten)",className:"staff-active"};
+  if(remote===null)return {text:"Zentralstatus momentan unbekannt",className:"staff-uncertain"};
+  if(centralRevoked(entry))return {text:"Gesperrt – zentral bestätigt",className:"staff-blocked"};
+  if(entry.exp&&entry.exp<isoToday())return {text:"Zugang abgelaufen",className:"staff-uncertain"};
+  if(!entry.exp)return {text:"Nicht gesperrt · Ablauf unbekannt",className:"staff-uncertain"};
+  return {text:"Aktiv – nicht gesperrt",className:"staff-active"};
 }
 function element(tag,klass,text){
   const node=document.createElement(tag);
@@ -126,39 +158,92 @@ function element(tag,klass,text){
   if(text!=null)node.textContent=text;
   return node;
 }
+async function queueToggle(item,enabled){
+  if(!unlocked||demo)throw Error("Bitte die Chef-Verwaltung entsperren.");
+  if(remote===null)throw Error("Bitte zuerst den zentralen Status online aktualisieren.");
+  if(enabled&&item.exp&&item.exp<isoToday())throw Error("Der Zugang ist abgelaufen. Für diesen Mitarbeiter einen neuen Zugang ausstellen.");
+  const current=centralActive(item);
+  if(enabled!==current){
+    const message=enabled?
+      "Zugang für "+item.name+" ("+item.eid+") zur WIEDERFREIGABE vormerken?\n\nDafür muss die zentrale GitHub-Sperrliste geändert werden. Die vorhandene PIN bleibt gültig, sofern der Zugang nicht abgelaufen ist.":
+      "Zugang für "+item.name+" ("+item.eid+") zur SPERRUNG vormerken?\n\nDies ist noch keine tatsächliche Sperre! Zuerst offene Stundennachweise anfordern. Sende danach den Auftrag an ChatGPT, damit die Sperrung zentral veröffentlicht wird.";
+    if(!confirm(message))return;
+  }
+  const prior=item.desiredActive;
+  item.desiredActive=enabled===current?null:enabled;
+  try{await persist();}
+  catch(e){item.desiredActive=prior;throw e;}
+  render();
+  note(item.desiredActive===null?"Vormerkung zurückgenommen.":"Änderung für "+item.name+" vorgemerkt – noch NICHT wirksam. Über „Änderungsauftrag für ChatGPT kopieren“ kannst du sie zur Veröffentlichung übergeben.");
+}
 function render(){
   const node=$("staffList");
   node.replaceChildren();
   if(!unlocked){
     $("staffSummary").textContent=demo?"Vorschau: keine echten Daten geladen.":"Mitarbeiterliste ist gesperrt.";
+    $("staffPending").textContent="Keine Änderungen vorgemerkt.";
+    $("staffCopyChanges").disabled=true;
     return;
   }
-  const ordered=[...employees].sort((a,b)=>a.name.localeCompare(b.name,"de"));
-  const active=ordered.filter(x=>status(x).className==="staff-active").length;
-  const locked=ordered.filter(x=>status(x).className==="staff-blocked").length;
-  $("staffSummary").textContent=ordered.length+" Mitarbeiter erfasst · "+active+" aktiv · "+locked+" gesperrt";
-  if(!ordered.length){
-    node.append(element("p","empty","Noch keine Mitarbeiter in dieser Übersicht. Bereits früher erstellte Zugänge bitte unten mit ihrer tatsächlichen Personalnummer ergänzen."));
+  const all=[...employees].sort((a,b)=>a.name.localeCompare(b.name,"de"));
+  const visible=view==="active"?
+    all.filter(x=>remote===null?!(x.exp&&x.exp<isoToday()):centralActive(x)):all;
+  const active=all.filter(centralActive).length;
+  const locked=all.filter(centralRevoked).length;
+  const pending=pendingItems();
+  $("staffSummary").textContent=all.length+" Mitarbeiter erfasst · "+(remote?active:"?")+" aktiv · "+(remote?locked:"?")+" gesperrt · "+pending.length+" Änderung(en) vorgemerkt";
+  $("staffPending").textContent=pending.length?
+    pending.length+" Änderung(en) noch nicht wirksam. Erst nach Bestätigung der Veröffentlichung durch ChatGPT ist der zentrale Zugang geändert.":
+    "Keine Änderungen vorgemerkt. Der angezeigte Status entspricht der zentral veröffentlichten Liste.";
+  $("staffPending").className=pending.length?"staff-pending-count":"small";
+  $("staffCopyChanges").disabled=!pending.length;
+  $("staffViewTitle").textContent=view==="active"?"4. Aktive Mitarbeiter":"4. Alle Mitarbeiter";
+  $("staffViewText").textContent=view==="active"?
+    "Hier erscheinen die erfassten Mitarbeiter, deren Zugang nach der zentralen Sperrliste derzeit nicht gesperrt und noch nicht abgelaufen ist. Ein erfolgreicher Login wird weiterhin nicht protokolliert.":
+    "Hier siehst du alle lokal erfassten Mitarbeiter samt zentralem Zugangsstatus. Früher ausgestellte Links müssen einmalig importiert werden.";
+  if(!visible.length){
+    node.append(element("p","empty",view==="active"?
+      "Zurzeit sind keine aktiven Mitarbeiter erfasst. Wenn du bereits Zugänge verschickt hast, übernimm unten zuerst deine bisherige Mitarbeiterliste.":
+      "Noch keine Mitarbeiter in der Übersicht. Übernimm die fünf vorbereiteten Mitarbeiter unten mit einem Klick."));
     return;
   }
-  for(const item of ordered){
+  for(const item of visible){
     const row=element("div","staff-row");
     const info=element("div","staff-info");
     info.append(element("div","staff-name",item.name));
-    info.append(element("div","staff-meta","Personalnummer: "+item.eid+" · Gültig bis: "+(item.exp||"unbekannt")));
-    const st=status(item);
-    info.append(element("div","staff-status "+st.className,st.text));
+    info.append(element("div","staff-meta","Personalnummer: "+item.eid+" · Gültig bis: "+(item.exp?item.exp.slice(8,10)+"."+item.exp.slice(5,7)+"."+item.exp.slice(0,4):"unbekannt")));
+    const current=status(item);
+    info.append(element("div","staff-status "+current.className,current.text));
+    if(typeof item.desiredActive==="boolean"&&
+       (remote===null||item.desiredActive!==centralActive(item)))
+      info.append(element("div","staff-waiting","Änderung vorgemerkt: "+(item.desiredActive?"Freigabe":"Sperre")+" – NICHT wirksam"));
     row.append(info);
-    if(st.className!=="staff-blocked"&&st.text!=="Abgelaufen"){
-      const action=element("button","revoke","Zugang sperren");
-      action.type="button";
-      action.disabled=publishing;
-      action.addEventListener("click",()=>publishRevocation(item.eid,item.name).catch(e=>note(e.message||"Sperren fehlgeschlagen.",true)));
-      row.append(action);
-    }
+    const label=element("label","staff-toggle");
+    const checkbox=element("input");
+    checkbox.type="checkbox";
+    checkbox.checked=typeof item.desiredActive==="boolean"?item.desiredActive:centralActive(item);
+    checkbox.disabled=remote===null||!!(item.exp&&item.exp<isoToday());
+    checkbox.setAttribute("aria-label","Zugang für "+item.name+" aktivieren oder sperren");
+    checkbox.addEventListener("change",()=>queueToggle(item,checkbox.checked).catch(e=>{note(e.message||"Änderung fehlgeschlagen.",true);render();}));
+    label.append(checkbox,element("span","",checkbox.checked?"Aktiv":"Gesperrt"));
+    row.append(label);
     node.append(row);
   }
 }
+async function copyChanges(){
+  if(!unlocked||demo)throw Error("Chef-Verwaltung ist gesperrt.");
+  if(remote===null)throw Error("Der zentrale Status ist nicht überprüft. Bitte zuerst aktualisieren.");
+  const pending=pendingItems();
+  if(!pending.length)throw Error("Es sind keine Änderungen vorgemerkt.");
+  const lines=pending.map(item=>"- "+item.eid+" ("+item.name+"): "+(item.desiredActive?"AKTIVIEREN – aus revoked entfernen":"SPERREN – zu revoked hinzufügen"));
+  const message="UWE Stunden-App – Bitte ändere die zentrale Zugangs-Sperrliste in meinem verbundenen GitHub-Repository A-2026amore/UWE-Stunden-App, Datei uwe-access-control.json. Verwende den AKTUELLEN Stand der Datei und bewahre alle anderen Sperren unverändert. Setze diese Änderungen um:\n"+
+    lines.join("\n")+
+    "\nBitte bestätige die Sperren oder Freigaben erst, wenn die aktualisierte Datei erfolgreich nach GitHub geschrieben und anschließend überprüft wurde. Ändere keine PINs und keine gespeicherten Stunden.";
+  if(!navigator.clipboard?.writeText)throw Error("Kopieren wird vom Browser nicht unterstützt. Bitte in Safari, Chrome oder Edge über HTTPS öffnen.");
+  await navigator.clipboard.writeText(message);
+  note("Änderungsauftrag kopiert. Bitte jetzt hier in unseren Chat einfügen und abschicken. Danach den zentralen Status aktualisieren.");
+}
+
 async function addIssued(invitations){
   if(!unlocked||demo)throw Error("Keine Chef-Freigabe für das Mitarbeiterverzeichnis.");
   for(const invite of invitations){
