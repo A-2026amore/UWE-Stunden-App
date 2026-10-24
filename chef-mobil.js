@@ -52,6 +52,9 @@ function lock(){
   $("backup").value="";
   $("password").value="";
   $("pin").value="";
+  $("pin").type="password";
+  $("togglePin").textContent="PIN anzeigen";
+  $("singlePinValue").textContent="";
   $("link").value="";
   $("code").value="";
   $("result").hidden=true;
@@ -297,6 +300,9 @@ function openPreview(){
   codeForSharing="";
   linkForSharing="";
   $("pin").value="";
+  $("pin").type="password";
+  $("togglePin").textContent="PIN anzeigen";
+  $("singlePinValue").textContent="";
   $("login").hidden=true;
   $("dashboard").hidden=false;
   $("result").hidden=true;
