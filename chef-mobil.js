@@ -223,6 +223,34 @@ async function createBulk(){
     $("bulkIssue").disabled=false;
   }
 }
+function normalizeWhatsAppPhone(raw){
+  const value=String(raw||"").trim();
+  if(!value)return "";
+  const compact=value.replace(/[\s()./-]/g,"");
+  if(!/^\+?\d+$/.test(compact))throw Error("WhatsApp-Nummer bitte als 0176... oder +49... eingeben.");
+  let digits=compact;
+  if(digits.startsWith("+"))digits=digits.slice(1);
+  else if(digits.startsWith("00"))digits=digits.slice(2);
+  else if(digits.startsWith("0"))digits="49"+digits.slice(1);
+  if(!/^[1-9]\d{7,14}$/.test(digits))throw Error("Bitte eine gültige WhatsApp-Nummer mit Vorwahl eingeben.");
+  return digits;
+}
+function whatsAppText(invite){
+  return "Hallo "+invite.name+",\n\nhier ist dein persönlicher Zugang zur UWE Stunden-App:\n"+
+    invite.link+"\n\nBitte öffne den Link auf deinem Handy. Deine persönliche PIN erhältst du separat.\n\n"+
+    "Viele Grüße\nTeam UWE Krankentransporte";
+}
+function whatsAppUrl(invite){
+  if(!invite||!invite.link)throw Error("Bitte zuerst einen Mitarbeiterzugang erstellen.");
+  return "https://wa.me/"+(invite.phone||"")+"?text="+encodeURIComponent(whatsAppText(invite));
+}
+function openWhatsAppInvite(invite){
+  const url=whatsAppUrl(invite);
+  const popup=window.open(url,"_blank");
+  if(!popup)window.location.assign(url);
+  setMessage("WhatsApp geöffnet. Bitte den Empfänger überprüfen und dort auf Senden klicken. PIN getrennt mitteilen.");
+}
+
 async function copy(value,description){
   if(!value)throw Error("Bitte zuerst einen Mitarbeiterzugang erstellen.");
   await navigator.clipboard.writeText(value);
