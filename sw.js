@@ -1,5 +1,5 @@
-const CACHE='uwe-stunden-v22-one-page-a4-pdf-20261024';
-self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./','./index.html','./test-mitarbeiter.html','./uwe-pdf.js?v=22','./uwe-logo.svg','./uwe-fluegel.svg','./chef-mobil.html','./chef-staff.js?v=21','./chef-mobil.js?v=21','./uwe-access-check.js?v=16','./chef-manifest.json','./chef-pwa.json','./chef-icon.svg','./uwe-config.js','./manifest.json','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png'])).then(()=>self.skipWaiting())));
+const CACHE='uwe-stunden-v23-multipage-pdf-restored-20261024';
+self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./','./index.html','./test-mitarbeiter.html','./uwe-pdf.js?v=23','./uwe-logo.svg','./uwe-fluegel.svg','./chef-mobil.html','./chef-staff.js?v=21','./chef-mobil.js?v=21','./uwe-access-check.js?v=16','./chef-manifest.json','./chef-pwa.json','./chef-icon.svg','./uwe-config.js','./manifest.json','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png'])).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{if(event.request.method!=='GET')return;
 const requestURL=new URL(event.request.url);
