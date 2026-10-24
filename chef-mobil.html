@@ -20,7 +20,7 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px soli
 .bulk-result-title{font-weight:800;margin-bottom:6px}
 .bulk-detail{font-size:13px;color:#516e73;overflow-wrap:anywhere}
 .bulk-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0}
-.bulk-actions button{padding:10px 7px;min-height:42px;font-size:12px}
+.bulk-actions button{padding:10px 7px;min-height:42px;font-size:12px}.whatsapp-action{background:#188b59}
 @media(max-width:540px){.bulk-actions{grid-template-columns:1fr 1fr}.bulk-actions button{width:100%}}
 @media(max-width:540px){.cols{grid-template-columns:1fr}.card{padding:18px 16px}button{width:100%}.stack{gap:9px}}
 
@@ -63,7 +63,7 @@ main .card{background:rgba(255,255,255,.95)}
 <div><label for="name">Vor- und Nachname</label><input id="name" maxlength="80" placeholder="Vorname Nachname" autocomplete="off"></div>
 <div><label for="eid">Personalnummer</label><input id="eid" maxlength="30" placeholder="z. B. M001" autocomplete="off"></div>
 <div><label for="pin">Persönliche PIN (6–12 Ziffern)</label><input id="pin" type="password" inputmode="numeric" maxlength="12" placeholder="Neue PIN festlegen" autocomplete="new-password"></div>
-<div><label for="expiry">Gültig bis</label><input id="expiry" type="date"></div>
+<div><label for="expiry">Gültig bis</label><input id="expiry" type="date"></div><div class="full"><label for="whatsappPhone">WhatsApp-Nummer (optional)</label><input id="whatsappPhone" type="tel" placeholder="z. B. 0176 12345678 oder +49 176 12345678" autocomplete="off"></div>
 </div>
 <div class="stack"><button id="issue">Persönlichen Zugang erstellen</button></div><p id="issueHint" class="small" hidden>Für echte Mitarbeiterzugänge musst du später deine Chef-Sicherung und dein Chef-Passwort importieren.</p>
 </div>
@@ -71,20 +71,20 @@ main .card{background:rgba(255,255,255,.95)}
 <h2>Einzelzugang verschicken</h2>
 <p class="small">Versende den Einladungslink an den Mitarbeiter. Die PIN bitte separat mitteilen. Erster Aufruf des Links öffnet die Mitarbeiter-Anmeldung.</p>
 <label for="link">Einladungslink</label><textarea id="link" readonly></textarea>
-<div class="stack"><button id="share">Einladungslink teilen</button><button id="copyLink" class="secondary">Link kopieren</button></div>
+<div class="stack"><button type="button" id="whatsappSingle" class="whatsapp-action">Per WhatsApp einladen</button><button id="share" class="secondary">Einladungslink teilen</button><button id="copyLink" class="secondary">Link kopieren</button></div><p class="small">WhatsApp öffnet eine vorformulierte Einladung. Kontrolliere den Empfänger und tippe dort auf Senden. Die PIN wird nicht mitgesendet.</p><div id="singlePinArea" hidden><button type="button" id="copySinglePin" class="secondary">PIN getrennt kopieren</button></div>
 <label for="code">Zugangscode (Alternative)</label><textarea id="code" readonly></textarea>
 <div class="stack"><button id="copyCode" class="secondary">Zugangscode kopieren</button></div>
 </div>
 
 <div class="card" id="bulkCard">
 <h2>3. Mehrere Mitarbeiter hinzufügen</h2>
-<p class="small">Jede Zeile: <strong>Name;Personalnummer;PIN</strong>. Die PIN kannst du selbst festlegen (6–12 Ziffern). Lässt du sie weg, erzeugt die App automatisch eine zufällige neunstellige PIN. Die Namen und PINs werden nur auf deinem Gerät verarbeitet, nicht auf GitHub gespeichert.</p>
+<p class="small">Jede Zeile: <strong>Name;Personalnummer;PIN;WhatsApp-Nummer</strong>. Die PIN kannst du selbst festlegen (6–12 Ziffern). Lässt du sie weg, erzeugt die App automatisch eine zufällige neunstellige PIN. Die Namen und PINs werden nur auf deinem Gerät verarbeitet, nicht auf GitHub gespeichert.</p>
 <label for="bulkInput">Mitarbeiterliste</label>
-<textarea id="bulkInput" spellcheck="false" autocomplete="off" rows="7" style="height:170px;font-size:14px" placeholder="Vorname Nachname;M001&#10;Vorname Nachname;M002&#10;Vorname Nachname;M003;123456789"></textarea>
+<textarea id="bulkInput" spellcheck="false" autocomplete="off" rows="7" style="height:170px;font-size:14px" placeholder="Vorname Nachname;M001;;0176 12345678&#10;Vorname Nachname;M002&#10;Vorname Nachname;M003;123456789;+49 176 12345678"></textarea>
 <label for="bulkExpiry">Zugänge gültig bis</label>
 <input id="bulkExpiry" type="date">
 <div class="stack"><button type="button" id="bulkIssue">Mitarbeiterzugänge erstellen</button></div>
-<p class="small">Für jeden Mitarbeiter entsteht ein eigener signierter Zugang. Nach dem Erstellen kannst du die Links und PINs <strong>getrennt</strong> teilen. Bitte versende die PIN nicht zusammen mit dem Einladungslink.</p>
+<p class="small">Für jeden Mitarbeiter entsteht ein eigener signierter Zugang. Nach dem Erstellen kannst du die Einladungslinks per WhatsApp vorbereiten und die PINs <strong>getrennt</strong> mitteilen. Bitte versende die PIN nicht zusammen mit dem Einladungslink.</p>
 <div id="bulkPreviewHint" class="warning" hidden>Im Testmodus lassen sich keine echten Mitarbeiter freischalten. Bitte die Chef-Sicherung mit Passwort entsperren.</div>
 <div id="bulkResults" hidden>
 <h3>Erstellte Zugänge</h3>
