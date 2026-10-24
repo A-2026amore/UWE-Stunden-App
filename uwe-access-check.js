@@ -36,7 +36,7 @@ async function check(eid,force=false){
   let data;
   try{data=validate(await res.json());}
   catch(e){throw e?.code?e:denied("Zugangssperrliste konnte nicht gelesen werden. Bitte erneut versuchen.","CHECK_ERROR");}
-  latest={eid,checkedAt:Date.now(),revoked:data.revoked.includes(eid)};
+  latest={eid,checkedAt:Date.now(),revoked:data.revoked.some(id=>id.toUpperCase()===eid.toUpperCase())};
   if(latest.revoked)
     throw denied("Dieser Mitarbeiterzugang wurde von UWE gesperrt. Bitte die Geschäftsleitung kontaktieren.","UWE_REVOKED");
   return true;
