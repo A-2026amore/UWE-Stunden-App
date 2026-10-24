@@ -12,6 +12,7 @@ let bulkResults = [];
 let singleInvite = null;
 const appId = "UWE Stunden Chef";
 const REMEMBERED_BACKUP_KEY="uwe_chef_remembered_encrypted_backup_v1";
+let changeBackupOpen=false;
 function rememberedBackup(){
   let saved;
   try{saved=localStorage.getItem(REMEMBERED_BACKUP_KEY)}
@@ -29,11 +30,14 @@ function rememberedStatus(){
     "Dieses Chef-Gerät ist eingerichtet. Zur Anmeldung genügt dein Chef-Passwort – die JSON-Datei brauchst du nicht mehr auszuwählen.":
     "Erste Anmeldung auf diesem Gerät: Bitte einmalig die verschlüsselte Chef-Sicherung auswählen. Danach genügt dein Chef-Passwort.";
   $("forgetDevice").hidden=!configured;
+  $("backupSetup").hidden=configured&&!changeBackupOpen;
+  $("changeBackup").hidden=!configured||changeBackupOpen;
   $("backup").required=!configured;
 }
 function forgetRememberedDevice(){
   if(!confirm("Die gespeicherte verschlüsselte Chef-Sicherung von DIESEM Gerät entfernen? Die Chef-Verwaltung benötigt beim nächsten Öffnen wieder die JSON-Sicherung. Bereits gespeicherte Mitarbeiterstunden werden nicht gelöscht."))return;
   localStorage.removeItem(REMEMBERED_BACKUP_KEY);
+  changeBackupOpen=false;
   $("backup").value="";
   rememberedStatus();
   setMessage("Die gespeicherte Chef-Sicherung wurde von diesem Gerät entfernt. Für die nächste Anmeldung benötigst du wieder deine JSON-Sicherungsdatei.");
@@ -133,6 +137,7 @@ async function openBackup(){
   }else{
     localStorage.removeItem(REMEMBERED_BACKUP_KEY);
   }
+  changeBackupOpen=false;
   rememberedStatus();
   previewMode=false;
   $("modeLabel").textContent="Chef-Verwaltung entsperrt";
@@ -371,6 +376,7 @@ function openPreview(){
 $("preview").addEventListener("click",openPreview);
 $("unlock").addEventListener("click",()=>perform(openBackup));
 $("forgetDevice").addEventListener("click",forgetRememberedDevice);
+$("changeBackup").addEventListener("click",()=>{changeBackupOpen=true;rememberedStatus();$("backup").focus();});
 $("issue").addEventListener("click",()=>perform(createInvite));
 $("generatePin").addEventListener("click",generatePinForSingle);
 $("togglePin").addEventListener("click",toggleSinglePin);
