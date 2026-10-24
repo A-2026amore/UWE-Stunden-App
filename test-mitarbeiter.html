@@ -19,6 +19,11 @@ body>header,body>main{position:relative;z-index:1}
 main .card{background:rgba(255,255,255,.95)}
 @media(max-width:600px){body::before{width:92vw;height:52vw;opacity:.075}.uwe-branded-header .uwe-original-logo{width:min(88vw,325px)}}
 
+
+.day-summary{background:rgba(0,169,158,.09);font-size:12px;color:#185b61}
+.day-summary td{padding-top:6px;padding-bottom:8px;border-bottom:2px solid #8bd8d0}
+#addBlockBtn{background:#d7f4ef;color:#075c63}
+@media(max-width:520px){table{font-size:12px}th,td{padding:7px 4px}td button{padding:6px;font-size:11px}}
 </style>
 
 <script defer src="uwe-pdf.js?v=4"></script>
@@ -31,8 +36,8 @@ main .card{background:rgba(255,255,255,.95)}
 <section id="signin" class="card" hidden><h2>Mitarbeiter-Anmeldung</h2><p class="muted">Den persönlichen Einladungslink vom Arbeitgeber öffnen oder den vollständigen Zugangscode hier einfügen. Danach die vom Arbeitgeber vergebene PIN eingeben.</p><label for="token">Persönlicher Zugangscode</label><textarea id="token" placeholder="Zugangscode aus der Einladung einfügen" spellcheck="false" autocapitalize="off"></textarea><div style="height:12px"></div><label for="pin">Persönliche PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN eingeben" maxlength="12"><div class="actions"><button id="loginBtn">Anmelden</button></div><p id="notice" role="alert"></p></section>
 <section id="app" hidden>
 <div class="card"><div class="topline"><div><span class="pill">TESTMITARBEITER</span><h2 style="margin:12px 0 2px" id="employeeHeading"></h2><span class="muted" id="employeeId"></span></div><button class="alt" id="logoutBtn">Test beenden</button></div><p class="muted"><strong>TESTDATEN – keine echten Mitarbeiterstunden.</strong> Diese Teststunden bleiben auf diesem Gerät und werden nicht automatisch übertragen.</p></div>
-<div class="card"><h2>Arbeitszeit erfassen</h2><div class="grid"><div class="full"><label for="date">Datum</label><input id="date" type="date"></div><div><label for="start">Arbeitsbeginn</label><input id="start" type="time" value="08:00"></div><div><label for="end">Arbeitsende</label><input id="end" type="time" value="16:00"></div><div class="full"><label for="pause">Pause (Minuten)</label><input id="pause" type="number" value="30" min="0" max="1439"></div><div class="full"><label for="note">Bemerkung (optional)</label><input id="note" maxlength="200" placeholder="z. B. Schülertour"></div></div><div class="actions"><button id="saveBtn">Arbeitszeit speichern</button><button id="clearBtn" class="alt">Neue Eingabe</button></div><p id="editMsg" class="muted"></p></div>
-<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th></th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
+<div class="card" id="entryForm"><h2>Arbeitszeit erfassen</h2><p class="muted">Du kannst <strong>mehrere Einsätze pro Tag</strong> eintragen, z. B. morgens, nachmittags und abends. Jeder Zeitblock wird einzeln gespeichert und am Monatsende zusammengerechnet.</p><div class="grid"><div class="full"><label for="date">Datum</label><input id="date" type="date"></div><div><label for="start">Arbeitsbeginn</label><input id="start" type="time" value="08:00"></div><div><label for="end">Arbeitsende</label><input id="end" type="time" value="16:00"></div><div class="full"><label for="pause">Pause (Minuten)</label><input id="pause" type="number" value="30" min="0" max="1439"></div><div class="full"><label for="note">Bemerkung (optional)</label><input id="note" maxlength="200" placeholder="z. B. Schülertour"></div></div><div class="actions"><button id="saveBtn">Arbeitszeit speichern</button><button id="addBlockBtn" class="alt">+ Weiteren Einsatz am selben Tag</button><button id="clearBtn" class="alt">Anderen Tag eintragen</button></div><p id="editMsg" class="muted"></p></div>
+<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th>Einsatz</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
 <strong>PDF-Versand an UWE:</strong> Das Programm erstellt eine echte Datei mit der Endung <b>.pdf</b> (nicht .txt).<br>
 <strong>WhatsApp:</strong> Tippe auf „PDF per WhatsApp“, wähle im iPhone-Teilen-Menü WhatsApp und anschließend den Betriebskontakt UWE (0241 400 111 11). Prüfe die PDF vor „Senden“.<br>
 <strong>E-Mail:</strong> Tippe auf „PDF per E-Mail“, wähle Mail oder Outlook, trage die UWE-Betriebsadresse ein und sende die E-Mail mit dem PDF-Anhang.<br>
@@ -53,91 +58,160 @@ function minutes(t){if(!/^\d{2}:\d{2}$/.test(t))return NaN;const [h,m]=t.split('
 function worked(r){let v=minutes(r.end)-minutes(r.start);if(v<0)v+=1440;return (v-r.pause)/60}
 function valid(r){if(!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||Number.isNaN(Date.parse(r.date+'T00:00:00')))return false;const st=minutes(r.start),en=minutes(r.end),pause=Number(r.pause);return Number.isFinite(st)&&Number.isFinite(en)&&Number.isInteger(pause)&&pause>=0&&pause<1440&&st!==en&&worked({...r,pause})>0&&worked({...r,pause})<=24}
 function ym(){return $('month').value}
-function monthly(){return records.filter(x=>x.date.slice(0,7)===ym()).sort((a,b)=>a.date.localeCompare(b.date))}
+function monthly(){return records.filter(x=>x.date.slice(0,7)===ym()).sort((a,b)=>a.date.localeCompare(b.date)||a.start.localeCompare(b.start)||a.end.localeCompare(b.end))}
 function fnum(n){return n.toFixed(2).replace('.',',')}
+
+let editingId=null;
+function makeEntryId(){
+  if(crypto.randomUUID)return crypto.randomUUID();
+  return "e"+Date.now().toString(36)+"-"+Array.from(crypto.getRandomValues(new Uint8Array(8)),x=>x.toString(16).padStart(2,"0")).join("");
+}
+function fingerprint(r){return [r.date,r.start,r.end,Number(r.pause),r.note||""].join("|");}
+function oldEntryId(r){
+  const value=fingerprint(r);
+  let h=2166136261;
+  for(let i=0;i<value.length;i++){h=Math.imul(h^value.charCodeAt(i),16777619);}
+  return "legacy-"+(h>>>0).toString(36);
+}
+function normalizeEntries(items){
+  if(!Array.isArray(items))return [];
+  const out=[],seen=new Set();
+  for(const r of items){
+    if(!r||!valid(r))continue;
+    const explicit=typeof r.id==="string"&&/^[a-zA-Z0-9_-]{4,100}$/.test(r.id);
+    let id=explicit?r.id:oldEntryId(r);
+    if(seen.has(id)){
+      if(!explicit)continue;
+      id=makeEntryId();
+    }
+    seen.add(id);
+    out.push({id,date:r.date,start:r.start,end:r.end,pause:Number(r.pause),note:String(r.note||"")});
+  }
+  return out;
+}
+function timeWindow(r){
+  const s=minutes(r.start),e=minutes(r.end);
+  return [s,e<=s?e+1440:e];
+}
+function overlaps(a,b){
+  if(a.date!==b.date)return false;
+  const [s1,e1]=timeWindow(a),[s2,e2]=timeWindow(b);
+  return Math.max(s1,s2)<Math.min(e1,e2);
+}
+
 async function verify(t){const parts=t.trim().split('.');if(parts.length!==2)throw Error('Ungültiger Zugangscode.');let payload;try{payload=JSON.parse(dec.decode(b64bytes(parts[0])))}catch{throw Error('Der Zugangscode ist beschädigt.')}if(!payload||payload.v!==1||typeof payload.eid!=='string'||!/^[a-zA-Z0-9_-]{1,30}$/.test(payload.eid)||typeof payload.name!=='string'||!payload.name.trim()||typeof payload.exp!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(payload.exp)||typeof payload.salt!=='string'||typeof payload.pinHash!=='string')throw Error('Unbekanntes Zugangsformat.');const key=await crypto.subtle.importKey('jwk',config,{name:'ECDSA',namedCurve:'P-256'},false,['verify']);const verified=await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,b64bytes(parts[1]),enc.encode(parts[0]));if(!verified)throw Error('Dieser Zugang wurde nicht von UWE ausgestellt.');if(payload.exp<new Date().toLocaleDateString('en-CA'))throw Error('Dieser Zugang ist abgelaufen. Bitte einen neuen beim Arbeitgeber anfordern.');return payload}
 async function pinHash(pin,salt){const pass=await crypto.subtle.importKey('raw',enc.encode(pin),'PBKDF2',false,['deriveBits']);const bits=await crypto.subtle.deriveBits({name:'PBKDF2',salt:b64bytes(salt),iterations:100000,hash:'SHA-256'},pass,256);return Array.from(new Uint8Array(bits),x=>x.toString(16).padStart(2,'0')).join('')}
 function hideAll(){['setup','signin','app'].forEach(x=>$(x).hidden=true)}
-async function activate(t){employee=await verify(t);token=t;records=JSON.parse(localStorage.getItem(localKey())||'[]');if(!Array.isArray(records))records=[];records=records.filter(valid);hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Personalnummer: '+employee.eid;$('app').hidden=false;render()}
+async function activate(t){employee=await verify(t);token=t;try{records=normalizeEntries(JSON.parse(localStorage.getItem(localKey())||'[]'))}catch{records=[]}hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Personalnummer: '+employee.eid;$('app').hidden=false;render()}
 async function login(){const btn=$('loginBtn');btn.disabled=true;$('notice').textContent='';try{const t=$('token').value.trim();const p=await verify(t);const pin=$('pin').value.trim();if(!/^\d{6,12}$/.test(pin))throw Error('Die PIN muss 6 bis 12 Ziffern haben.');if(await pinHash(pin,p.salt)!==p.pinHash)throw Error('PIN stimmt nicht.');localStorage.setItem('uwe_session',t);history.replaceState({},'',location.pathname);await activate(t);$('pin').value='';}catch(e){$('notice').textContent=e.message||'Anmeldung nicht möglich.'}finally{btn.disabled=false}}
-function clear(){ $('date').value=new Date().toLocaleDateString('en-CA');$('start').value='08:00';$('end').value='16:00';$('pause').value='30';$('note').value='';$('editMsg').textContent=''}
-function save(){const r={date:$('date').value,start:$('start').value,end:$('end').value,pause:Number($('pause').value),note:$('note').value.trim()};if(!valid(r)){alert('Bitte gültiges Datum, Uhrzeiten und Pausenzeit eingeben. Bei Schichten über Mitternacht muss das Ende am Folgetag liegen.');return}const i=records.findIndex(x=>x.date===r.date);if(i>=0&&!confirm('Für diesen Tag gibt es bereits eine Eintragung. Überschreiben?'))return;if(i>=0)records[i]=r;else records.push(r);storage();$('month').value=r.date.slice(0,7);$('editMsg').textContent='Gespeichert.';render()}
-function render(){const list=monthly();$('total').textContent=fnum(list.reduce((a,x)=>a+worked(x),0))+' Std.';$('rows').innerHTML=list.map(x=>`<tr><td>${escapeHtml(x.date.split('-').reverse().join('.'))}</td><td>${escapeHtml(x.start)}</td><td>${escapeHtml(x.end)}</td><td>${x.pause} min</td><td>${fnum(worked(x))}</td><td><button class="alt" data-edit="${x.date}">Ändern</button><button class="danger" data-delete="${x.date}">×</button></td></tr>`).join('');$('empty').textContent=list.length?'':'In diesem Monat sind noch keine Stunden eingetragen.'}
-function edit(d){const r=records.find(x=>x.date===d);if(!r)return;$('date').value=r.date;$('start').value=r.start;$('end').value=r.end;$('pause').value=r.pause;$('note').value=r.note;window.scrollTo({top:0,behavior:'smooth'});$('editMsg').textContent='Eintrag ausgewählt. Änderungen speichern, um den Tag zu aktualisieren.'}
-function del(d){if(!confirm('Eintrag vom '+d.split('-').reverse().join('.')+' löschen?'))return;records=records.filter(r=>r.date!==d);storage();render()}
+function clear(keepDate=false){
+  const date=keepDate&&$('date').value?$('date').value:new Date().toLocaleDateString('en-CA');
+  editingId=null;
+  $('date').value=date;
+  $('start').value=keepDate?'':'08:00';
+  $('end').value=keepDate?'':'16:00';
+  $('pause').value=keepDate?'0':'30';
+  $('note').value='';
+  $('saveBtn').textContent='Arbeitszeit speichern';
+  $('editMsg').textContent='';
+}
+function save(){
+  const r={date:$('date').value,start:$('start').value,end:$('end').value,pause:Number($('pause').value),note:$('note').value.trim()};
+  if(!valid(r)){
+    alert('Bitte Datum, Beginn, Ende und Pause korrekt eintragen. Pro Einsatz werden Arbeitsbeginn und Arbeitsende benötigt.');
+    return;
+  }
+  const match=records.find(x=>x.id!==editingId&&overlaps(x,r));
+  if(match){
+    alert('Dieser Einsatz überschneidet sich mit '+match.start+'–'+match.end+' am selben Datum. Bitte Zeiten korrigieren oder den vorhandenen Einsatz bearbeiten.');
+    return;
+  }
+  if(editingId){
+    const idx=records.findIndex(x=>x.id===editingId);
+    if(idx<0){alert('Der ausgewählte Eintrag wurde nicht gefunden. Bitte neu auswählen.');return;}
+    records[idx]={...r,id:editingId};
+  }else{
+    records.push({...r,id:makeEntryId()});
+  }
+  storage();
+  $('month').value=r.date.slice(0,7);
+  const day=r.date;
+  clear(true);
+  $('date').value=day;
+  $('editMsg').textContent='Einsatz gespeichert. Du kannst jetzt einen weiteren Einsatz für denselben Tag eintragen.';
+  render();
+}
+function render(){
+  const list=monthly();
+  const sum=list.reduce((a,x)=>a+worked(x),0);
+  const days=new Set(list.map(x=>x.date)).size;
+  $('total').textContent=fnum(sum)+' Std. · '+list.length+' Einsätze an '+days+' Tagen';
+  const dayTotals=new Map();
+  for(const x of list)dayTotals.set(x.date,(dayTotals.get(x.date)||0)+worked(x));
+  $('rows').innerHTML=list.map((x,i)=>{
+    const row='<tr><td>'+escapeHtml(x.date.split('-').reverse().join('.'))+'</td><td>'+escapeHtml(x.start)+'</td><td>'+escapeHtml(x.end)+'</td><td>'+x.pause+' min</td><td>'+fnum(worked(x))+'</td><td><button class="alt" data-edit="'+escapeHtml(x.id)+'">Ändern</button><button class="danger" data-delete="'+escapeHtml(x.id)+'">×</button></td></tr>';
+    const lastOfDay=i===list.length-1||list[i+1].date!==x.date;
+    return row+(lastOfDay?'<tr class="day-summary"><td colspan="4"><strong>Tagessumme '+escapeHtml(x.date.split('-').reverse().join('.'))+'</strong></td><td><strong>'+fnum(dayTotals.get(x.date))+'</strong></td><td></td></tr>':'');
+  }).join('');
+  $('empty').textContent=list.length?'':'In diesem Monat sind noch keine Stunden eingetragen.';
+}
+function edit(id){
+  const r=records.find(x=>x.id===id);
+  if(!r)return;
+  editingId=r.id;
+  $('date').value=r.date;
+  $('start').value=r.start;
+  $('end').value=r.end;
+  $('pause').value=r.pause;
+  $('note').value=r.note;
+  $('saveBtn').textContent='Änderungen speichern';
+  document.getElementById('entryForm').scrollIntoView({block:'start',behavior:'smooth'});
+  $('editMsg').textContent='Dieser einzelne Einsatz wird bearbeitet. Andere Einsätze desselben Tages bleiben unverändert.';
+}
+function del(id){
+  const r=records.find(x=>x.id===id);
+  if(!r)return;
+  if(!confirm('Einsatz '+r.date.split('-').reverse().join('.')+' von '+r.start+' bis '+r.end+' löschen?'))return;
+  records=records.filter(x=>x.id!==id);
+  if(editingId===id)clear(true);
+  storage();
+  render();
+}
 function report(){const m=monthly();const lines=['TESTDATEN – NICHT FÜR LOHNABRECHNUNG','UWE KRANKENTRANSPORTE – STUNDENNACHWEIS','Mitarbeiter: '+employee.name,'Personalnummer: '+employee.eid,'Monat: '+ym(),'',...m.map(x=>`${x.date} | ${x.start}–${x.end} | Pause ${x.pause} min | ${fnum(worked(x))} Std. | ${x.note}`),'','Gesamt: '+fnum(m.reduce((a,x)=>a+worked(x),0))+' Stunden'];return lines.join('\n')}
 function download(name,content,type){const b=new Blob([content],{type}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 function filename(kind,ext){return `UWE-TEST-${kind}-${employee.eid}-${ym()}.${ext}`}
 function printSheet(){if(!monthly().length){alert('Keine Einträge für diesen Monat.');return}const w=window.open('','_blank');if(!w){alert('Bitte Pop-ups für die Druckfunktion zulassen.');return}const m=monthly();const rows=m.map(x=>`<tr><td>${escapeHtml(x.date.split('-').reverse().join('.'))}</td><td>${escapeHtml(x.start)}</td><td>${escapeHtml(x.end)}</td><td>${x.pause}</td><td>${fnum(worked(x))}</td><td>${escapeHtml(x.note)}</td></tr>`).join('');w.document.write(`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${escapeHtml(filename('Stundenzettel','pdf'))}</title><style>body{font:13px Arial,sans-serif;color:#18383c;padding:28px}h1{color:#087f89;margin-bottom:0}small{color:#526c70}table{border-collapse:collapse;width:100%;margin-top:20px}td,th{padding:9px 6px;border-bottom:1px solid #aaa;text-align:left}footer{margin-top:34px}strong{font-size:18px}</style></head><body><p style="background:#fff0ce;color:#8a1b00;border:2px solid #a90b0b;padding:14px;font-size:19px;font-weight:bold">TESTDATEN – NICHT FÜR LOHNABRECHNUNG</p><h1>UWE · KRANKENTRANSPORTE</h1><small>Arbeitszeitnachweis</small><h2>Monat ${escapeHtml(ym())}</h2><p><b>Mitarbeiter:</b> ${escapeHtml(employee.name)} &nbsp; <b>Personalnummer:</b> ${escapeHtml(employee.eid)}</p><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause (min)</th><th>Std.</th><th>Bemerkung</th></tr></thead><tbody>${rows}</tbody></table><footer><strong>Gesamtsumme: ${fnum(m.reduce((a,x)=>a+worked(x),0))} Stunden</strong><p>Erstellt am ${escapeHtml(new Date().toLocaleDateString('de-DE'))}</p><p>Unterschrift Mitarbeiter: __________________________________</p></footer></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),200)}
 function csv(){if(!monthly().length){alert('Keine Einträge vorhanden.');return}const escapeCsv=v=>'"'+String(v).replace(/"/g,'""')+'"';const rows=[['TESTDATEN – NICHT FÜR LOHNABRECHNUNG'],['Datum','Mitarbeiter','Personalnummer','Beginn','Ende','Pause (Min.)','Stunden','Bemerkung'],...monthly().map(x=>[x.date,employee.name,employee.eid,x.start,x.end,x.pause,fnum(worked(x)),x.note])];download(filename('Stunden','csv'),'\ufeff'+rows.map(r=>r.map(escapeCsv).join(';')).join('\r\n'),'text/csv;charset=utf-8')}
-function backup(){const payload={app:'UWE Stunden Test',version:2,eid:employee.eid,name:employee.name,exportedAt:new Date().toISOString(),entries:records};download('UWE-TEST-Backup-'+employee.eid+'-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload,null,2),'application/json')}
-async function restore(input){const file=input.files?.[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.app!=='UWE Stunden Test'||data.version!==2||data.eid!==employee.eid||!Array.isArray(data.entries)||!data.entries.every(valid))throw Error('Backup passt nicht zu deinem Mitarbeiterkonto oder ist beschädigt.');if(!confirm(data.entries.length+' Einträge importieren? Vorhandene Einträge an denselben Tagen werden ersetzt.'))return;const byDay=new Map(records.map(x=>[x.date,x]));data.entries.forEach(x=>byDay.set(x.date,x));records=Array.from(byDay.values());storage();render();alert('Backup wiederhergestellt.')}catch(e){alert('Import fehlgeschlagen: '+e.message)}finally{input.value=''}}
-
-
-const UWE_WHATSAPP_BUSINESS_NUMBER="0241 400 111 11";
-function pdfArgs(){return {employee,month:ym(),records:monthly(),test:true};}
-function pdfFile(){
-  if(!monthly().length){alert("Für diesen Monat sind keine Stunden eingetragen.");return null;}
-  if(!window.UweTimesheetPdf){alert("Das PDF-Modul ist noch nicht geladen. Bitte die Seite aktualisieren.");return null;}
+function backup(){const payload={app:'UWE Stunden Test',version:3,eid:employee.eid,name:employee.name,exportedAt:new Date().toISOString(),entries:records};download('UWE-TEST-Backup-'+employee.eid+'-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload,null,2),'application/json')}
+async function restore(input){
+  const file=input.files?.[0];
+  if(!file)return;
   try{
-    const file=window.UweTimesheetPdf.fileFor(pdfArgs());
-    if(file.type!=="application/pdf"||!file.name.toLowerCase().endsWith(".pdf"))
-      throw new Error("PDF-Anhang konnte nicht erstellt werden.");
-    return file;
-  }catch(error){alert("PDF-Fehler: "+(error.message||error));return null;}
-}
-function notifyPdf(message){
-  const status=$("pdfStatus");
-  if(status)status.textContent=message;
-}
-function downloadPdf(){
-  const file=pdfFile();
-  if(!file)return;
-  window.UweTimesheetPdf.download(file);
-  notifyPdf("PDF-Datei wurde zum Speichern vorbereitet: "+file.name+". Bitte in Downloads/Dateien öffnen und bei Bedarf als Dokument weiterleiten.");
-}
-function previewPdf(){
-  const file=pdfFile();
-  if(!file)return;
-  const url=URL.createObjectURL(file);
-  const opened=window.open(url,"_blank");
-  if(!opened){
-    window.UweTimesheetPdf.download(file);
-    notifyPdf("Die PDF-Vorschau wurde vom Browser blockiert. Die PDF wurde stattdessen zum Speichern vorbereitet.");
-  } else {
-    notifyPdf("PDF geöffnet. Auf dem iPhone kannst du über das Teilen-Symbol die PDF-Datei versenden.");
-  }
-  setTimeout(()=>URL.revokeObjectURL(url),120000);
-}
-async function sharePdf(method){
-  const file=pdfFile();
-  if(!file)return;
-  // Wichtig: NUR das PDF teilen! Text und Titel können bei WhatsApp
-  // sonst dazu führen, dass nur ein Text statt des PDF-Anhangs ankommt.
-  const shareData={files:[file]};
-  if(typeof navigator.share==="function"&&typeof navigator.canShare==="function"&&navigator.canShare(shareData)){
-    try{
-      notifyPdf("PDF-Datei erstellt. Bitte "+(method==="mail"?"Mail / Outlook":"WhatsApp")+" auswählen und den Anhang vor dem Senden kontrollieren.");
-      await navigator.share(shareData);
-      notifyPdf("PDF an die ausgewählte App übergeben. Ob sie tatsächlich gesendet wurde, bitte im Chat bzw. im E-Mail-Postausgang kontrollieren.");
-      return;
-    }catch(error){
-      if(error&&error.name==="AbortError"){
-        notifyPdf("Teilen abgebrochen. Es wurde nichts automatisch versendet.");
-        return;
-      }
-      notifyPdf("Dein Handy konnte die PDF nicht über die Teilen-Funktion senden. Die Datei wird deshalb zum manuellen Anhängen gespeichert.");
+    if(file.size>5000000)throw Error('Sicherungsdatei ist zu groß.');
+    const data=JSON.parse(await file.text());
+    if(data.app!=='UWE Stunden Test'||![2,3].includes(data.version)||data.eid!==employee.eid||!Array.isArray(data.entries)||!data.entries.every(valid))
+      throw Error('Backup passt nicht zu diesem Mitarbeiterkonto oder ist beschädigt.');
+    const incoming=normalizeEntries(data.entries);
+    if(!confirm(incoming.length+' Einsätze importieren? Vorhandene andere Einsätze bleiben erhalten.'))return;
+    const byId=new Map(records.map(x=>[x.id,x]));
+    const existingSignatures=new Set(records.map(fingerprint));
+    let added=0;
+    for(const x of incoming){
+      if(byId.has(x.id)){byId.set(x.id,x);continue;}
+      if(existingSignatures.has(fingerprint(x)))continue;
+      byId.set(x.id,x);
+      existingSignatures.add(fingerprint(x));
+      added++;
     }
-  }else{
-    notifyPdf("Dieser Browser unterstützt das direkte Teilen von PDF-Dateien nicht. Die PDF wird gespeichert; bitte in WhatsApp oder Mail als Dokument anhängen.");
-  }
-  window.UweTimesheetPdf.download(file);
+    records=Array.from(byId.values());
+    storage();
+    render();
+    alert('Backup wiederhergestellt. '+added+' zusätzliche Einsätze übernommen.');
+  }catch(e){alert('Import fehlgeschlagen: '+e.message)}
+  finally{input.value=''}
 }
-function whatsappPdf(){return sharePdf("whatsapp");}
-function emailPdf(){return sharePdf("mail");}
-
-$('loginBtn').onclick=login;$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('logoutBtn').onclick=()=>{location.assign('./chef-mobil.html')};$('saveBtn').onclick=save;$('clearBtn').onclick=clear;$('month').onchange=render;$('shareBtn').onclick=whatsappPdf;$('emailPdfBtn').onclick=emailPdf;$('pdfPreviewBtn').onclick=previewPdf;$('pdfDownloadBtn').onclick=downloadPdf;$('pdfBtn').onclick=printSheet;$('csvBtn').onclick=csv;$('backupBtn').onclick=backup;$('restore').onchange=e=>restore(e.target);$('rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.edit)edit(b.dataset.edit);if(b.dataset.delete)del(b.dataset.delete)};
-(()=>{clear();$('month').value=$('date').value.slice(0,7);employee={name:'Test Mitarbeiter',eid:'TEST001'};try{const saved=JSON.parse(localStorage.getItem(localKey())||'[]');records=Array.isArray(saved)?saved.filter(valid):[]}catch{records=[]}hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Test-Personalnummer: '+employee.eid;$('app').hidden=false;render()})();
+$('loginBtn').onclick=login;$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('logoutBtn').onclick=()=>{location.assign('./chef-mobil.html')};$('saveBtn').onclick=save;$('clearBtn').onclick=()=>clear(false);$('addBlockBtn').onclick=()=>{const date=$('date').value;clear(true);$('date').value=date;document.getElementById('entryForm').scrollIntoView({block:'start',behavior:'smooth'});$('start').focus();};$('month').onchange=render;$('shareBtn').onclick=whatsappPdf;$('emailPdfBtn').onclick=emailPdf;$('pdfPreviewBtn').onclick=previewPdf;$('pdfDownloadBtn').onclick=downloadPdf;$('pdfBtn').onclick=printSheet;$('csvBtn').onclick=csv;$('backupBtn').onclick=backup;$('restore').onchange=e=>restore(e.target);$('rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.edit)edit(b.dataset.edit);if(b.dataset.delete)del(b.dataset.delete)};
+(()=>{clear();$('month').value=$('date').value.slice(0,7);employee={name:'Test Mitarbeiter',eid:'TEST001'};try{const saved=JSON.parse(localStorage.getItem(localKey())||'[]');records=normalizeEntries(saved)}catch{records=[]}hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Test-Personalnummer: '+employee.eid;$('app').hidden=false;render()})();
 })();
 </script>
 </body>
