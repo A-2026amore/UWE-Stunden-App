@@ -8,6 +8,7 @@ let previewMode = false;
 let publicKey = null;
 let codeForSharing = "";
 let linkForSharing = "";
+let bulkResults = [];
 const appId = "UWE Stunden Chef";
 function setMessage(message, bad=false){
   $("notice").textContent=message;
@@ -42,6 +43,8 @@ function lock(){
   publicKey=null;
   codeForSharing="";
   linkForSharing="";
+  clearBulkResults();
+  $("bulkInput").value="";
   $("backup").value="";
   $("password").value="";
   $("pin").value="";
@@ -84,6 +87,8 @@ async function openBackup(){
   $("previewWarning").hidden=true;
   $("issueHint").hidden=true;
   $("issue").disabled=false;
+  $("bulkIssue").disabled=false;
+  $("bulkPreviewHint").hidden=true;
   publicKey=info.publicJwk;
   $("password").value="";
   $("backup").value="";
@@ -92,17 +97,12 @@ async function openBackup(){
   $("appAddress").textContent=appUrl();
   setMessage("Chef-Verwaltung entsperrt. Du kannst jetzt Mitarbeiter-Zugänge erstellen.");
 }
-async function createInvite(){
-  if(previewMode)throw Error("Testmodus: echte Mitarbeiter-Zugangscodes benötigen deine Chef-Sicherung.");
-  if(!signingKey)throw Error("Bitte zuerst die Chef-Verwaltung entsperren.");
-  const name=$("name").value.trim();
-  const eid=$("eid").value.trim();
-  const pin=$("pin").value.trim();
-  const exp=$("expiry").value;
-  if(!name||name.length>80)throw Error("Bitte einen Mitarbeiternamen angeben.");
+async function signCredential(name,eid,pin,exp){
+  if(previewMode||!signingKey)throw Error("Echte Zugänge benötigen deine verschlüsselte Chef-Sicherung.");
+  if(!name||name.length>80||/[<>\\r\\n]/.test(name))throw Error("Bitte einen gültigen vollständigen Namen eingeben.");
   if(!/^[A-Za-z0-9_-]{1,30}$/.test(eid))throw Error("Personalnummer: nur Buchstaben, Ziffern, - und _.");
-  if(!/^\d{6,12}$/.test(pin))throw Error("Die PIN muss aus 6 bis 12 Ziffern bestehen.");
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges zukünftiges Ablaufdatum wählen.");
+  if(!/^\\d{6,12}$/.test(pin))throw Error("Die PIN muss 6–12 Ziffern enthalten.");
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges zukünftiges Ablaufdatum wählen.");
   const salt=crypto.getRandomValues(new Uint8Array(16));
   const k=await crypto.subtle.importKey("raw",encoder.encode(pin),"PBKDF2",false,["deriveBits"]);
   const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:100000,hash:"SHA-256"},k,256);
@@ -110,14 +110,111 @@ async function createInvite(){
   const payload={v:1,eid,name,exp,salt:b64bytes(salt),pinHash};
   const body=b64bytes(encoder.encode(JSON.stringify(payload)));
   const signature=await crypto.subtle.sign({name:"ECDSA",hash:"SHA-256"},signingKey,encoder.encode(body));
-  codeForSharing=body+"."+b64bytes(signature);
-  linkForSharing=appUrl()+"?code="+encodeURIComponent(codeForSharing);
+  const code=body+"."+b64bytes(signature);
+  return {name,eid,pin,exp,code,link:appUrl()+"?code="+encodeURIComponent(code)};
+}
+async function createInvite(){
+  if(previewMode||!signingKey)throw Error("Bitte zuerst die Chef-Verwaltung mit der Sicherung entsperren.");
+  const name=$("name").value.trim();
+  const eid=$("eid").value.trim();
+  const pin=$("pin").value.trim();
+  const exp=$("expiry").value;
+  const invite=await signCredential(name,eid,pin,exp);
+  codeForSharing=invite.code;
+  linkForSharing=invite.link;
   $("link").value=linkForSharing;
   $("code").value=codeForSharing;
   $("pin").value="";
   $("result").hidden=false;
   $("result").scrollIntoView({behavior:"smooth",block:"start"});
   setMessage("Zugang für "+name+" erstellt. Den Link und die PIN getrennt versenden.");
+}
+function securePin(){
+  const bytes=crypto.getRandomValues(new Uint32Array(1));
+  return String(100000000+Math.floor(bytes[0]/4294967296*900000000));
+}
+function clearBulkResults(){
+  bulkResults=[];
+  $("bulkResultList").replaceChildren();
+  $("bulkResults").hidden=true;
+}
+function makeCopyButton(label,value){
+  const b=document.createElement("button");
+  b.type="button";
+  b.className="secondary";
+  b.textContent=label;
+  b.addEventListener("click",()=>perform(()=>copy(value,label)));
+  return b;
+}
+function showBulkResults(){
+  $("bulkResultList").replaceChildren();
+  bulkResults.forEach(invite=>{
+    const card=document.createElement("div");card.className="bulk-result";
+    const title=document.createElement("div");title.className="bulk-result-title";
+    title.textContent=invite.name;card.append(title);
+    const detail=document.createElement("div");detail.className="bulk-detail";
+    detail.textContent="Personalnummer: "+invite.eid+" · gültig bis: "+invite.exp;
+    card.append(detail);
+    const pinRow=document.createElement("div");pinRow.className="bulk-detail";
+    pinRow.textContent="PIN (vertraulich): "+invite.pin;
+    card.append(pinRow);
+    const actions=document.createElement("div");actions.className="bulk-actions";
+    const shareBtn=document.createElement("button");
+    shareBtn.type="button";shareBtn.textContent="Link teilen";
+    shareBtn.addEventListener("click",()=>perform(async()=>{
+      if(navigator.share){
+        try{
+          await navigator.share({title:"UWE Stunden – Mitarbeiterzugang",text:"Persönlicher Link für "+invite.name+". Die PIN kommt separat.",url:invite.link});
+          return;
+        }catch(e){if(e.name==="AbortError")return;}
+      }
+      await copy(invite.link,"Einladungslink");
+    }));
+    actions.append(shareBtn);
+    actions.append(makeCopyButton("Link kopieren",invite.link));
+    actions.append(makeCopyButton("PIN kopieren",invite.pin));
+    card.append(actions);
+    $("bulkResultList").append(card);
+  });
+  $("bulkResults").hidden=false;
+}
+async function createBulk(){
+  if(previewMode||!signingKey)throw Error("Bitte die Chef-Verwaltung zuerst mit dem privaten Chef-Schlüssel entsperren.");
+  const lines=$("bulkInput").value.split(/\\r?\\n/).map(v=>v.trim()).filter(Boolean);
+  if(!lines.length)throw Error("Bitte Mitarbeiterzeilen eingeben.");
+  if(lines.length>100)throw Error("Bitte maximal 100 Mitarbeiter auf einmal erstellen.");
+  const exp=$("bulkExpiry").value;
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges Ablaufdatum wählen.");
+  const ids=new Set(),pins=new Set(),items=[];
+  lines.forEach((line,i)=>{
+    const fields=line.split(";").map(x=>x.trim());
+    if(fields.length<2||fields.length>3)throw Error("Zeile "+(i+1)+": Bitte Name;Personalnummer;PIN (optional) eingeben.");
+    const [name,eid,pinGiven=""]=fields;
+    if(!name||name.length>80||/[<>\\r\\n]/.test(name))throw Error("Zeile "+(i+1)+": Name fehlt oder ist ungültig.");
+    if(!/^[A-Za-z0-9_-]{1,30}$/.test(eid))throw Error("Zeile "+(i+1)+": ungültige Personalnummer.");
+    if(ids.has(eid.toLowerCase()))throw Error("Personalnummer "+eid+" wurde mehrfach vergeben.");
+    ids.add(eid.toLowerCase());
+    let pin=pinGiven;
+    if(pin&&!/^\\d{6,12}$/.test(pin))throw Error("Zeile "+(i+1)+": PIN muss 6–12 Ziffern haben.");
+    if(!pin){do{pin=securePin()}while(pins.has(pin));}
+    if(pins.has(pin))throw Error("Zeile "+(i+1)+": PIN darf nicht bei mehreren Mitarbeitern gleich sein.");
+    pins.add(pin);
+    items.push({name,eid,pin});
+  });
+  // Sign only after validating the entire list; keep data only in this open session.
+  $("bulkIssue").disabled=true;
+  try{
+    const invitations=[];
+    for(const item of items)invitations.push(await signCredential(item.name,item.eid,item.pin,exp));
+    clearBulkResults();
+    bulkResults=invitations;
+    showBulkResults();
+    $("bulkResults").scrollIntoView({behavior:"smooth",block:"start"});
+    setMessage(invitations.length+" Mitarbeiterzugänge erstellt. Bitte jeden Link und die zugehörige PIN getrennt verschicken.");
+    $("bulkInput").value="";
+  }finally{
+    $("bulkIssue").disabled=false;
+  }
 }
 async function copy(value,description){
   if(!value)throw Error("Bitte zuerst einen Mitarbeiterzugang erstellen.");
@@ -149,11 +246,15 @@ function openPreview(){
   $("previewWarning").hidden=false;
   $("issueHint").hidden=false;
   $("issue").disabled=true;
+  $("bulkIssue").disabled=true;
+  $("bulkPreviewHint").hidden=false;
+  clearBulkResults();
   setMessage("Testmodus geöffnet. Die Verwaltung kann angesehen, aber nicht für echte Mitarbeiterzugänge genutzt werden.");
 }
 $("preview").addEventListener("click",openPreview);
 $("unlock").addEventListener("click",()=>perform(openBackup));
 $("issue").addEventListener("click",()=>perform(createInvite));
+$("bulkIssue").addEventListener("click",()=>perform(createBulk));
 $("share").addEventListener("click",()=>perform(share));
 $("copyLink").addEventListener("click",()=>perform(()=>copy(linkForSharing,"Einladungslink")));
 $("copyCode").addEventListener("click",()=>perform(()=>copy(codeForSharing,"Zugangscode")));
@@ -161,6 +262,7 @@ $("lock").addEventListener("click",lock);
 $("password").addEventListener("keydown",e=>{if(e.key==="Enter")perform(openBackup);});
 const exp=new Date();exp.setFullYear(exp.getFullYear()+1);
 $("expiry").value=exp.getFullYear()+"-"+String(exp.getMonth()+1).padStart(2,"0")+"-"+String(exp.getDate()).padStart(2,"0");
+$("bulkExpiry").value=$("expiry").value;
 $("appAddress").textContent=appUrl();
-window.addEventListener("pagehide",()=>{signingKey=null;publicKey=null;});
+window.addEventListener("pagehide",()=>{signingKey=null;publicKey=null;bulkResults=[];});
 })();
