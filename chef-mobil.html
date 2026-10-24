@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#087f89">
 <meta name="robots" content="noindex,nofollow">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://api.github.com; object-src 'none'; form-action 'none'; base-uri 'none'">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="chef-manifest.json">
 <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png"><meta name="apple-mobile-web-app-title" content="UWE Chef">
@@ -36,9 +36,26 @@ body>header,body>main{position:relative;z-index:1}
 main .card{background:rgba(255,255,255,.95)}
 @media(max-width:600px){body::before{width:92vw;height:52vw;opacity:.075}.uwe-branded-header .uwe-original-logo{width:min(88vw,325px)}}
 
+
+.chef-tabs{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.chef-tab{flex:1;min-width:180px}.chef-tab.current{background:#087f89;color:white}.chef-tab:not(.current){background:#e2efef;color:#15535a}
+.staff-summary{font-weight:750;color:#087f89}
+.staff-row{border:1px solid #c3dcdc;border-radius:12px;padding:14px;margin:12px 0;background:#f8fcfb;display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}
+.staff-info{min-width:0;flex:1 1 220px}
+.staff-name{font-weight:800;font-size:16px;overflow-wrap:anywhere}
+.staff-meta{font-size:12px;color:#527177;line-height:1.6;overflow-wrap:anywhere}
+.staff-status{font-weight:800;margin-top:4px;font-size:13px}
+.staff-blocked{color:#ae302b}
+.staff-uncertain{color:#986b18}
+.staff-active{color:#087661}
+.staff-row button{min-height:40px;padding:8px 14px;flex:0 0 auto}
+.staff-row button.revoke{background:#ab3838}
+#staffList .empty{font-size:14px;color:#60767b}
+#staffArea a{color:#066979;font-weight:700}
 </style>
 <script defer src="uwe-config.js"></script>
-<script defer src="chef-mobil.js?v=12"></script>
+<script defer src="chef-staff.js?v=16"></script>
+<script defer src="chef-mobil.js?v=16"></script>
 </head>
 <body>
 <header class="uwe-branded-header"><img class="uwe-original-logo" src="./uwe-logo.svg" alt="UWE Krankentransporte – Original-Logo"><div class="uwe-subtitle">CHEF MOBIL · PERSONALZUGÄNGE</div></header>
@@ -58,6 +75,11 @@ main .card{background:rgba(255,255,255,.95)}
 <p class="small">Die App prüft, ob deine Sicherung zum öffentlichen Schlüssel deiner veröffentlichten Mitarbeiter-App gehört.</p>
 </section>
 <section id="dashboard" hidden>
+<div class="card chef-tabs" role="navigation" aria-label="Chef-Menü">
+<button id="showIssue" type="button" class="chef-tab current">Zugänge erstellen</button>
+<button id="showStaff" type="button" class="chef-tab secondary">Mitarbeiter verwalten</button>
+</div>
+<div id="issueArea">
 <div class="card">
 <div class="pill" id="modeLabel">Chef-Verwaltung entsperrt</div><div id="previewWarning" class="warning" hidden style="margin-top:14px"><strong>TESTMODUS – keine echte Anmeldung.</strong> Ohne den privaten Chef-Schlüssel kann diese Seite keine gültigen Mitarbeiterzugänge erstellen. Deine echten Mitarbeiter werden dadurch nicht verändert.<p style="margin:12px 0 4px">Teste jetzt einen beispielhaften Mitarbeiter mit eigener Stundeneingabe und Monatsnachweis.</p><a href="./test-mitarbeiter.html" style="display:block;text-align:center;background:#087f89;color:white;text-decoration:none;font-weight:700;border-radius:10px;padding:14px;margin-top:10px">Testmitarbeiter öffnen →</a></div>
 <h2 style="margin-top:13px">2. Mitarbeiterzugang erstellen</h2>
@@ -93,6 +115,32 @@ main .card{background:rgba(255,255,255,.95)}
 <p class="small">Diese Angaben verschwinden, sobald du die Verwaltung sperrst oder die Seite verlässt. Stelle sicher, dass jeder Mitarbeiter seinen Link und seine PIN erhalten hat.</p>
 <div id="bulkResultList"></div>
 </div>
+</div>
+</div>
+<div id="staffArea" hidden>
+<section class="card">
+<h2>4. Mitarbeiter verwalten</h2>
+<p class="small">Hier siehst du die in dieser Chef-App erfassten Mitarbeiter und ihre Zugangsstatus. Neue Zugänge werden künftig automatisch in einer verschlüsselten Liste auf diesem Gerät gespeichert. Bereits früher angelegte Mitarbeiter bitte einmalig unten nachtragen.</p>
+<p id="staffSummary" class="staff-summary">Mitarbeiterliste wird geladen …</p>
+<div class="stack"><button type="button" id="staffRefresh" class="secondary">Status online aktualisieren</button></div>
+<div id="staffList" aria-live="polite"></div>
+</section>
+<section class="card">
+<h3>Vorhandene Mitarbeiter ergänzen</h3>
+<p class="small">Für Mitarbeiter, die schon vor dieser Funktion freigeschaltet wurden. Pro Zeile <b>Name;Personalnummer;Gültig-bis (optional)</b>. Verwende die tatsächliche Personalnummer des bestehenden Zugangs; hier werden keine neuen PINs oder Links erzeugt.</p>
+<label for="staffImport">Bestehende Mitarbeiter</label>
+<textarea id="staffImport" rows="5" placeholder="Vorname Nachname;M001;2027-10-24&#10;Vorname Nachname;M002" spellcheck="false" autocomplete="off"></textarea>
+<div class="stack"><button type="button" id="staffImportBtn">Mitarbeiter zur Übersicht hinzufügen</button></div>
+</section>
+<section class="card">
+<h3>Zugänge wirksam sperren</h3>
+<div class="warning"><b>Wichtig:</b> Eine echte Sperre muss online auf GitHub veröffentlicht werden. Nur das Anzeigen von „Gesperrt“ auf diesem Handy würde nichts bewirken. Die Mitarbeiter-App prüft den zentralen Status beim Anmelden und bei weiterer Nutzung mit Internetverbindung.</div>
+<label for="githubPat">GitHub-Zugriffstoken für Sperrungen</label>
+<input id="githubPat" type="password" autocomplete="off" spellcheck="false" placeholder="Fine-grained Token nur für UWE-Stunden-App">
+<p class="small">Für den grünen Sperren-Button wird einmal pro Sitzung ein GitHub-Token benötigt. GitHub: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Fine-grained Token erstellen</a>, Repository <b>A-2026amore/UWE-Stunden-App</b>, Berechtigung <b>Contents: Read and write</b>. Token und Chef-Passwort werden nicht auf GitHub veröffentlicht und nicht im Browser gespeichert. Das Token verleiht Schreibrechte auf das Repository; behandle es wie ein Passwort und nutze ein kurzes Ablaufdatum.</p>
+<p class="small">Die Veröffentlichung kann einige Minuten dauern. Eine zuverlässige sofortige Sperre auf einem offline betriebenen oder nicht aktualisierten Gerät ist technisch nicht garantiert.</p>
+<p id="staffNotice" class="notice" role="status" aria-live="polite"></p>
+</section>
 </div>
 <div class="card"><h2>Verwaltung beenden</h2><button id="lock" class="secondary">Chef-Verwaltung sperren</button></div>
 </section>
