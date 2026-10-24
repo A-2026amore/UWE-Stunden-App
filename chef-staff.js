@@ -225,7 +225,10 @@ function render(){
     checkbox.disabled=remote===null||!!(item.exp&&item.exp<isoToday());
     checkbox.setAttribute("aria-label","Zugang für "+item.name+" aktivieren oder sperren");
     checkbox.addEventListener("change",()=>queueToggle(item,checkbox.checked).catch(e=>{note(e.message||"Änderung fehlgeschlagen.",true);render();}));
-    label.append(checkbox,element("span","",checkbox.checked?"Aktiv":"Gesperrt"));
+    const pending=typeof item.desiredActive==="boolean"&&(remote===null||item.desiredActive!==centralActive(item));
+    const labelText=pending?(item.desiredActive?"Aktivierung vorgemerkt":"Sperrung vorgemerkt"):
+      remote===null?"Status unbekannt":checkbox.checked?"Aktiv":"Gesperrt";
+    label.append(checkbox,element("span","",labelText));
     row.append(label);
     node.append(row);
   }
