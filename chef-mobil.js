@@ -248,7 +248,7 @@ function normalizeWhatsAppPhone(raw){
 function whatsAppText(invite){
   return "Hallo "+invite.name+",\n\nhier ist dein persönlicher Zugang zur UWE Stunden-App:\n"+
     invite.link+"\n\nBitte öffne den Link auf deinem Handy. Deine persönliche PIN erhältst du separat.\n\n"+
-    "Viele Grüße\nTeam UWE Krankentransporte";
+    "Viele Grüße\n\nTeam UWE - Krankentransporte GmbH";
 }
 function whatsAppUrl(invite){
   if(!invite||!invite.link)throw Error("Bitte zuerst einen Mitarbeiterzugang erstellen.");
