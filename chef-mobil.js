@@ -35,6 +35,7 @@ function appUrl(){
   return url.href;
 }
 function lock(){
+  window.UweStaffAdmin.lock();
   previewMode=false;
   $("modeLabel").textContent="Chef-Verwaltung entsperrt";
   $("previewWarning").hidden=true;
@@ -89,6 +90,7 @@ async function openBackup(){
   if(jwk.x!==published.x||jwk.y!==published.y)
     throw Error("Der private Schlüssel stimmt nicht mit der veröffentlichten Mitarbeiter-App überein.");
   signingKey=await crypto.subtle.importKey("jwk",jwk,{name:"ECDSA",namedCurve:"P-256"},false,["sign"]);
+  await window.UweStaffAdmin.unlock(password);
   previewMode=false;
   $("modeLabel").textContent="Chef-Verwaltung entsperrt";
   $("previewWarning").hidden=true;
@@ -127,7 +129,9 @@ async function createInvite(){
   const pin=$("pin").value.trim()||securePin();
   const exp=$("expiry").value;
   const phone=normalizeWhatsAppPhone($("whatsappPhone").value);
+  window.UweStaffAdmin.assertIssuable(eid);
   const invite=await signCredential(name,eid,pin,exp);
+  await window.UweStaffAdmin.addIssued([invite]);
   singleInvite={name:invite.name,link:invite.link,phone,pin};
   codeForSharing=invite.code;
   linkForSharing=invite.link;
@@ -231,7 +235,8 @@ async function createBulk(){
     pins.add(pin);
     items.push({name,eid,pin,phone});
   });
-  // Sign only after validating the entire list; keep data only in this open session.
+  // Only publish new credentials for personnel IDs that have not been revoked.
+  items.forEach(x=>window.UweStaffAdmin.assertIssuable(x.eid));
   $("bulkIssue").disabled=true;
   try{
     const invitations=[];
@@ -239,6 +244,7 @@ async function createBulk(){
       const invite=await signCredential(item.name,item.eid,item.pin,exp);
       invitations.push({...invite,phone:item.phone});
     }
+    await window.UweStaffAdmin.addIssued(invitations);
     clearBulkResults();
     bulkResults=invitations;
     showBulkResults();
@@ -294,6 +300,7 @@ async function perform(fn){
   try{await fn();}catch(e){setMessage(e.message||"Aktion fehlgeschlagen.",true);}
 }
 function openPreview(){
+  window.UweStaffAdmin.preview();
   previewMode=true;
   signingKey=null;
   publicKey=null;
