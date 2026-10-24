@@ -11,6 +11,33 @@ let linkForSharing = "";
 let bulkResults = [];
 let singleInvite = null;
 const appId = "UWE Stunden Chef";
+const REMEMBERED_BACKUP_KEY="uwe_chef_remembered_encrypted_backup_v1";
+function rememberedBackup(){
+  let saved;
+  try{saved=localStorage.getItem(REMEMBERED_BACKUP_KEY)}
+  catch(e){return null}
+  if(!saved||saved.length>100000)return null;
+  try{
+    const item=JSON.parse(saved);
+    if(item.app!==appId||item.version!==1||!item.publicJwk||!item.salt||!item.iv||!item.secret)return null;
+    return item;
+  }catch{return null}
+}
+function rememberedStatus(){
+  const configured=Boolean(rememberedBackup());
+  $("rememberedStatus").textContent=configured?
+    "Dieses Chef-Gerät ist eingerichtet. Zur Anmeldung genügt dein Chef-Passwort – die JSON-Datei brauchst du nicht mehr auszuwählen.":
+    "Erste Anmeldung auf diesem Gerät: Bitte einmalig die verschlüsselte Chef-Sicherung auswählen. Danach genügt dein Chef-Passwort.";
+  $("forgetDevice").hidden=!configured;
+  $("backup").required=!configured;
+}
+function forgetRememberedDevice(){
+  if(!confirm("Die gespeicherte verschlüsselte Chef-Sicherung von DIESEM Gerät entfernen? Die Chef-Verwaltung benötigt beim nächsten Öffnen wieder die JSON-Sicherung. Bereits gespeicherte Mitarbeiterstunden werden nicht gelöscht."))return;
+  localStorage.removeItem(REMEMBERED_BACKUP_KEY);
+  $("backup").value="";
+  rememberedStatus();
+  setMessage("Die gespeicherte Chef-Sicherung wurde von diesem Gerät entfernt. Für die nächste Anmeldung benötigst du wieder deine JSON-Sicherungsdatei.");
+}
 function setMessage(message, bad=false){
   $("notice").textContent=message;
   $("notice").className=bad?"notice bad":"notice";
@@ -68,12 +95,16 @@ function lock(){
 async function openBackup(){
   const f=$("backup").files?.[0];
   const password=$("password").value;
-  if(!f)throw Error("Bitte zuerst deine verschlüsselte Chef-Sicherung (.json) auswählen.");
   if(!password)throw Error("Bitte dein Chef-Passwort eingeben.");
-  if(f.size>100000)throw Error("Sicherungsdatei ist unerwartet groß.");
+  if(f&&f.size>100000)throw Error("Sicherungsdatei ist unerwartet groß.");
   let info;
-  try{info=JSON.parse(await f.text());}
-  catch{throw Error("Die Sicherungsdatei ist keine gültige JSON-Datei.");}
+  if(f){
+    try{info=JSON.parse(await f.text());}
+    catch{throw Error("Die Sicherungsdatei ist keine gültige JSON-Datei.");}
+  }else{
+    info=rememberedBackup();
+    if(!info)throw Error("Dieses Gerät ist noch nicht eingerichtet. Bitte einmalig die verschlüsselte Chef-Sicherung (.json) auswählen und „Dieses Gerät merken“ aktivieren.");
+  }
   if(info.app!==appId||info.version!==1||!info.publicJwk||!info.salt||!info.iv||!info.secret)
     throw Error("Diese Datei ist keine passende UWE-Chef-Sicherung.");
   const published=window.UWE_ACCESS_PUBLIC_KEY;
@@ -91,6 +122,18 @@ async function openBackup(){
     throw Error("Der private Schlüssel stimmt nicht mit der veröffentlichten Mitarbeiter-App überein.");
   signingKey=await crypto.subtle.importKey("jwk",jwk,{name:"ECDSA",namedCurve:"P-256"},false,["sign"]);
   await window.UweStaffAdmin.unlock(password);
+  // Store only the original AES-GCM-encrypted backup envelope, never the decrypted JWK.
+  // The current password is always required for the next Chef login.
+  if($("rememberDevice").checked){
+    try{
+      localStorage.setItem(REMEMBERED_BACKUP_KEY,JSON.stringify(info));
+    }catch(e){
+      setMessage("Chef-Verwaltung entsperrt. Achtung: Das Gerät konnte die verschlüsselte Sicherung nicht speichern. Beim nächsten Mal wird die JSON-Datei wieder benötigt.",true);
+    }
+  }else{
+    localStorage.removeItem(REMEMBERED_BACKUP_KEY);
+  }
+  rememberedStatus();
   previewMode=false;
   $("modeLabel").textContent="Chef-Verwaltung entsperrt";
   $("previewWarning").hidden=true;
@@ -104,6 +147,7 @@ async function openBackup(){
   $("login").hidden=true;
   $("dashboard").hidden=false;
   $("appAddress").textContent=appUrl();
+rememberedStatus();
   setMessage("Chef-Verwaltung entsperrt. Du kannst jetzt Mitarbeiter-Zugänge erstellen.");
 }
 async function signCredential(name,eid,pin,exp){
@@ -326,6 +370,7 @@ function openPreview(){
 }
 $("preview").addEventListener("click",openPreview);
 $("unlock").addEventListener("click",()=>perform(openBackup));
+$("forgetDevice").addEventListener("click",forgetRememberedDevice);
 $("issue").addEventListener("click",()=>perform(createInvite));
 $("generatePin").addEventListener("click",generatePinForSingle);
 $("togglePin").addEventListener("click",toggleSinglePin);
