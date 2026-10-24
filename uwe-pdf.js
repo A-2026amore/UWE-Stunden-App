@@ -100,88 +100,45 @@
     if(!employee||!employee.name||!employee.eid||!/^\d{4}-\d{2}$/.test(month)||!Array.isArray(records)||!records.length)
       throw new Error("Für diesen Monat sind keine gültigen Arbeitszeiten zum Export vorhanden.");
     const entries=records.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.start).localeCompare(String(b.start))||String(a.end).localeCompare(String(b.end)));
-    // One A4 sheet per month, independent of the number of shifts.
-    // For busy months the table automatically uses two or three compact columns
-    // instead of creating a second or third PDF page.
-    const columnCount=entries.length<=34?1:entries.length<=112?2:3;
-    const gap=columnCount===1?0:columnCount===2?12:8;
-    const columnWidth=(WIDTH-gap*(columnCount-1))/columnCount;
-    const tableTop=H-(test?251:212);
-    const firstRowTop=tableTop-21;
-    const bottomLimit=148; // Reserve the fixed monthly total and footer.
-    const perColumn=Math.ceil(entries.length/columnCount);
-    const maxHeight=columnCount===1?31:columnCount===2?19:16;
-    const rowHeight=Math.min(maxHeight,(firstRowTop-bottomLimit)/perColumn);
-    const fontSize=Math.min(columnCount===1?8.4:columnCount===2?7.8:7.0,rowHeight*0.68);
-    const noteFont=Math.min(fontSize,columnCount===1?8:7.25);
-    const headerFont=columnCount===3?6.5:columnCount===2?7.0:8;
-    const widths=columnCount===1?[77,58,58,58,59,205]:
-      columnCount===2?[53,34,34,34,31,columnWidth-186]:
-      [32,30,30,23,27,columnWidth-142];
-    const heads=columnCount===1?["Datum","Beginn","Ende","Pause","Std.","Bemerkung"]:
-      columnCount===2?["Datum","Von","Bis","Pause","Std.","Notiz"]:
-      ["Tag","Von","Bis","P.","Std.","N."];
-    const sections=[firstPageHeader(employee,month,test)];
-    let notesShortened=false;
-    for(let c=0;c<columnCount;c++){
-      const x=M+c*(columnWidth+gap);
-      sections.push(rect(x,tableTop-4,columnWidth,23,"0.88 0.95 0.95"));
-      let headerX=x+4;
-      for(let j=0;j<heads.length;j++){
-        sections.push(txt(headerX,tableTop+4,heads[j],headerFont,true));
-        headerX+=widths[j];
-      }
+    const widths=[77,58,58,58,59,205];
+    const heads=["Datum","Beginn","Ende","Pause","Std.","Bemerkung"];
+    const pages=[];
+    let sections=[],y=0;
+    function openPage(){
+      sections=[];pages.push(sections);
+      sections.push(firstPageHeader(employee,month,test));
+      y=H-(test?251:212);
+      sections.push(rect(M,y-4,WIDTH,23,"0.88 0.95 0.95"));
+      let x=M+5;
+      for(let j=0;j<heads.length;j++){sections.push(txt(x,y+4,heads[j],8,true));x+=widths[j];}
+      y-=21;
     }
+    openPage();
     let sum=0;
-    for(let i=0;i<entries.length;i++){
-      const r=entries[i];
+    for(const r of entries) {
       const hour=hours(r);
-      if(!Number.isFinite(hour)||hour<=0||hour>24)
-        throw Error("Ungültige Stundenangabe im Eintrag.");
+      if(!Number.isFinite(hour)||hour<=0||hour>24)throw Error("Ungültige Stundenangabe im Eintrag.");
       sum+=hour;
-      const col=Math.floor(i/perColumn);
-      const row=i%perColumn;
-      const left=M+col*(columnWidth+gap);
-      const y=firstRowTop-row*rowHeight;
-      if(row%2===1)sections.push(rect(left,y-rowHeight,columnWidth,rowHeight,"0.975 0.989 0.989"));
-      const date=columnCount===3?String(r.date).slice(8,10)+"."+String(r.date).slice(5,7):dateText(r.date);
-      const pause=columnCount===1?String(r.pause)+" min":String(r.pause)+"m";
-      const cells=[date,String(r.start),String(r.end),pause,totalText(hour)];
-      let x=left+4;
-      const baseline=y-rowHeight*0.68;
-      for(let j=0;j<cells.length;j++){
-        sections.push(txt(x,baseline,cells[j],fontSize,j===4,"0.12 0.23 0.25"));
-        x+=widths[j];
-      }
-      // Notes may be abbreviated when the month has a very large number of
-      // shifts. Never abbreviate a date, time, pause or hour value.
-      const noteWidth=widths[5]-5;
-      const maxChars=Math.max(1,Math.floor(noteWidth/Math.max(noteFont*0.56,0.1)));
-      const lines=wrapWords(r.note||"",maxChars);
-      const lineCount=columnCount===1?
-        Math.max(1,Math.min(3,Math.floor((rowHeight-3)/(Math.max(noteFont,0.1)*1.12)))):1;
-      let visible=lines.slice(0,lineCount);
-      if(lines.length>lineCount){
-        notesShortened=true;
-        const last=visible.length-1;
-        visible[last]=visible[last].slice(0,Math.max(0,maxChars-1))+"…";
-      }
-      for(let l=0;l<visible.length;l++){
-        // An empty note is not printed, keeping compact rows clean.
-        if(visible[l])sections.push(txt(x,baseline-l*noteFont*1.12,visible[l],noteFont));
-      }
-      sections.push(line(left,y-rowHeight,left+columnWidth,y-rowHeight,"0.87 0.91 0.91"));
+      const noteLines=wrapWords(r.note||"",47).slice(0,8);
+      const height=Math.max(28,14+noteLines.length*11);
+      if(y-height<124)openPage();
+      let x=M+5;
+      const cols=[dateText(r.date),r.start,r.end,String(r.pause)+" min",totalText(hour)];
+      for(let j=0;j<cols.length;j++){sections.push(txt(x,y-14,cols[j],8.4));x+=widths[j];}
+      for(let j=0;j<noteLines.length;j++)sections.push(txt(x,y-14-j*11,noteLines[j],8));
+      sections.push(line(M,y-height,W-M,y-height));
+      y-=height;
     }
-    // Exactly one monthly total and one PDF page, even for 100+ shifts.
-    sections.push(rect(M,94,WIDTH,42,"0.88 0.95 0.95"));
-    sections.push(txt(M+12,111,"GESAMT: "+totalText(sum)+" Stunden",15,true,"0.03 0.45 0.49"));
-    sections.push(txt(W-162,111,String(entries.length)+" Einsätze",9,true,"0.14 0.40 0.43"));
-    sections.push(line(M,62,W-M,62));
-    sections.push(txt(M,46,"Erstellt: "+new Date().toLocaleDateString("de-DE"),8));
-    sections.push(txt(W-116,46,"Seite 1 von 1",8));
-    if(test)sections.push(txt(M,31,"TESTVERSION - kein offizieller Arbeitszeitnachweis",8,true,"0.64 0.13 0.10"));
-    if(notesShortened)sections.push(txt(M,17,"Hinweis: Lange Bemerkungen wurden aus Platzgründen gekürzt. Zeiten und Stunden sind vollständig.",7));
-    const pages=[sections];
+    if(y<133)openPage();
+    y-=24;
+    sections.push(rect(M,y-8,WIDTH,35,"0.88 0.95 0.95"));
+    sections.push(txt(M+12,y+4,"GESAMT: "+totalText(sum)+" Stunden",15,true,"0.03 0.45 0.49"));
+    for(let p=0;p<pages.length;p++) {
+      pages[p].push(line(M,62,W-M,62));
+      pages[p].push(txt(M,46,"Erstellt: "+new Date().toLocaleDateString("de-DE"),8));
+      pages[p].push(txt(W-116,46,"Seite "+(p+1)+" von "+pages.length,8));
+      if(test)pages[p].push(txt(M,31,"TESTVERSION - kein offizieller Arbeitszeitnachweis",8,true,"0.64 0.13 0.10"));
+    }
     const objects={};
     objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
     objects[3]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>";
