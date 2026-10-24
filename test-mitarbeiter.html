@@ -145,7 +145,7 @@ function render(){
   const list=monthly();
   const sum=list.reduce((a,x)=>a+worked(x),0);
   const days=new Set(list.map(x=>x.date)).size;
-  $('total').textContent=fnum(sum)+' Std. · '+list.length+' Einsätze an '+days+' Tagen';
+  $('total').textContent=fnum(sum)+' Std. · '+list.length+' Einsätze an '+days+(days===1?' Tag':' Tagen');
   const dayTotals=new Map();
   for(const x of list)dayTotals.set(x.date,(dayTotals.get(x.date)||0)+worked(x));
   $('rows').innerHTML=list.map((x,i)=>{
