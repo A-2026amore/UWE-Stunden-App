@@ -84,7 +84,7 @@ async function persist(){
   localStorage.setItem(STORAGE_KEY,JSON.stringify({version:1,iv:b64(iv),data:b64(encrypted)}));
 }
 async function latestRemote(token=""){
-  const headers={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"};
+  const headers={"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2026-03-10"};
   if(token)headers.Authorization="Bearer "+token;
   const url=API+"?ref=main&nocache="+Date.now();
   const response=await fetch(url,{method:"GET",headers,cache:"no-store"});
@@ -201,7 +201,7 @@ async function publishRevocation(eid,name){
   if(!unlocked||demo)throw Error("Bitte zuerst als Chef anmelden.");
   if(publishing)return;
   checkId(eid);
-  if(!confirm("Zugang für "+name+" ("+eid+") zentral sperren?\n\nAlle mit dieser Personalnummer ausgestellten Zugänge werden bei der nächsten Online-Prüfung abgewiesen. Die Sperrung lässt sich nicht direkt in diesem Menü aufheben."))return;
+  if(!confirm("Zugang für "+name+" ("+eid+") zentral sperren?\n\nAlle mit dieser Personalnummer ausgestellten Zugänge werden nach Veröffentlichung bei der nächsten Online-Prüfung abgewiesen. Achtung: Die Stunden liegen nur auf dem Handy des Mitarbeiters! Vorher offene Monatsnachweise anfordern. Die Sperrung lässt sich in diesem Menü nicht aufheben."))return;
   const token=$("githubPat").value.trim();
   if(!token){
     $("githubPat").focus();
@@ -227,7 +227,7 @@ async function publishRevocation(eid,name){
       headers:{"Accept":"application/vnd.github+json",
                "Authorization":"Bearer "+token,
                "Content-Type":"application/json",
-               "X-GitHub-Api-Version":"2022-11-28"},
+               "X-GitHub-Api-Version":"2026-03-10"},
       body:JSON.stringify(payload)
     });
     if(!response.ok){
