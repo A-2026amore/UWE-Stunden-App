@@ -73,9 +73,12 @@ main .card{background:rgba(255,255,255,.95)}
 <section class="card" id="login">
 <h2>1. Chef-Verwaltung entsperren</h2>
 <div class="remembered-info" id="rememberedStatus" role="status">Sicherer Chef-Zugang wird geprüft …</div>
+<div id="backupSetup">
 <label for="backup">Chef-Sicherung (.json) – nur bei der ersten Einrichtung</label>
 <input id="backup" type="file" accept=".json,application/json" autocomplete="off">
 <p class="small">Beim ersten Mal auf PC oder Handy einmal die verschlüsselte Chef-Sicherung auswählen. Danach reicht auf <strong>diesem Gerät</strong> das Chef-Passwort, wenn du es unten als Chef-Gerät speicherst.</p>
+</div>
+<button id="changeBackup" type="button" class="secondary" hidden>Andere Chef-Sicherungsdatei verwenden</button>
 <label class="remember-option" for="rememberDevice"><input id="rememberDevice" type="checkbox" checked><span><strong>Dieses Gerät merken</strong><small>Nur die bereits passwortverschlüsselte Chef-Sicherung lokal speichern. Niemals dein Passwort oder den entschlüsselten Schlüssel.</small></span></label>
 <div class="stack"><button id="forgetDevice" type="button" class="secondary" hidden>Gespeicherten Chef-Zugang von diesem Gerät entfernen</button></div>
 <label for="password">Dein Chef-Passwort</label>
