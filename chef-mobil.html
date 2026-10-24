@@ -51,6 +51,13 @@ main .card{background:rgba(255,255,255,.95)}
 .staff-active{color:#087661}
 .staff-row button{min-height:40px;padding:8px 14px;flex:0 0 auto}
 .staff-row button.revoke{background:#ab3838}
+.staff-toggle{display:flex;align-items:center;gap:9px;white-space:nowrap;font-size:13px;font-weight:750;color:#19575b}
+.staff-toggle input{width:21px;min-width:21px;height:21px;min-height:21px;padding:0;margin:0;accent-color:#078779;cursor:pointer}
+.staff-toggle input:disabled{opacity:.35;cursor:not-allowed}
+.staff-waiting{color:#9b6323;font-weight:700}
+.staff-pending-count{color:#995b1d;font-weight:750}
+.chef-tabs .chef-tab{font-size:14px;padding:12px 10px;min-width:150px}
+
 #staffList .empty{font-size:14px;color:#60767b}
 #staffArea a{color:#066979;font-weight:700}
 
@@ -61,11 +68,11 @@ main .card{background:rgba(255,255,255,.95)}
 #forgetDevice{font-size:12px;min-height:41px;padding:9px 12px}
 </style>
 <script defer src="uwe-config.js"></script>
-<script defer src="chef-staff.js?v=19"></script>
-<script defer src="chef-mobil.js?v=19"></script>
+<script defer src="chef-staff.js?v=20"></script>
+<script defer src="chef-mobil.js?v=20"></script>
 </head>
 <body>
-<header class="uwe-branded-header"><img class="uwe-original-logo" src="./uwe-logo.svg" alt="UWE Krankentransporte – Original-Logo"><div class="uwe-subtitle">CHEF MOBIL · PERSONALVERWALTUNG · V19</div></header>
+<header class="uwe-branded-header"><img class="uwe-original-logo" src="./uwe-logo.svg" alt="UWE Krankentransporte – Original-Logo"><div class="uwe-subtitle">CHEF MOBIL · PERSONALVERWALTUNG · V20</div></header>
 <main>
 <div class="card"><span class="pill">Nur für den Arbeitgeber</span><h2 style="margin-top:13px">Zugänge vom Handy erstellen</h2>
 <p class="small">Auf einem einmalig eingerichteten Chef-Gerät genügt künftig dein Chef-Passwort. Die private Sicherung bleibt auf Wunsch <strong>verschlüsselt auf diesem Gerät</strong> gespeichert; weder Chef-Passwort noch entschlüsselter Schlüssel werden dauerhaft abgelegt.</p>
@@ -90,7 +97,8 @@ main .card{background:rgba(255,255,255,.95)}
 <section id="dashboard" hidden>
 <div class="card chef-tabs" role="navigation" aria-label="Chef-Menü">
 <button id="showIssue" type="button" class="chef-tab current">Zugänge erstellen</button>
-<button id="showStaff" type="button" class="chef-tab secondary">Mitarbeiter verwalten</button>
+<button id="showStaff" type="button" class="chef-tab secondary">Alle Mitarbeiter</button>
+<button id="showActive" type="button" class="chef-tab secondary">Aktive Mitarbeiter</button>
 </div>
 <div id="issueArea">
 <div class="card">
@@ -132,26 +140,31 @@ main .card{background:rgba(255,255,255,.95)}
 </div>
 <div id="staffArea" hidden>
 <section class="card">
-<h2>4. Mitarbeiter verwalten</h2>
-<p class="small">Hier siehst du die in dieser Chef-App erfassten Mitarbeiter und ihre Zugangsstatus. Neue Zugänge werden künftig automatisch in einer verschlüsselten Liste auf diesem Gerät gespeichert. Bereits früher angelegte Mitarbeiter bitte einmalig unten nachtragen.</p>
+<h2 id="staffViewTitle">4. Alle Mitarbeiter</h2>
+<p id="staffViewText" class="small">Hier siehst du die lokal erfassten Mitarbeiter mit ihrem zentral veröffentlichten Zugangsstatus. Wer einen Einladungslink tatsächlich geöffnet hat, wurde früher nicht protokolliert.</p>
+<div class="warning"><strong>Die Schalter zeigen den zentralen Status.</strong> Ohne eigenen Verwaltungsserver wird eine Änderung zuerst vorgemerkt. Erst nach Veröffentlichung über deinen verbundenen GitHub-Zugang in ChatGPT wird der Mitarbeiter tatsächlich gesperrt oder wieder freigeschaltet.</div>
 <p id="staffSummary" class="staff-summary">Mitarbeiterliste wird geladen …</p>
 <div class="stack"><button type="button" id="staffRefresh" class="secondary">Status online aktualisieren</button></div>
 <div id="staffList" aria-live="polite"></div>
 </section>
 <section class="card">
 <h3>Vorhandene Mitarbeiter ergänzen</h3>
-<p class="small">Für Mitarbeiter, die schon vor dieser Funktion freigeschaltet wurden. Pro Zeile <b>Name;Personalnummer;Gültig-bis (optional)</b>. Verwende die tatsächliche Personalnummer des bestehenden Zugangs; hier werden keine neuen PINs oder Links erzeugt.</p>
+<p class="small">Die fünf Mitarbeiter aus deiner bisherigen Eingabe sind bereits vorbereitet. Prüfe die Personalnummern und das Ablaufdatum, dann klicke auf „Mitarbeiter übernehmen“. Akzeptiert werden <b>31.12.2027</b> oder <b>2027-12-31</b>. Die vorhandenen Zugänge werden dadurch weder geändert noch neu ausgestellt.</p>
 <label for="staffImport">Bestehende Mitarbeiter</label>
-<textarea id="staffImport" rows="5" placeholder="Vorname Nachname;M001;2027-10-24&#10;Vorname Nachname;M002" spellcheck="false" autocomplete="off"></textarea>
-<div class="stack"><button type="button" id="staffImportBtn">Mitarbeiter zur Übersicht hinzufügen</button></div>
+<textarea id="staffImport" rows="6" spellcheck="false" autocomplete="off">Ivanka;M001;31.12.2027
+Aneta;M002;31.12.2027
+Viktor;M003;31.12.2027
+Ayse;M004;31.12.2027
+Mehtap;M005;31.12.2027</textarea>
+<div class="stack"><button type="button" id="staffImportBtn">Mitarbeiter übernehmen</button></div>
 </section>
-<section class="card">
-<h3>Zugänge wirksam sperren</h3>
-<div class="warning"><b>Wichtig:</b> Eine echte Sperre muss online auf GitHub veröffentlicht werden. Nur das Anzeigen von „Gesperrt“ auf diesem Handy würde nichts bewirken. Die Mitarbeiter-App prüft den zentralen Status beim Anmelden und bei weiterer Nutzung mit Internetverbindung.</div>
-<label for="githubPat">GitHub-Zugriffstoken für Sperrungen</label>
-<input id="githubPat" type="password" autocomplete="off" spellcheck="false" placeholder="Fine-grained Token nur für UWE-Stunden-App">
-<p class="small">Für den grünen Sperren-Button wird einmal pro Sitzung ein GitHub-Token benötigt. GitHub: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">Fine-grained Token erstellen</a>, Repository <b>A-2026amore/UWE-Stunden-App</b>, Berechtigung <b>Contents: Read and write</b>. Token und Chef-Passwort werden nicht auf GitHub veröffentlicht und nicht im Browser gespeichert. Das Token verleiht Schreibrechte auf das Repository; behandle es wie ein Passwort und nutze ein kurzes Ablaufdatum.</p>
-<p class="small">Die Veröffentlichung kann einige Minuten dauern. Eine zuverlässige sofortige Sperre auf einem offline betriebenen oder nicht aktualisierten Gerät ist technisch nicht garantiert.</p>
+<section class="card" id="staffPublishCard">
+<h3>Aktivieren und Sperren</h3>
+<p class="small">Stelle bei einem Mitarbeiter den Schalter auf <b>Aktiv</b> oder <b>Gesperrt</b>. Der gewünschte Zustand wird verschlüsselt auf deinem Chef-Gerät vorgemerkt. Für die <b>tatsächliche zentrale Freigabe oder Sperre</b> musst du den Auftrag anschließend einmal an ChatGPT übergeben – ohne GitHub-Token in dieser App.</p>
+<div class="stack"><button type="button" id="staffCopyChanges">Änderungsauftrag für ChatGPT kopieren</button><button type="button" id="staffRefreshChanges" class="secondary">Veröffentlichte Zugänge aktualisieren</button></div>
+<p id="staffPending" class="small">Keine Änderungen vorgemerkt.</p>
+<div class="warning"><b>Sicherheitsinformation:</b> Bis zur bestätigten Veröffentlichung auf GitHub bleibt der bisherige Zugang gültig. Offline-Geräte und ältere App-Versionen können nicht sofort zuverlässig gesperrt werden. Vor einer Sperre ausstehende Stundennachweise anfordern.</div>
+<p class="small">Öffne danach <a href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">ChatGPT</a>, füge den kopierten Auftrag in unseren Chat ein und sende ihn ab. Ich kann die zentrale Sperrliste über deinen bereits verbundenen GitHub-Zugang aktualisieren. Danach in der Chef-App „Veröffentlichte Zugänge aktualisieren“ anklicken.</p>
 <p id="staffNotice" class="notice" role="status" aria-live="polite"></p>
 </section>
 </div>
@@ -159,6 +172,6 @@ main .card{background:rgba(255,255,255,.95)}
 </section>
 <div class="card"><h3>Adresse der Mitarbeiter-App</h3><p id="appAddress" class="small" style="overflow-wrap:anywhere"></p><p class="small">Keine Live-Übertragung von Arbeitszeiten. Mitarbeiter verschicken ihre Nachweise selbst. Sperrungen greifen erst nach der Veröffentlichung und nächsten Online-Prüfung. Alte oder offline genutzte App-Versionen lassen sich nicht sofort zuverlässig sperren.</p></div>
 <p id="notice" class="notice" role="status" aria-live="polite"></p>
-<div class="footer">UWE · Chef Mobil V19 · Mitarbeiterverzeichnis verschlüsselt auf diesem Gerät · PINs und Chef-Schlüssel werden nicht dauerhaft gespeichert</div>
+<div class="footer">UWE · Chef Mobil V20 · Mitarbeiterverzeichnis verschlüsselt auf diesem Gerät · PINs und Chef-Schlüssel werden nicht dauerhaft gespeichert</div>
 </main>
 </body></html>
