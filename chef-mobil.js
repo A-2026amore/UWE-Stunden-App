@@ -210,7 +210,7 @@ async function createBulk(){
     ids.add(eid.toLowerCase());
     let pin=pinGiven;
     if(pin&&!/^\d{6,12}$/.test(pin))throw Error("Zeile "+(i+1)+": PIN muss 6–12 Ziffern haben.");
-    if(!pin){do{pin=securePin()}while(pins.has(pin));}
+    if(!pin){let attempts=0;do{pin=securePin();if(++attempts>30)throw Error("Sichere PIN-Erzeugung fehlgeschlagen. Bitte erneut versuchen.");}while(pins.has(pin));}
     if(pins.has(pin))throw Error("Zeile "+(i+1)+": PIN darf nicht bei mehreren Mitarbeitern gleich sein.");
     pins.add(pin);
     items.push({name,eid,pin,phone});
