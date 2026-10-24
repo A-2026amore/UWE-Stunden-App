@@ -121,7 +121,7 @@ async function createInvite(){
   if(previewMode||!signingKey)throw Error("Bitte zuerst die Chef-Verwaltung mit der Sicherung entsperren.");
   const name=$("name").value.trim();
   const eid=$("eid").value.trim();
-  const pin=$("pin").value.trim();
+  const pin=$("pin").value.trim()||securePin();
   const exp=$("expiry").value;
   const phone=normalizeWhatsAppPhone($("whatsappPhone").value);
   const invite=await signCredential(name,eid,pin,exp);
