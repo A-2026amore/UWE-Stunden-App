@@ -52,23 +52,32 @@ main .card{background:rgba(255,255,255,.95)}
 .staff-row button.revoke{background:#ab3838}
 #staffList .empty{font-size:14px;color:#60767b}
 #staffArea a{color:#066979;font-weight:700}
+
+.remembered-info{border:1px solid #a8d9cc;background:#ebf8f3;border-radius:11px;padding:12px 14px;margin:12px 0;color:#07545a;font-weight:750;font-size:14px;line-height:1.5}
+.remember-option{display:flex;gap:11px;align-items:flex-start;margin:15px 0 8px;font-weight:normal}
+.remember-option input{width:21px;min-width:21px;height:21px;min-height:21px;margin:2px 0 0;padding:0;accent-color:#008c83}
+.remember-option span{flex:1;font-size:14px}.remember-option small{display:block;color:#527177;line-height:1.5;margin-top:4px;font-size:12px}
+#forgetDevice{font-size:12px;min-height:41px;padding:9px 12px}
 </style>
 <script defer src="uwe-config.js"></script>
-<script defer src="chef-staff.js?v=16"></script>
-<script defer src="chef-mobil.js?v=16"></script>
+<script defer src="chef-staff.js?v=17"></script>
+<script defer src="chef-mobil.js?v=17"></script>
 </head>
 <body>
-<header class="uwe-branded-header"><img class="uwe-original-logo" src="./uwe-logo.svg" alt="UWE Krankentransporte – Original-Logo"><div class="uwe-subtitle">CHEF MOBIL · PERSONALVERWALTUNG · V16</div></header>
+<header class="uwe-branded-header"><img class="uwe-original-logo" src="./uwe-logo.svg" alt="UWE Krankentransporte – Original-Logo"><div class="uwe-subtitle">CHEF MOBIL · PERSONALVERWALTUNG · V17</div></header>
 <main>
 <div class="card"><span class="pill">Nur für den Arbeitgeber</span><h2 style="margin-top:13px">Zugänge vom Handy erstellen</h2>
-<p class="small">Diese Seite benötigt bei jeder neuen Sitzung deine verschlüsselte Chef-Sicherung und dein Chef-Passwort. Dein privater Schlüssel und dein Passwort werden nicht auf dem Server gespeichert und nicht von der Seite hochgeladen.</p>
-<div class="warning"><strong>Wichtig:</strong> Gib die Chef-Sicherung niemals an Mitarbeiter weiter. Verwende diese Seite nur über die richtige GitHub-Pages-Adresse und nicht auf fremden Geräten.</div>
+<p class="small">Auf einem einmalig eingerichteten Chef-Gerät genügt künftig dein Chef-Passwort. Die private Sicherung bleibt auf Wunsch <strong>verschlüsselt auf diesem Gerät</strong> gespeichert; weder Chef-Passwort noch entschlüsselter Schlüssel werden dauerhaft abgelegt.</p>
+<div class="warning"><strong>Wichtig:</strong> Gib die Chef-Sicherung niemals an Mitarbeiter weiter. Aktiviere „Dieses Gerät merken“ nur auf einem eigenen, gesperrten PC oder Handy. Die hinterlegte Sicherung bleibt verschlüsselt, kann aber von Software mit Zugriff auf dieses Browserprofil ausgelesen werden.</div>
 </div>
 <section class="card" id="login">
 <h2>1. Chef-Verwaltung entsperren</h2>
-<label for="backup">Chef-Sicherung (.json)</label>
+<div class="remembered-info" id="rememberedStatus" role="status">Sicherer Chef-Zugang wird geprüft …</div>
+<label for="backup">Chef-Sicherung (.json) – nur bei der ersten Einrichtung</label>
 <input id="backup" type="file" accept=".json,application/json" autocomplete="off">
-<p class="small">Auf dem iPhone: „Datei auswählen“ → „Dateien durchsuchen“ → Sicherung im geschützten Ordner auswählen.</p>
+<p class="small">Beim ersten Mal auf PC oder Handy einmal die verschlüsselte Chef-Sicherung auswählen. Danach reicht auf <strong>diesem Gerät</strong> das Chef-Passwort, wenn du es unten als Chef-Gerät speicherst.</p>
+<label class="remember-option" for="rememberDevice"><input id="rememberDevice" type="checkbox" checked><span><strong>Dieses Gerät merken</strong><small>Nur die bereits passwortverschlüsselte Chef-Sicherung lokal speichern. Niemals dein Passwort oder den entschlüsselten Schlüssel.</small></span></label>
+<div class="stack"><button id="forgetDevice" type="button" class="secondary" hidden>Gespeicherten Chef-Zugang von diesem Gerät entfernen</button></div>
 <label for="password">Dein Chef-Passwort</label>
 <input id="password" type="password" autocomplete="current-password" placeholder="Chef-Passwort eingeben">
 <div class="stack"><button id="unlock">Chef-Verwaltung entsperren</button><button id="preview" class="secondary" type="button">Ohne Sicherung ansehen (Testmodus)</button></div><p class="small">Im Testmodus kannst du die Chef-Oberfläche bedienen. Das Erstellen gültiger Mitarbeiterzugänge ist aus Sicherheitsgründen gesperrt.</p>
@@ -146,6 +155,6 @@ main .card{background:rgba(255,255,255,.95)}
 </section>
 <div class="card"><h3>Adresse der Mitarbeiter-App</h3><p id="appAddress" class="small" style="overflow-wrap:anywhere"></p><p class="small">Keine Live-Übertragung von Arbeitszeiten. Mitarbeiter verschicken ihre Nachweise selbst. Sperrungen greifen erst nach der Veröffentlichung und nächsten Online-Prüfung. Alte oder offline genutzte App-Versionen lassen sich nicht sofort zuverlässig sperren.</p></div>
 <p id="notice" class="notice" role="status" aria-live="polite"></p>
-<div class="footer">UWE · Chef Mobil V16 · Mitarbeiterverzeichnis verschlüsselt auf diesem Gerät · PINs und Chef-Schlüssel werden nicht dauerhaft gespeichert</div>
+<div class="footer">UWE · Chef Mobil V17 · Mitarbeiterverzeichnis verschlüsselt auf diesem Gerät · PINs und Chef-Schlüssel werden nicht dauerhaft gespeichert</div>
 </main>
 </body></html>
