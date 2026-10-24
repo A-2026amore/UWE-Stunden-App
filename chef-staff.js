@@ -255,81 +255,54 @@ async function addIssued(invitations){
     for(const inv of invitations){
       if(!inv||!inv.name)continue;
       const key=inv.eid.toUpperCase();
+      const existing=employees.find(e=>e.eid.toUpperCase()===key);
       employees=employees.filter(e=>e.eid.toUpperCase()!==key);
-      employees.push({name:inv.name.trim(),eid:inv.eid,exp:inv.exp||null,issuedAt:new Date().toISOString()});
+      employees.push({name:inv.name.trim(),eid:inv.eid,exp:inv.exp||existing?.exp||null,
+        issuedAt:existing?.issuedAt||new Date().toISOString(),
+        desiredActive:existing?.desiredActive??null});
     }
     await persist();
   }catch(e){employees=backup;throw e;}
   render();
 }
+function normalizeExpiry(raw){
+  const value=String(raw||"").trim();
+  if(!value)return null;
+  let iso=value;
+  const german=value.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if(german)iso=german[3]+"-"+german[2]+"-"+german[1];
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(iso))
+    throw Error("Bitte ein Datum als 31.12.2027 oder 2027-12-31 eingeben.");
+  const [year,month,day]=iso.split("-").map(Number);
+  const date=new Date(Date.UTC(year,month-1,day));
+  if(date.getUTCFullYear()!==year||date.getUTCMonth()!==month-1||date.getUTCDate()!==day)
+    throw Error("Das Ablaufdatum "+value+" existiert nicht.");
+  return iso;
+}
 async function importExisting(){
-  if(!unlocked||demo)throw Error("Bitte Chef-Verwaltung entsperren.");
-  const text=$("staffImport").value.trim();
-  if(!text)throw Error("Bitte bestehende Mitarbeiter in das Textfeld eingeben.");
-  const rows=text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  if(!unlocked||demo)throw Error("Bitte die Chef-Verwaltung entsperren.");
+  const raw=$("staffImport").value.trim();
+  if(!raw)throw Error("Bitte Mitarbeiter in das Textfeld eingeben.");
+  const rows=raw.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   if(rows.length>200)throw Error("Maximal 200 Mitarbeiter auf einmal ergänzen.");
   const batch=[];
+  const known=new Set();
   for(const [index,row] of rows.entries()){
     const parts=row.split(";").map(v=>v.trim());
     if(parts.length<2||parts.length>3)throw Error("Zeile "+(index+1)+": Name;Personalnummer;Gültig bis.");
-    const [name,eid,exp=""]=parts;
+    const [name,eid,expiration=""]=parts;
     if(!name||name.length>80)throw Error("Zeile "+(index+1)+": ungültiger Name.");
     checkId(eid);
-    if(exp&&!/^\d{4}-\d{2}-\d{2}$/.test(exp))throw Error("Zeile "+(index+1)+": Ablaufdatum als JJJJ-MM-TT.");
-    batch.push({name,eid,exp:exp||null});
+    if(known.has(eid.toUpperCase()))throw Error("Zeile "+(index+1)+": Personalnummer mehrfach vorhanden.");
+    known.add(eid.toUpperCase());
+    let exp;
+    try{exp=normalizeExpiry(expiration);}
+    catch(e){throw Error("Zeile "+(index+1)+": "+e.message);}
+    batch.push({name,eid,exp});
   }
   await addIssued(batch);
   $("staffImport").value="";
-  note(batch.length+" bestehende Mitarbeiter in die verschlüsselte Übersicht übernommen. Ihre Zugangsdaten und PINs wurden nicht verändert.");
-}
-async function publishRevocation(eid,name){
-  if(!unlocked||demo)throw Error("Bitte zuerst als Chef anmelden.");
-  if(publishing)return;
-  checkId(eid);
-  if(!confirm("Zugang für "+name+" ("+eid+") zentral sperren?\n\nAlle mit dieser Personalnummer ausgestellten Zugänge werden nach Veröffentlichung bei der nächsten Online-Prüfung abgewiesen. Achtung: Die Stunden liegen nur auf dem Handy des Mitarbeiters! Vorher offene Monatsnachweise anfordern. Die Sperrung lässt sich in diesem Menü nicht aufheben."))return;
-  const token=$("githubPat").value.trim();
-  if(!token){
-    $("githubPat").focus();
-    throw Error("Zum wirksamen Sperren bitte ein GitHub Fine-grained Token (Contents: Read and write, nur UWE-Stunden-App) eingeben. Ohne Veröffentlichung ist der Zugang weiterhin gültig.");
-  }
-  publishing=true;
-  render();
-  note("Sperrung wird sicher an GitHub übertragen …");
-  try{
-    const current=await latestRemote(token);
-    const revoked=new Set(current.data.revoked);
-    if([...revoked].some(id=>id.toUpperCase()===eid.toUpperCase())){
-      remote=current.data;
-      note("Die Personalnummer "+eid+" ist bereits zentral gesperrt.");
-      return;
-    }
-    revoked.add(eid);
-    const next={version:1,updatedAt:new Date().toISOString(),revoked:[...revoked].sort()};
-    const payload={message:"UWE Stunden: Zugang für Personalnummer "+eid+" zentral sperren",
-                   content:b64(ENC.encode(JSON.stringify(next,null,2)+"\n")),sha:current.sha,branch:"main"};
-    const response=await fetch(API,{
-      method:"PUT",cache:"no-store",
-      headers:{"Accept":"application/vnd.github+json",
-               "Authorization":"Bearer "+token,
-               "Content-Type":"application/json",
-               "X-GitHub-Api-Version":"2026-03-10"},
-      body:JSON.stringify(payload)
-    });
-    if(!response.ok){
-      if(response.status===401||response.status===403)
-        throw Error("GitHub-Zugriff verweigert. Bitte Token, Repository und Berechtigung Contents: Read and write prüfen.");
-      if(response.status===409)
-        throw Error("Die Sperrliste wurde inzwischen geändert. Bitte erneut versuchen.");
-      throw Error("Die zentrale Sperrung wurde nicht veröffentlicht (HTTP "+response.status+").");
-    }
-    remote=next;
-    readError="";
-    $("githubPat").value="";
-    note("Zugang "+eid+" auf GitHub gesperrt. Die Website benötigt möglicherweise einige Minuten für die Veröffentlichung. Online-Apps prüfen anschließend die Sperrliste.");
-  }finally{
-    publishing=false;
-    render();
-  }
+  note(batch.length+" bestehende Mitarbeiter in die verschlüsselte Übersicht übernommen. PINs und Einladungslinks bleiben unverändert. Bitte prüfe die Namen und Personalnummern.");
 }
 async function unlock(password){
   encryptionKey=await getKey(password);
@@ -345,7 +318,6 @@ async function unlock(password){
 }
 function lock(){
   encryptionKey=null;employees=[];remote=null;unlocked=false;demo=false;
-  $("githubPat").value="";
   $("staffImport").value="";
   $("staffArea").hidden=true;
   $("issueArea").hidden=false;
@@ -358,18 +330,24 @@ function preview(){
   render();
 }
 function showTab(which){
-  const staff=which==="staff";
-  $("staffArea").hidden=!staff;
-  $("issueArea").hidden=staff;
-  $("showIssue").className=staff?"chef-tab secondary":"chef-tab current";
-  $("showStaff").className=staff?"chef-tab current":"chef-tab secondary";
-  if(staff&&unlocked)refreshStatus();
-  if(staff&&!unlocked)note("Nur Vorschau. Mitarbeiterdaten und echte Sperrungen sind ohne Chef-Sicherung nicht zugänglich.",true);
+  const isStaff=which!=="issue";
+  view=which==="active"?"active":"staff";
+  $("staffArea").hidden=!isStaff;
+  $("issueArea").hidden=isStaff;
+  $("showIssue").className=!isStaff?"chef-tab current":"chef-tab secondary";
+  $("showStaff").className=isStaff&&view==="staff"?"chef-tab current":"chef-tab secondary";
+  $("showActive").className=isStaff&&view==="active"?"chef-tab current":"chef-tab secondary";
+  render();
+  if(isStaff&&unlocked)refreshStatus();
+  if(isStaff&&!unlocked)note("Nur Vorschau. Mitarbeiterdaten und echte Sperren sind ohne Chef-Sicherung nicht zugänglich.",true);
 }
 $("staffRefresh").addEventListener("click",()=>refreshStatus());
+$("staffRefreshChanges").addEventListener("click",()=>refreshStatus());
+$("staffCopyChanges").addEventListener("click",()=>copyChanges().catch(e=>note(e.message||"Kopieren fehlgeschlagen.",true)));
 $("staffImportBtn").addEventListener("click",()=>importExisting().catch(e=>note(e.message||"Import fehlgeschlagen.",true)));
 $("showIssue").addEventListener("click",()=>showTab("issue"));
 $("showStaff").addEventListener("click",()=>showTab("staff"));
+$("showActive").addEventListener("click",()=>showTab("active"));
 window.addEventListener("pagehide",lock);
 window.UweStaffAdmin={unlock,lock,preview,addIssued,assertIssuable:eid=>{
   checkId(eid);
