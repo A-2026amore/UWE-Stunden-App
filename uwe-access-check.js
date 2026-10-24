@@ -42,5 +42,6 @@ async function check(eid,force=false){
   return true;
 }
 function clear(){latest={eid:null,checkedAt:0,revoked:false};}
-window.UweAccessControl={check,clear};
+function isFresh(eid){return latest.eid===eid&&!latest.revoked&&Date.now()-latest.checkedAt<GOOD_FOR_MS;}
+window.UweAccessControl={check,clear,isFresh};
 })();
