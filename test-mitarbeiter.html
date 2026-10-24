@@ -210,6 +210,82 @@ async function restore(input){
   }catch(e){alert('Import fehlgeschlagen: '+e.message)}
   finally{input.value=''}
 }
+
+const UWE_WHATSAPP_BUSINESS_NUMBER="0241 400 111 11";
+function pdfArgs(){
+  return {employee,month:ym(),records:monthly(),test:true};
+}
+function pdfFile(){
+  if(!monthly().length){
+    alert("Bitte zuerst Arbeitszeiten für den ausgewählten Monat speichern.");
+    return null;
+  }
+  if(!window.UweTimesheetPdf){
+    alert("Das PDF-Modul ist nicht geladen. Bitte die Seite aktualisieren.");
+    return null;
+  }
+  try{
+    const file=window.UweTimesheetPdf.fileFor(pdfArgs());
+    if(file.type!=="application/pdf"||!file.name.endsWith(".pdf")){
+      throw new Error("PDF-Datei konnte nicht erzeugt werden.");
+    }
+    return file;
+  }catch(e){
+    alert("PDF-Fehler: "+(e.message||e));
+    return null;
+  }
+}
+function notifyPdf(message){
+  const status=$("pdfStatus");
+  if(status)status.textContent=message;
+}
+function downloadPdf(){
+  const file=pdfFile();
+  if(!file)return;
+  window.UweTimesheetPdf.download(file);
+  notifyPdf("PDF-Datei zum Speichern vorbereitet: "+file.name);
+}
+function previewPdf(){
+  const file=pdfFile();
+  if(!file)return;
+  const url=URL.createObjectURL(file);
+  const windowRef=window.open(url,"_blank");
+  if(!windowRef){
+    window.UweTimesheetPdf.download(file);
+    notifyPdf("PDF-Vorschau blockiert. Die Datei wurde zum Speichern vorbereitet.");
+  }else{
+    notifyPdf("PDF geöffnet. Zum Weitergeben kannst du das Teilen-Symbol deines Gerätes verwenden.");
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+}
+async function sharePdf(method){
+  const file=pdfFile();
+  if(!file)return;
+  const shareData={files:[file]};
+  if(typeof navigator.share==="function"&&
+     typeof navigator.canShare==="function"&&
+     navigator.canShare(shareData)){
+    try{
+      notifyPdf("PDF erstellt. Bitte "+(method==="mail"?"Mail/Outlook":"WhatsApp")+
+        " und den UWE-Kontakt wählen. Die PDF muss als Dokument angehängt sein.");
+      await navigator.share(shareData);
+      notifyPdf("Die PDF wurde an die ausgewählte App übergeben. Bitte dort den Versand prüfen.");
+      return;
+    }catch(e){
+      if(e&&e.name==="AbortError"){
+        notifyPdf("Versand abgebrochen.");
+        return;
+      }
+      notifyPdf("Teilen der PDF nicht möglich. Die Datei wird heruntergeladen.");
+    }
+  }else{
+    notifyPdf("Dieser Browser unterstützt das Teilen von PDF-Dateien nicht. Die PDF wird gespeichert, damit du sie in WhatsApp oder Mail als Dokument anhängen kannst.");
+  }
+  window.UweTimesheetPdf.download(file);
+}
+function whatsappPdf(){return sharePdf("whatsapp");}
+function emailPdf(){return sharePdf("mail");}
+
 $('loginBtn').onclick=login;$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('logoutBtn').onclick=()=>{location.assign('./chef-mobil.html')};$('saveBtn').onclick=save;$('clearBtn').onclick=()=>clear(false);$('addBlockBtn').onclick=()=>{const date=$('date').value;clear(true);$('date').value=date;document.getElementById('entryForm').scrollIntoView({block:'start',behavior:'smooth'});$('start').focus();};$('month').onchange=render;$('shareBtn').onclick=whatsappPdf;$('emailPdfBtn').onclick=emailPdf;$('pdfPreviewBtn').onclick=previewPdf;$('pdfDownloadBtn').onclick=downloadPdf;$('pdfBtn').onclick=printSheet;$('csvBtn').onclick=csv;$('backupBtn').onclick=backup;$('restore').onchange=e=>restore(e.target);$('rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.edit)edit(b.dataset.edit);if(b.dataset.delete)del(b.dataset.delete)};
 (()=>{clear();$('month').value=$('date').value.slice(0,7);employee={name:'Test Mitarbeiter',eid:'TEST001'};try{const saved=JSON.parse(localStorage.getItem(localKey())||'[]');records=normalizeEntries(saved)}catch{records=[]}hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Test-Personalnummer: '+employee.eid;$('app').hidden=false;render()})();
 })();
