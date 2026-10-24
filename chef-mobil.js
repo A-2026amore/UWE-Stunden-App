@@ -99,10 +99,10 @@ async function openBackup(){
 }
 async function signCredential(name,eid,pin,exp){
   if(previewMode||!signingKey)throw Error("Echte Zugänge benötigen deine verschlüsselte Chef-Sicherung.");
-  if(!name||name.length>80||/[<>\\r\\n]/.test(name))throw Error("Bitte einen gültigen vollständigen Namen eingeben.");
+  if(!name||name.length>80||/[<>\r\n]/.test(name))throw Error("Bitte einen gültigen vollständigen Namen eingeben.");
   if(!/^[A-Za-z0-9_-]{1,30}$/.test(eid))throw Error("Personalnummer: nur Buchstaben, Ziffern, - und _.");
-  if(!/^\\d{6,12}$/.test(pin))throw Error("Die PIN muss 6–12 Ziffern enthalten.");
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges zukünftiges Ablaufdatum wählen.");
+  if(!/^\d{6,12}$/.test(pin))throw Error("Die PIN muss 6–12 Ziffern enthalten.");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges zukünftiges Ablaufdatum wählen.");
   const salt=crypto.getRandomValues(new Uint8Array(16));
   const k=await crypto.subtle.importKey("raw",encoder.encode(pin),"PBKDF2",false,["deriveBits"]);
   const bits=await crypto.subtle.deriveBits({name:"PBKDF2",salt,iterations:100000,hash:"SHA-256"},k,256);
@@ -180,22 +180,22 @@ function showBulkResults(){
 }
 async function createBulk(){
   if(previewMode||!signingKey)throw Error("Bitte die Chef-Verwaltung zuerst mit dem privaten Chef-Schlüssel entsperren.");
-  const lines=$("bulkInput").value.split(/\\r?\\n/).map(v=>v.trim()).filter(Boolean);
+  const lines=$("bulkInput").value.split(/\r?\n/).map(v=>v.trim()).filter(Boolean);
   if(!lines.length)throw Error("Bitte Mitarbeiterzeilen eingeben.");
   if(lines.length>100)throw Error("Bitte maximal 100 Mitarbeiter auf einmal erstellen.");
   const exp=$("bulkExpiry").value;
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges Ablaufdatum wählen.");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(exp)||exp<todayLocal())throw Error("Bitte ein gültiges Ablaufdatum wählen.");
   const ids=new Set(),pins=new Set(),items=[];
   lines.forEach((line,i)=>{
     const fields=line.split(";").map(x=>x.trim());
     if(fields.length<2||fields.length>3)throw Error("Zeile "+(i+1)+": Bitte Name;Personalnummer;PIN (optional) eingeben.");
     const [name,eid,pinGiven=""]=fields;
-    if(!name||name.length>80||/[<>\\r\\n]/.test(name))throw Error("Zeile "+(i+1)+": Name fehlt oder ist ungültig.");
+    if(!name||name.length>80||/[<>\r\n]/.test(name))throw Error("Zeile "+(i+1)+": Name fehlt oder ist ungültig.");
     if(!/^[A-Za-z0-9_-]{1,30}$/.test(eid))throw Error("Zeile "+(i+1)+": ungültige Personalnummer.");
     if(ids.has(eid.toLowerCase()))throw Error("Personalnummer "+eid+" wurde mehrfach vergeben.");
     ids.add(eid.toLowerCase());
     let pin=pinGiven;
-    if(pin&&!/^\\d{6,12}$/.test(pin))throw Error("Zeile "+(i+1)+": PIN muss 6–12 Ziffern haben.");
+    if(pin&&!/^\d{6,12}$/.test(pin))throw Error("Zeile "+(i+1)+": PIN muss 6–12 Ziffern haben.");
     if(!pin){do{pin=securePin()}while(pins.has(pin));}
     if(pins.has(pin))throw Error("Zeile "+(i+1)+": PIN darf nicht bei mehreren Mitarbeitern gleich sein.");
     pins.add(pin);
