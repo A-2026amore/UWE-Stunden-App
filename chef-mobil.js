@@ -141,6 +141,18 @@ function securePin(){
   const bytes=crypto.getRandomValues(new Uint32Array(1));
   return String(100000000+Math.floor(bytes[0]/4294967296*900000000));
 }
+function generatePinForSingle(){
+  const generated=securePin();
+  $("pin").value=generated;
+  $("pin").type="text";
+  $("togglePin").textContent="PIN verbergen";
+  setMessage("Neue PIN erstellt. Du kannst sie vor dem Erstellen kontrollieren.");
+}
+function toggleSinglePin(){
+  const field=$("pin");
+  field.type=field.type==="password"?"text":"password";
+  $("togglePin").textContent=field.type==="password"?"PIN anzeigen":"PIN verbergen";
+}
 function clearBulkResults(){
   bulkResults=[];
   $("bulkResultList").replaceChildren();
