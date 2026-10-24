@@ -160,7 +160,7 @@ function showBulkResults(){
     const title=document.createElement("div");title.className="bulk-result-title";
     title.textContent=invite.name;card.append(title);
     const detail=document.createElement("div");detail.className="bulk-detail";
-    detail.textContent="Personalnummer: "+invite.eid+" · gültig bis: "+invite.exp;
+    detail.textContent="Personalnummer: "+invite.eid+" · gültig bis: "+invite.exp+(invite.phone?" · WhatsApp: +"+invite.phone:"");
     card.append(detail);
     const pinRow=document.createElement("div");pinRow.className="bulk-detail";
     pinRow.textContent="PIN (vertraulich): "+invite.pin;
@@ -178,6 +178,12 @@ function showBulkResults(){
       await copy(invite.link,"Einladungslink");
     }));
     actions.append(shareBtn);
+    const whatsappBtn=document.createElement("button");
+    whatsappBtn.type="button";
+    whatsappBtn.className="whatsapp-action";
+    whatsappBtn.textContent="WhatsApp einladen";
+    whatsappBtn.addEventListener("click",()=>perform(()=>openWhatsAppInvite(invite)));
+    actions.append(whatsappBtn);
     actions.append(makeCopyButton("Link kopieren",invite.link));
     actions.append(makeCopyButton("PIN kopieren",invite.pin));
     card.append(actions);
@@ -195,8 +201,9 @@ async function createBulk(){
   const ids=new Set(),pins=new Set(),items=[];
   lines.forEach((line,i)=>{
     const fields=line.split(";").map(x=>x.trim());
-    if(fields.length<2||fields.length>3)throw Error("Zeile "+(i+1)+": Bitte Name;Personalnummer;PIN (optional) eingeben.");
-    const [name,eid,pinGiven=""]=fields;
+    if(fields.length<2||fields.length>4)throw Error("Zeile "+(i+1)+": Format Name;Personalnummer;PIN;WhatsApp-Nummer.");
+    const [name,eid,pinGiven="",phoneGiven=""]=fields;
+    const phone=normalizeWhatsAppPhone(phoneGiven);
     if(!name||name.length>80||/[<>\r\n]/.test(name))throw Error("Zeile "+(i+1)+": Name fehlt oder ist ungültig.");
     if(!/^[A-Za-z0-9_-]{1,30}$/.test(eid))throw Error("Zeile "+(i+1)+": ungültige Personalnummer.");
     if(ids.has(eid.toLowerCase()))throw Error("Personalnummer "+eid+" wurde mehrfach vergeben.");
@@ -206,13 +213,16 @@ async function createBulk(){
     if(!pin){do{pin=securePin()}while(pins.has(pin));}
     if(pins.has(pin))throw Error("Zeile "+(i+1)+": PIN darf nicht bei mehreren Mitarbeitern gleich sein.");
     pins.add(pin);
-    items.push({name,eid,pin});
+    items.push({name,eid,pin,phone});
   });
   // Sign only after validating the entire list; keep data only in this open session.
   $("bulkIssue").disabled=true;
   try{
     const invitations=[];
-    for(const item of items)invitations.push(await signCredential(item.name,item.eid,item.pin,exp));
+    for(const item of items){
+      const invite=await signCredential(item.name,item.eid,item.pin,exp);
+      invitations.push({...invite,phone:item.phone});
+    }
     clearBulkResults();
     bulkResults=invitations;
     showBulkResults();
@@ -293,6 +303,8 @@ $("unlock").addEventListener("click",()=>perform(openBackup));
 $("issue").addEventListener("click",()=>perform(createInvite));
 $("bulkIssue").addEventListener("click",()=>perform(createBulk));
 $("share").addEventListener("click",()=>perform(share));
+$("whatsappSingle").addEventListener("click",()=>perform(()=>openWhatsAppInvite(singleInvite)));
+$("copySinglePin").addEventListener("click",()=>perform(()=>copy(singleInvite?.pin,"PIN")));
 $("copyLink").addEventListener("click",()=>perform(()=>copy(linkForSharing,"Einladungslink")));
 $("copyCode").addEventListener("click",()=>perform(()=>copy(codeForSharing,"Zugangscode")));
 $("lock").addEventListener("click",lock);
