@@ -131,6 +131,7 @@ async function createInvite(){
   $("link").value=linkForSharing;
   $("code").value=codeForSharing;
   $("pin").value="";
+  $("singlePinValue").textContent=pin;
   $("singlePinArea").hidden=false;
   $("result").hidden=false;
   $("result").scrollIntoView({behavior:"smooth",block:"start"});
