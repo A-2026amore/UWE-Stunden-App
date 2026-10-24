@@ -7,10 +7,10 @@
 <style>
 :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#19363c;background:#edf6f6;font-size:16px}*{box-sizing:border-box}body{margin:0}header{background:#087f89;color:white;padding:23px 16px;text-align:center}header h1{margin:0;font-size:26px;letter-spacing:.6px}header small{display:block;margin-top:4px;opacity:.88}main{max-width:720px;margin:0 auto;padding:16px}.card{background:#fff;border-radius:16px;padding:20px;margin:12px 0;box-shadow:0 5px 22px #123c4113}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.full{grid-column:1/-1}label{display:block;font-size:13px;font-weight:650;color:#425b61;margin-bottom:6px}input,textarea{font:inherit;width:100%;padding:12px;border:1px solid #b7ced1;border-radius:9px;color:#19363c;background:white}textarea{resize:vertical;min-height:65px}button{background:#087f89;color:white;border:0;border-radius:10px;padding:12px 17px;font:inherit;font-weight:700;cursor:pointer}button:hover{filter:brightness(.95)}button.alt{background:#e3eeee;color:#205057}button.danger{background:#a93535}button:disabled{opacity:.45;cursor:default}h2{font-size:20px;margin:0 0 16px}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}.muted{color:#5b7075;font-size:13px;line-height:1.45}.pill{display:inline-block;background:#d9f3f0;border-radius:20px;padding:7px 11px;color:#076c73;font-size:13px;font-weight:700}.topline{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:9px 6px;text-align:left;border-bottom:1px solid #e1e9e9}th{color:#527077;font-size:12px}td button{padding:6px 9px;font-size:12px}div.scroll{overflow-x:auto}#notice{margin-top:8px;white-space:pre-line;color:#9f3030;font-weight:650}.total{font-size:27px;font-weight:800;color:#087f89;margin:8px 0 12px}[hidden]{display:none!important}@media(max-width:500px){.grid{grid-template-columns:1fr}.card{padding:16px}.topline button{margin-top:8px}}
 .demoBanner{background:#fff1ce;border:2px solid #bf8611;border-radius:12px;padding:14px;margin:12px 0;color:#5f4108;font-weight:700;line-height:1.5}.demoBanner small{display:block;font-weight:400;color:#644d22;margin-top:5px}
-.whatsapp-box{margin-top:14px;background:#f0f8f5;border:1px solid #b6d8c5;border-radius:12px;padding:13px;line-height:1.5;font-size:13px}.whatsapp-box a{color:#07665b;font-weight:700}
+.send-whatsapp{background:#17895b}.whatsapp-box{margin-top:14px;background:#f0f8f5;border:1px solid #b6d8c5;border-radius:12px;padding:13px;line-height:1.5;font-size:13px}.whatsapp-box a{color:#07665b;font-weight:700}
 </style>
 
-<script defer src="uwe-pdf.js"></script>
+<script defer src="uwe-pdf.js?v=4"></script>
 </head>
 <body>
 <header><h1>UWE · STUNDEN</h1><small>KRANKENTRANSPORTE · Verantwortung, die bewegt.</small></header>
@@ -21,11 +21,13 @@
 <section id="app" hidden>
 <div class="card"><div class="topline"><div><span class="pill">TESTMITARBEITER</span><h2 style="margin:12px 0 2px" id="employeeHeading"></h2><span class="muted" id="employeeId"></span></div><button class="alt" id="logoutBtn">Test beenden</button></div><p class="muted"><strong>TESTDATEN – keine echten Mitarbeiterstunden.</strong> Diese Teststunden bleiben auf diesem Gerät und werden nicht automatisch übertragen.</p></div>
 <div class="card"><h2>Arbeitszeit erfassen</h2><div class="grid"><div class="full"><label for="date">Datum</label><input id="date" type="date"></div><div><label for="start">Arbeitsbeginn</label><input id="start" type="time" value="08:00"></div><div><label for="end">Arbeitsende</label><input id="end" type="time" value="16:00"></div><div class="full"><label for="pause">Pause (Minuten)</label><input id="pause" type="number" value="30" min="0" max="1439"></div><div class="full"><label for="note">Bemerkung (optional)</label><input id="note" maxlength="200" placeholder="z. B. Schülertour"></div></div><div class="actions"><button id="saveBtn">Arbeitszeit speichern</button><button id="clearBtn" class="alt">Neue Eingabe</button></div><p id="editMsg" class="muted"></p></div>
-<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th></th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><div class="actions"><button id="shareBtn">PDF über WhatsApp teilen</button><button id="pdfDownloadBtn" class="alt">PDF herunterladen</button><button id="pdfBtn" class="alt">Als PDF drucken</button><button id="csvBtn" class="alt">CSV speichern</button></div><div class="whatsapp-box"><strong>WhatsApp an UWE Krankentransporte:</strong> 0241 400 111 11<br>
-    Tippe auf <strong>„PDF über WhatsApp teilen“</strong>, wähle in der Freigabe <strong>WhatsApp</strong> und anschließend <strong>UWE Krankentransporte</strong>. Prüfe den PDF-Anhang und tippe dort auf Senden.<br>
-    <a href="https://wa.me/4924140011111" target="_blank" rel="noopener noreferrer">UWE-Betriebschat öffnen (ohne PDF-Anhang)</a>.
-    <br><strong>TESTVERSION: Der PDF-Nachweis ist ausdrücklich als Test gekennzeichnet.</strong>
-    </div><p class="muted">Falls dein Handy keine PDF-Dateien teilen kann, wird die PDF stattdessen heruntergeladen. Öffne dann den UWE-Chat und füge die Datei manuell als Dokument an. „Als PDF drucken“ bleibt als Alternative verfügbar.</p></div>
+<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th></th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
+<strong>PDF-Versand an UWE:</strong> Das Programm erstellt eine echte Datei mit der Endung <b>.pdf</b> (nicht .txt).<br>
+<strong>WhatsApp:</strong> Tippe auf „PDF per WhatsApp“, wähle im iPhone-Teilen-Menü WhatsApp und anschließend den Betriebskontakt UWE (0241 400 111 11). Prüfe die PDF vor „Senden“.<br>
+<strong>E-Mail:</strong> Tippe auf „PDF per E-Mail“, wähle Mail oder Outlook, trage die UWE-Betriebsadresse ein und sende die E-Mail mit dem PDF-Anhang.<br>
+<strong>Wichtig:</strong> Die App kann die Empfängerauswahl nicht umgehen und nicht ohne deine Bestätigung senden. Wenn keine Dateifreigabe angeboten wird, verwende „PDF speichern“ und hänge die PDF in WhatsApp oder Mail als Dokument an.
+<br><strong>TESTMODUS: PDF ist als Test gekennzeichnet und nicht für die Lohnabrechnung.</strong>
+</div><p class="muted">Versandversion 4 – ausschließlich PDF-Dateifreigabe, kein Stundenzettel als Nachrichtentext.</p></div>
 <div class="card"><h2>Datensicherung</h2><p class="muted">Bitte regelmäßig ein Backup erstellen. Wenn du Browserdaten löschst oder das Handy verlierst, können ungesicherte Stunden verloren gehen.</p><div class="actions"><button id="backupBtn" class="alt">Backup herunterladen</button></div><label for="restore" style="margin-top:17px">Eigenes Backup wiederherstellen</label><input id="restore" type="file" accept="application/json,.json"></div>
 </section>
 </main>
@@ -56,39 +58,74 @@ function report(){const m=monthly();const lines=['TESTDATEN – NICHT FÜR LOHNA
 function download(name,content,type){const b=new Blob([content],{type}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 function filename(kind,ext){return `UWE-TEST-${kind}-${employee.eid}-${ym()}.${ext}`}
 function printSheet(){if(!monthly().length){alert('Keine Einträge für diesen Monat.');return}const w=window.open('','_blank');if(!w){alert('Bitte Pop-ups für die Druckfunktion zulassen.');return}const m=monthly();const rows=m.map(x=>`<tr><td>${escapeHtml(x.date.split('-').reverse().join('.'))}</td><td>${escapeHtml(x.start)}</td><td>${escapeHtml(x.end)}</td><td>${x.pause}</td><td>${fnum(worked(x))}</td><td>${escapeHtml(x.note)}</td></tr>`).join('');w.document.write(`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${escapeHtml(filename('Stundenzettel','pdf'))}</title><style>body{font:13px Arial,sans-serif;color:#18383c;padding:28px}h1{color:#087f89;margin-bottom:0}small{color:#526c70}table{border-collapse:collapse;width:100%;margin-top:20px}td,th{padding:9px 6px;border-bottom:1px solid #aaa;text-align:left}footer{margin-top:34px}strong{font-size:18px}</style></head><body><p style="background:#fff0ce;color:#8a1b00;border:2px solid #a90b0b;padding:14px;font-size:19px;font-weight:bold">TESTDATEN – NICHT FÜR LOHNABRECHNUNG</p><h1>UWE · KRANKENTRANSPORTE</h1><small>Arbeitszeitnachweis</small><h2>Monat ${escapeHtml(ym())}</h2><p><b>Mitarbeiter:</b> ${escapeHtml(employee.name)} &nbsp; <b>Personalnummer:</b> ${escapeHtml(employee.eid)}</p><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause (min)</th><th>Std.</th><th>Bemerkung</th></tr></thead><tbody>${rows}</tbody></table><footer><strong>Gesamtsumme: ${fnum(m.reduce((a,x)=>a+worked(x),0))} Stunden</strong><p>Erstellt am ${escapeHtml(new Date().toLocaleDateString('de-DE'))}</p><p>Unterschrift Mitarbeiter: __________________________________</p></footer></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),200)}
-async function share(){if(!monthly().length){alert('Keine Einträge in diesem Monat.');return}const text=report();if(navigator.share){try{await navigator.share({title:filename('Stundenzettel','txt'),text});return}catch(e){if(e.name==='AbortError')return}}try{await navigator.clipboard.writeText(text);alert('Stundennachweis kopiert. Bitte in deine E-Mail oder Nachricht einfügen und an UWE senden.')}catch{download(filename('Stundenzettel','txt'),text,'text/plain;charset=utf-8');alert('Textdatei gespeichert. Bitte selbst an UWE schicken.')}}
 function csv(){if(!monthly().length){alert('Keine Einträge vorhanden.');return}const escapeCsv=v=>'"'+String(v).replace(/"/g,'""')+'"';const rows=[['TESTDATEN – NICHT FÜR LOHNABRECHNUNG'],['Datum','Mitarbeiter','Personalnummer','Beginn','Ende','Pause (Min.)','Stunden','Bemerkung'],...monthly().map(x=>[x.date,employee.name,employee.eid,x.start,x.end,x.pause,fnum(worked(x)),x.note])];download(filename('Stunden','csv'),'\ufeff'+rows.map(r=>r.map(escapeCsv).join(';')).join('\r\n'),'text/csv;charset=utf-8')}
 function backup(){const payload={app:'UWE Stunden Test',version:2,eid:employee.eid,name:employee.name,exportedAt:new Date().toISOString(),entries:records};download('UWE-TEST-Backup-'+employee.eid+'-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload,null,2),'application/json')}
 async function restore(input){const file=input.files?.[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.app!=='UWE Stunden Test'||data.version!==2||data.eid!==employee.eid||!Array.isArray(data.entries)||!data.entries.every(valid))throw Error('Backup passt nicht zu deinem Mitarbeiterkonto oder ist beschädigt.');if(!confirm(data.entries.length+' Einträge importieren? Vorhandene Einträge an denselben Tagen werden ersetzt.'))return;const byDay=new Map(records.map(x=>[x.date,x]));data.entries.forEach(x=>byDay.set(x.date,x));records=Array.from(byDay.values());storage();render();alert('Backup wiederhergestellt.')}catch(e){alert('Import fehlgeschlagen: '+e.message)}finally{input.value=''}}
 
+
 const UWE_WHATSAPP_BUSINESS_NUMBER="0241 400 111 11";
 function pdfArgs(){return {employee,month:ym(),records:monthly(),test:true};}
 function pdfFile(){
-  if(!monthly().length){alert("In diesem Monat sind keine Stunden für einen PDF-Nachweis vorhanden.");return null;}
-  if(!window.UweTimesheetPdf){alert("PDF-Modul konnte nicht geladen werden. Bitte die App erneut öffnen.");return null;}
-  try{return window.UweTimesheetPdf.fileFor(pdfArgs());}catch(e){alert("PDF konnte nicht erstellt werden: "+e.message);return null;}
+  if(!monthly().length){alert("Für diesen Monat sind keine Stunden eingetragen.");return null;}
+  if(!window.UweTimesheetPdf){alert("Das PDF-Modul ist noch nicht geladen. Bitte die Seite aktualisieren.");return null;}
+  try{
+    const file=window.UweTimesheetPdf.fileFor(pdfArgs());
+    if(file.type!=="application/pdf"||!file.name.toLowerCase().endsWith(".pdf"))
+      throw new Error("PDF-Anhang konnte nicht erstellt werden.");
+    return file;
+  }catch(error){alert("PDF-Fehler: "+(error.message||error));return null;}
 }
-function downloadPdf(){const file=pdfFile();if(file)window.UweTimesheetPdf.download(file);}
-async function sharePdf(){
+function notifyPdf(message){
+  const status=$("pdfStatus");
+  if(status)status.textContent=message;
+}
+function downloadPdf(){
   const file=pdfFile();
   if(!file)return;
-  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+  window.UweTimesheetPdf.download(file);
+  notifyPdf("PDF-Datei wurde zum Speichern vorbereitet: "+file.name+". Bitte in Downloads/Dateien öffnen und bei Bedarf als Dokument weiterleiten.");
+}
+function previewPdf(){
+  const file=pdfFile();
+  if(!file)return;
+  const url=URL.createObjectURL(file);
+  const opened=window.open(url,"_blank");
+  if(!opened){
+    window.UweTimesheetPdf.download(file);
+    notifyPdf("Die PDF-Vorschau wurde vom Browser blockiert. Die PDF wurde stattdessen zum Speichern vorbereitet.");
+  } else {
+    notifyPdf("PDF geöffnet. Auf dem iPhone kannst du über das Teilen-Symbol die PDF-Datei versenden.");
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),120000);
+}
+async function sharePdf(method){
+  const file=pdfFile();
+  if(!file)return;
+  // Wichtig: NUR das PDF teilen! Text und Titel können bei WhatsApp
+  // sonst dazu führen, dass nur ein Text statt des PDF-Anhangs ankommt.
+  const shareData={files:[file]};
+  if(typeof navigator.share==="function"&&typeof navigator.canShare==="function"&&navigator.canShare(shareData)){
     try{
-      await navigator.share({
-        files:[file],
-        title:"UWE Stundennachweis "+ym(),
-        text:"Stundennachweis "+ym()+". Bitte per WhatsApp an UWE Krankentransporte ("+UWE_WHATSAPP_BUSINESS_NUMBER+") senden."
-      });
+      notifyPdf("PDF-Datei erstellt. Bitte "+(method==="mail"?"Mail / Outlook":"WhatsApp")+" auswählen und den Anhang vor dem Senden kontrollieren.");
+      await navigator.share(shareData);
+      notifyPdf("PDF an die ausgewählte App übergeben. Ob sie tatsächlich gesendet wurde, bitte im Chat bzw. im E-Mail-Postausgang kontrollieren.");
       return;
     }catch(error){
-      if(error&&error.name==="AbortError")return;
+      if(error&&error.name==="AbortError"){
+        notifyPdf("Teilen abgebrochen. Es wurde nichts automatisch versendet.");
+        return;
+      }
+      notifyPdf("Dein Handy konnte die PDF nicht über die Teilen-Funktion senden. Die Datei wird deshalb zum manuellen Anhängen gespeichert.");
     }
+  }else{
+    notifyPdf("Dieser Browser unterstützt das direkte Teilen von PDF-Dateien nicht. Die PDF wird gespeichert; bitte in WhatsApp oder Mail als Dokument anhängen.");
   }
   window.UweTimesheetPdf.download(file);
-  alert("Die PDF wurde gespeichert. Dein Gerät konnte sie nicht direkt teilen. Bitte öffne WhatsApp, wähle UWE Krankentransporte ("+UWE_WHATSAPP_BUSINESS_NUMBER+") und hänge die gespeicherte PDF als Dokument an.");
 }
+function whatsappPdf(){return sharePdf("whatsapp");}
+function emailPdf(){return sharePdf("mail");}
 
-$('loginBtn').onclick=login;$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('logoutBtn').onclick=()=>{location.assign('./chef-mobil.html')};$('saveBtn').onclick=save;$('clearBtn').onclick=clear;$('month').onchange=render;$('shareBtn').onclick=sharePdf;$('pdfDownloadBtn').onclick=downloadPdf;$('pdfBtn').onclick=printSheet;$('csvBtn').onclick=csv;$('backupBtn').onclick=backup;$('restore').onchange=e=>restore(e.target);$('rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.edit)edit(b.dataset.edit);if(b.dataset.delete)del(b.dataset.delete)};
+$('loginBtn').onclick=login;$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('logoutBtn').onclick=()=>{location.assign('./chef-mobil.html')};$('saveBtn').onclick=save;$('clearBtn').onclick=clear;$('month').onchange=render;$('shareBtn').onclick=whatsappPdf;$('emailPdfBtn').onclick=emailPdf;$('pdfPreviewBtn').onclick=previewPdf;$('pdfDownloadBtn').onclick=downloadPdf;$('pdfBtn').onclick=printSheet;$('csvBtn').onclick=csv;$('backupBtn').onclick=backup;$('restore').onchange=e=>restore(e.target);$('rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.edit)edit(b.dataset.edit);if(b.dataset.delete)del(b.dataset.delete)};
 (()=>{clear();$('month').value=$('date').value.slice(0,7);employee={name:'Test Mitarbeiter',eid:'TEST001'};try{const saved=JSON.parse(localStorage.getItem(localKey())||'[]');records=Array.isArray(saved)?saved.filter(valid):[]}catch{records=[]}hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Test-Personalnummer: '+employee.eid;$('app').hidden=false;render()})();
 })();
 </script>
