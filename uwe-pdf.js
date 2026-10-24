@@ -60,6 +60,7 @@
   }
   function totalText(n) {return n.toFixed(2).replace(".",",");}
   function dateText(s) {return /^\d{4}-\d{2}-\d{2}$/.test(s)?s.slice(8,10)+"."+s.slice(5,7)+"."+s.slice(0,4):s;}
+  function monthText(s) {return /^\d{4}-\d{2}$/.test(s)?s.slice(5,7)+"-"+s.slice(0,4):s;}
 
   // Original UWE logo and wing shapes, traced from the supplied brand artwork.
   const LOGO_TURQUOISE="606 195 m 527 209 l 438 231 l 337 261 l 238 296 l 161 329 l 101 360 l 46 395 l 1 433 l 112 402 l 214 382 l 342 362 l 390 350 l 422 339 l 467 318 l 522 281 l 573 235 l h 749 1 m 682 17 l 587 47 l 515 75 l 432 113 l 357 153 l 286 196 l 214 246 l 139 307 l 258 262 l 376 224 l 481 196 l 632 164 l 693 88 l h\n";
@@ -91,7 +92,7 @@
     s+=txt(M,H-(test?155:116),"STUNDENNACHWEIS",16,true);
     s+=txt(M,H-(test?178:139),"Mitarbeiter: "+employee.name,10,true);
     s+=txt(M,H-(test?195:156),"Personalnummer: "+employee.eid,9);
-    s+=txt(M,H-(test?212:173),"Monat: "+month,9);
+    s+=txt(M,H-(test?212:173),"Monat: "+monthText(month),9);
     s+=line(M,H-(test?225:186),W-M,H-(test?225:186));
     return s;
   }
@@ -132,8 +133,6 @@
     y-=24;
     sections.push(rect(M,y-8,WIDTH,35,"0.88 0.95 0.95"));
     sections.push(txt(M+12,y+4,"GESAMT: "+totalText(sum)+" Stunden",15,true,"0.03 0.45 0.49"));
-    y-=57;
-    sections.push(txt(M,y,"Unterschrift Mitarbeiter: ____________________________________",9));
     for(let p=0;p<pages.length;p++) {
       pages[p].push(line(M,62,W-M,62));
       pages[p].push(txt(M,46,"Erstellt: "+new Date().toLocaleDateString("de-DE"),8));
