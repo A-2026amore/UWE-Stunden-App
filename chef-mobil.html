@@ -62,7 +62,7 @@ main .card{background:rgba(255,255,255,.95)}
 <div class="cols">
 <div><label for="name">Vor- und Nachname</label><input id="name" maxlength="80" placeholder="Vorname Nachname" autocomplete="off"></div>
 <div><label for="eid">Personalnummer</label><input id="eid" maxlength="30" placeholder="z. B. M001" autocomplete="off"></div>
-<div><label for="pin">Persönliche PIN (6–12 Ziffern)</label><input id="pin" type="password" inputmode="numeric" maxlength="12" placeholder="Neue PIN festlegen" autocomplete="new-password"></div>
+<div><label for="pin">Persönliche PIN (6–12 Ziffern)</label><input id="pin" type="password" inputmode="numeric" maxlength="12" placeholder="PIN eingeben oder automatisch erstellen" autocomplete="new-password"><button id="generatePin" type="button" class="secondary">PIN automatisch erstellen</button><button id="togglePin" type="button" class="secondary">PIN anzeigen</button></div>
 <div><label for="expiry">Gültig bis</label><input id="expiry" type="date"></div><div class="full"><label for="whatsappPhone">WhatsApp-Nummer (optional)</label><input id="whatsappPhone" type="tel" placeholder="z. B. 0176 12345678 oder +49 176 12345678" autocomplete="off"></div>
 </div>
 <div class="stack"><button id="issue">Persönlichen Zugang erstellen</button></div><p id="issueHint" class="small" hidden>Für echte Mitarbeiterzugänge musst du später deine Chef-Sicherung und dein Chef-Passwort importieren.</p>
