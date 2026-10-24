@@ -32,10 +32,26 @@ async function check(eid,force=false){
   }catch{
     throw denied("Zur Prüfung deines Mitarbeiterzugangs wird eine Internetverbindung benötigt. Bitte online erneut versuchen.","CHECK_OFFLINE");
   }
-  if(!res.ok)throw denied("Die UWE-Zugangsprüfung ist derzeit nicht erreichbar (HTTP "+res.status+"). Bitte erneut versuchen.","CHECK_OFFLINE");
   let data;
-  try{data=validate(await res.json());}
-  catch(e){throw e?.code?e:denied("Zugangssperrliste konnte nicht gelesen werden. Bitte erneut versuchen.","CHECK_ERROR");}
+  try{
+    if(res.ok){
+      data=validate(await res.json());
+    }else if(res.status===404){
+      // Deployment fallback: Pages may need a few minutes after a GitHub commit.
+      const api="https://api.github.com/repos/A-2026amore/UWE-Stunden-App/contents/uwe-access-control.json?ref=main&nocache="+Date.now();
+      const alternate=await fetch(api,{cache:"no-store",credentials:"omit",headers:{Accept:"application/vnd.github+json"}});
+      if(!alternate.ok)throw Error("API status "+alternate.status);
+      const wrapped=await alternate.json();
+      const raw=atob(String(wrapped.content||"").replace(/\s/g,""));
+      const decoded=new TextDecoder().decode(Uint8Array.from(raw,c=>c.charCodeAt(0)));
+      data=validate(JSON.parse(decoded));
+    }else{
+      throw Error("HTTP "+res.status);
+    }
+  }catch(e){
+    if(e?.code)throw e;
+    throw denied("Die UWE-Zugangsprüfung ist derzeit nicht erreichbar. Bitte online erneut versuchen.","CHECK_OFFLINE");
+  }
   latest={eid,checkedAt:Date.now(),revoked:data.revoked.some(id=>id.toUpperCase()===eid.toUpperCase())};
   if(latest.revoked)
     throw denied("Dieser Mitarbeiterzugang wurde von UWE gesperrt. Bitte die Geschäftsleitung kontaktieren.","UWE_REVOKED");
