@@ -8,12 +8,23 @@
 :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#19363c;background:#edf6f6;font-size:16px}*{box-sizing:border-box}body{margin:0}header{background:#087f89;color:white;padding:23px 16px;text-align:center}header h1{margin:0;font-size:26px;letter-spacing:.6px}header small{display:block;margin-top:4px;opacity:.88}main{max-width:720px;margin:0 auto;padding:16px}.card{background:#fff;border-radius:16px;padding:20px;margin:12px 0;box-shadow:0 5px 22px #123c4113}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.full{grid-column:1/-1}label{display:block;font-size:13px;font-weight:650;color:#425b61;margin-bottom:6px}input,textarea{font:inherit;width:100%;padding:12px;border:1px solid #b7ced1;border-radius:9px;color:#19363c;background:white}textarea{resize:vertical;min-height:65px}button{background:#087f89;color:white;border:0;border-radius:10px;padding:12px 17px;font:inherit;font-weight:700;cursor:pointer}button:hover{filter:brightness(.95)}button.alt{background:#e3eeee;color:#205057}button.danger{background:#a93535}button:disabled{opacity:.45;cursor:default}h2{font-size:20px;margin:0 0 16px}.actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:16px}.muted{color:#5b7075;font-size:13px;line-height:1.45}.pill{display:inline-block;background:#d9f3f0;border-radius:20px;padding:7px 11px;color:#076c73;font-size:13px;font-weight:700}.topline{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:9px 6px;text-align:left;border-bottom:1px solid #e1e9e9}th{color:#527077;font-size:12px}td button{padding:6px 9px;font-size:12px}div.scroll{overflow-x:auto}#notice{margin-top:8px;white-space:pre-line;color:#9f3030;font-weight:650}.total{font-size:27px;font-weight:800;color:#087f89;margin:8px 0 12px}[hidden]{display:none!important}@media(max-width:500px){.grid{grid-template-columns:1fr}.card{padding:16px}.topline button{margin-top:8px}}
 .demoBanner{background:#fff1ce;border:2px solid #bf8611;border-radius:12px;padding:14px;margin:12px 0;color:#5f4108;font-weight:700;line-height:1.5}.demoBanner small{display:block;font-weight:400;color:#644d22;margin-top:5px}
 .send-whatsapp{background:#17895b}.whatsapp-box{margin-top:14px;background:#f0f8f5;border:1px solid #b6d8c5;border-radius:12px;padding:13px;line-height:1.5;font-size:13px}.whatsapp-box a{color:#07665b;font-weight:700}
+
+/* UWE brand: original artwork traced from the supplied transparent PNG */
+body{position:relative;min-height:100vh;background:#edf6f6}
+body::before{content:"";position:fixed;z-index:0;left:50%;top:54%;transform:translate(-50%,-50%);width:min(88vw,690px);height:min(52vw,399px);max-height:55vh;background:url("./uwe-fluegel.svg") center center / contain no-repeat;opacity:.075;pointer-events:none}
+body>header,body>main{position:relative;z-index:1}
+.uwe-branded-header{background:#fff;color:#163a3d;border-bottom:5px solid #00a99e;padding:15px 12px 12px;text-align:center;box-shadow:0 2px 9px #143d4310}
+.uwe-branded-header .uwe-original-logo{display:block;margin:0 auto;width:min(82vw,355px);height:auto;max-height:125px;object-fit:contain}
+.uwe-branded-header .uwe-subtitle{font-weight:800;color:#087f89;letter-spacing:.45px;font-size:15px;margin:8px 0 0}
+main .card{background:rgba(255,255,255,.95)}
+@media(max-width:600px){body::before{width:92vw;height:52vw;opacity:.075}.uwe-branded-header .uwe-original-logo{width:min(88vw,325px)}}
+
 </style>
 
 <script defer src="uwe-pdf.js?v=4"></script>
 </head>
 <body>
-<header><h1>UWE · STUNDEN</h1><small>KRANKENTRANSPORTE · Verantwortung, die bewegt.</small></header>
+<header class="uwe-branded-header"><img class="uwe-original-logo" src="./uwe-logo.svg" alt="UWE Krankentransporte – Original-Logo"><div class="uwe-subtitle">STUNDEN · Verantwortung, die bewegt.</div></header>
 <main>
 <div class="demoBanner">TESTMODUS – Test Mitarbeiter (TEST001)<small>Nur zum Ausprobieren. Keine echte Anmeldung, keine Personalzeiterfassung. Alle Teststunden werden separat auf diesem Gerät gespeichert. Nicht für die Lohnabrechnung verwenden.</small></div>
 <section id="setup" class="card" hidden><h2>Einrichtung durch den Arbeitgeber</h2><p>Diese App wurde noch nicht mit dem öffentlichen UWE-Zugangsschlüssel eingerichtet.</p><p class="muted">Der Arbeitgeber muss zuerst in der Chef-Verwaltung die Datei <b>uwe-config.js</b> erzeugen und die gleichnamige Datei im Mitarbeiter-App-Ordner ersetzen. Danach App neu öffnen.</p></section>
