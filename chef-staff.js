@@ -115,7 +115,7 @@ async function refreshStatus(){
 }
 function status(entry){
   if(remote===null)return {text:"Online-Status noch nicht bestätigt",className:"staff-uncertain"};
-  if(remote.revoked.includes(entry.eid))return {text:"Gesperrt",className:"staff-blocked"};
+  if(remote.revoked.some(id=>id.toUpperCase()===entry.eid.toUpperCase()))return {text:"Gesperrt",className:"staff-blocked"};
   if(entry.exp&&entry.exp<isoToday())return {text:"Abgelaufen",className:"staff-uncertain"};
   if(!entry.exp)return {text:"Erfasst · Ablaufdatum unbekannt",className:"staff-uncertain"};
   return {text:"Aktiv (laut erfassten Zugangsdaten)",className:"staff-active"};
@@ -213,7 +213,7 @@ async function publishRevocation(eid,name){
   try{
     const current=await latestRemote(token);
     const revoked=new Set(current.data.revoked);
-    if(revoked.has(eid)){
+    if([...revoked].some(id=>id.toUpperCase()===eid.toUpperCase())){
       remote=current.data;
       note("Die Personalnummer "+eid+" ist bereits zentral gesperrt.");
       return;
@@ -288,6 +288,6 @@ $("showStaff").addEventListener("click",()=>showTab("staff"));
 window.addEventListener("pagehide",lock);
 window.UweStaffAdmin={unlock,lock,preview,addIssued,assertIssuable:eid=>{
   checkId(eid);
-  if(remote?.revoked.includes(eid))throw Error("Personalnummer "+eid+" ist gesperrt. Bitte eine andere Personalnummer verwenden.");
+  if(remote?.revoked.some(id=>id.toUpperCase()===eid.toUpperCase()))throw Error("Personalnummer "+eid+" ist gesperrt. Bitte eine andere Personalnummer verwenden.");
 },refreshStatus};
 })();
