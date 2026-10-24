@@ -153,6 +153,11 @@ async function openBackup(){
   $("dashboard").hidden=false;
   $("appAddress").textContent=appUrl();
 rememberedStatus();
+if("serviceWorker" in navigator&&location.protocol==="https:"){
+  navigator.serviceWorker.register("./sw.js",{updateViaCache:"none"})
+    .then(reg=>reg.update().catch(()=>{}))
+    .catch(()=>{});
+}
   setMessage("Chef-Verwaltung entsperrt. Du kannst jetzt Mitarbeiter-Zugänge erstellen.");
 }
 async function signCredential(name,eid,pin,exp){
