@@ -16,6 +16,12 @@ main{max-width:670px;margin:auto;padding:14px 14px calc(26px + env(safe-area-ins
 p{line-height:1.5}p.small{font-size:13px;color:#527177;margin:10px 0}.warning{background:#fff6e7;border-left:4px solid #d19135;padding:12px;border-radius:8px;color:#67491c;font-size:13px}label{font-weight:700;display:block;font-size:13px;margin:17px 0 7px;color:#355c62}
 input,textarea{display:block;width:100%;border:1px solid #b6cdcf;background:white;border-radius:10px;padding:13px;font:inherit;min-height:46px;color:#153c40}textarea{height:94px;resize:vertical;font-size:12px;overflow-wrap:anywhere}button{appearance:none;background:#087f89;color:white;border:0;border-radius:11px;padding:14px 18px;font:inherit;font-weight:700;min-height:48px;cursor:pointer}button.secondary{background:#e2efef;color:#15535a}
 button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #42a6ba;outline-offset:2px}.stack{display:grid;gap:10px;margin:18px 0}.cols{display:grid;grid-template-columns:1fr 1fr;gap:0 15px}.full{grid-column:1/-1}.notice{color:#087363;font-size:14px;font-weight:700;padding:0 6px;line-height:1.5}.notice.bad{color:#af3636}[hidden]{display:none!important}.pill{display:inline-block;font-size:12px;background:#d7f1ed;color:#006975;border-radius:20px;padding:6px 10px;font-weight:700}.footer{text-align:center;font-size:12px;color:#678084;margin:28px 0}
+.bulk-result{border:1px solid #c4dddd;border-radius:12px;padding:13px;margin:13px 0;background:#f5fbfa}
+.bulk-result-title{font-weight:800;margin-bottom:6px}
+.bulk-detail{font-size:13px;color:#516e73;overflow-wrap:anywhere}
+.bulk-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0}
+.bulk-actions button{padding:10px 7px;min-height:42px;font-size:12px}
+@media(max-width:540px){.bulk-actions{grid-template-columns:1fr 1fr}.bulk-actions button{width:100%}}
 @media(max-width:540px){.cols{grid-template-columns:1fr}.card{padding:18px 16px}button{width:100%}.stack{gap:9px}}
 
 /* UWE brand: original artwork traced from the supplied transparent PNG */
@@ -62,12 +68,29 @@ main .card{background:rgba(255,255,255,.95)}
 <div class="stack"><button id="issue">Persönlichen Zugang erstellen</button></div><p id="issueHint" class="small" hidden>Für echte Mitarbeiterzugänge musst du später deine Chef-Sicherung und dein Chef-Passwort importieren.</p>
 </div>
 <div class="card" id="result" hidden>
-<h2>3. Zugang verschicken</h2>
+<h2>Einzelzugang verschicken</h2>
 <p class="small">Versende den Einladungslink an den Mitarbeiter. Die PIN bitte separat mitteilen. Erster Aufruf des Links öffnet die Mitarbeiter-Anmeldung.</p>
 <label for="link">Einladungslink</label><textarea id="link" readonly></textarea>
 <div class="stack"><button id="share">Einladungslink teilen</button><button id="copyLink" class="secondary">Link kopieren</button></div>
 <label for="code">Zugangscode (Alternative)</label><textarea id="code" readonly></textarea>
 <div class="stack"><button id="copyCode" class="secondary">Zugangscode kopieren</button></div>
+</div>
+
+<div class="card" id="bulkCard">
+<h2>3. Mehrere Mitarbeiter hinzufügen</h2>
+<p class="small">Jede Zeile: <strong>Name;Personalnummer;PIN</strong>. Die PIN kannst du selbst festlegen (6–12 Ziffern). Lässt du sie weg, erzeugt die App automatisch eine zufällige neunstellige PIN. Die Namen und PINs werden nur auf deinem Gerät verarbeitet, nicht auf GitHub gespeichert.</p>
+<label for="bulkInput">Mitarbeiterliste</label>
+<textarea id="bulkInput" spellcheck="false" autocomplete="off" rows="7" style="height:170px;font-size:14px" placeholder="Vorname Nachname;M001&#10;Vorname Nachname;M002&#10;Vorname Nachname;M003;123456789"></textarea>
+<label for="bulkExpiry">Zugänge gültig bis</label>
+<input id="bulkExpiry" type="date">
+<div class="stack"><button type="button" id="bulkIssue">Mitarbeiterzugänge erstellen</button></div>
+<p class="small">Für jeden Mitarbeiter entsteht ein eigener signierter Zugang. Nach dem Erstellen kannst du die Links und PINs <strong>getrennt</strong> teilen. Bitte versende die PIN nicht zusammen mit dem Einladungslink.</p>
+<div id="bulkPreviewHint" class="warning" hidden>Im Testmodus lassen sich keine echten Mitarbeiter freischalten. Bitte die Chef-Sicherung mit Passwort entsperren.</div>
+<div id="bulkResults" hidden>
+<h3>Erstellte Zugänge</h3>
+<p class="small">Diese Angaben verschwinden, sobald du die Verwaltung sperrst oder die Seite verlässt. Stelle sicher, dass jeder Mitarbeiter seinen Link und seine PIN erhalten hat.</p>
+<div id="bulkResultList"></div>
+</div>
 </div>
 <div class="card"><h2>Verwaltung beenden</h2><button id="lock" class="secondary">Chef-Verwaltung sperren</button></div>
 </section>
