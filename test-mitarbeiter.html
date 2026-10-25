@@ -143,6 +143,7 @@ async function login(){const btn=$('loginBtn');btn.disabled=true;$('notice').tex
 function clear(keepDate=false){
   const date=keepDate&&$('date').value?$('date').value:new Date().toLocaleDateString('en-CA');
   editingId=null;
+  pauseManuallyEdited=false;
   $('date').value=date;
   $('start').value=keepDate?'':'08:00';
   $('end').value=keepDate?'':'16:00';
@@ -150,17 +151,28 @@ function clear(keepDate=false){
   $('note').value='';
   $('saveBtn').textContent='Arbeitszeit speichern';
   $('editMsg').textContent='';
+  formError('');
+  offerAutoPause();
 }
 function save(){
-  const r={date:$('date').value,start:$('start').value,end:$('end').value,pause:Number($('pause').value),note:$('note').value.trim()};
+  const r=currentEntry();
   if(!valid(r)){
-    alert('Bitte Datum, Beginn, Ende und Pause korrekt eintragen. Pro Einsatz werden Arbeitsbeginn und Arbeitsende benötigt.');
-    return;
+    const message='Bitte Datum, Beginn, Ende und Pause korrekt eintragen.';
+    formError(message);alert(message);return;
+  }
+  if(breakRules.gross(r)>720){
+    const message='Dieser Einsatz dauert mehr als 12 Stunden und darf nicht gespeichert werden.';
+    formError(message);alert(message);return;
   }
   const match=records.find(x=>x.id!==editingId&&overlaps(x,r));
   if(match){
-    alert('Dieser Einsatz überschneidet sich mit '+match.start+'–'+match.end+' am selben Datum. Bitte Zeiten korrigieren oder den vorhandenen Einsatz bearbeiten.');
-    return;
+    const message='Dieser Einsatz überschneidet sich mit '+match.start+'–'+match.end+' am selben Datum.';
+    formError(message);alert(message);return;
+  }
+  const dayChecked=breakRules.evaluateDay([...otherSameDay(r),r],r.date);
+  const issue=breakRules.issueForDay(dayChecked);
+  if(issue){
+    formError(issue);alert(issue);refreshPauseHint();return;
   }
   if(editingId){
     const idx=records.findIndex(x=>x.id===editingId);
@@ -190,11 +202,15 @@ function render(){
     return row+(lastOfDay?'<tr class="day-summary"><td colspan="4"><strong>Tagessumme '+escapeHtml(x.date.split('-').reverse().join('.'))+'</strong></td><td><strong>'+fnum(dayTotals.get(x.date))+'</strong></td><td></td></tr>':'');
   }).join('');
   $('empty').textContent=list.length?'':'In diesem Monat sind noch keine Stunden eingetragen.';
+  const issues=breakRules.errorsForMonth(list,ym());
+  $('monthBreakNote').hidden=!issues.length;
+  $('monthBreakNote').textContent=issues.length?'Hinweis: '+issues.length+' Tag(e) mit zu wenig Pause oder über 12 Stunden Einsatzzeit. Vor dem PDF-Versand korrigieren.':'';
 }
 function edit(id){
   const r=records.find(x=>x.id===id);
   if(!r)return;
   editingId=r.id;
+  pauseManuallyEdited=true;
   $('date').value=r.date;
   $('start').value=r.start;
   $('end').value=r.end;
@@ -203,6 +219,8 @@ function edit(id){
   $('saveBtn').textContent='Änderungen speichern';
   document.getElementById('entryForm').scrollIntoView({block:'start',behavior:'smooth'});
   $('editMsg').textContent='Dieser einzelne Einsatz wird bearbeitet. Andere Einsätze desselben Tages bleiben unverändert.';
+  formError('');
+  refreshPauseHint();
 }
 function del(id){
   const r=records.find(x=>x.id===id);
