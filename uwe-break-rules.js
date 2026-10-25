@@ -63,7 +63,8 @@
   }
   function suggestedPause(candidate,saved){
     if(!candidate||!candidate.date||!Number.isFinite(gross(candidate)))return null;
-    const others=(saved||[]).filter(x=>x&&x.date===candidate.date&&x.id!==candidate.id);
+    const id=typeof candidate.id==="string"&&candidate.id?candidate.id:null;
+    const others=(saved||[]).filter(x=>x&&x.date===candidate.date&&(!id||x.id!==id));
     const newShift={...candidate,pause:0};
     const day=evaluateDay([...others,newShift],candidate.date);
     if(!day.valid)return null;
