@@ -343,7 +343,7 @@ function whatsappPdf(){return sharePdf("whatsapp");}
 function emailPdf(){return sharePdf("mail");}
 
 $('loginBtn').onclick=login;$('pin').addEventListener('keydown',e=>{if(e.key==='Enter')login()});$('logoutBtn').onclick=()=>{location.assign('./chef-mobil.html')};$('saveBtn').onclick=save;
-['date','start','end'].forEach(id=>$(id).addEventListener('input',offerAutoPause));
+['date','start','end'].forEach(id=>{ $(id).addEventListener('input',offerAutoPause); $(id).addEventListener('change',offerAutoPause); });
 $('pause').addEventListener('input',()=>{pauseManuallyEdited=true;formError('');refreshPauseHint();});$('clearBtn').onclick=()=>clear(false);$('addBlockBtn').onclick=()=>{const date=$('date').value;clear(true);$('date').value=date;document.getElementById('entryForm').scrollIntoView({block:'start',behavior:'smooth'});$('start').focus();};$('month').onchange=render;$('shareBtn').onclick=whatsappPdf;$('emailPdfBtn').onclick=emailPdf;$('pdfPreviewBtn').onclick=previewPdf;$('pdfDownloadBtn').onclick=downloadPdf;$('pdfBtn').onclick=printSheet;$('csvBtn').onclick=csv;$('backupBtn').onclick=backup;$('restore').onchange=e=>restore(e.target);$('rows').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.edit)edit(b.dataset.edit);if(b.dataset.delete)del(b.dataset.delete)};
 (()=>{clear();$('month').value=$('date').value.slice(0,7);employee={name:'Test Mitarbeiter',eid:'TEST001'};try{const saved=JSON.parse(localStorage.getItem(localKey())||'[]');records=normalizeEntries(saved)}catch{records=[]}hideAll();$('employeeHeading').textContent=employee.name;$('employeeId').textContent='Test-Personalnummer: '+employee.eid;$('app').hidden=false;render()})();
 })();
