@@ -24,8 +24,11 @@ main .card{background:rgba(255,255,255,.95)}
 .day-summary td{padding-top:6px;padding-bottom:8px;border-bottom:2px solid #8bd8d0}
 #addBlockBtn{background:#d7f4ef;color:#075c63}
 @media(max-width:520px){table{font-size:12px}th,td{padding:7px 4px}td button{padding:6px;font-size:11px}}
+.break-error{padding:12px;border:1px solid #e2a8a8;background:#fff1ee;color:#9b3434;border-radius:9px;font-size:14px;font-weight:650;margin:10px 0}
+#pauseHint{font-size:13px;color:#497076;margin:7px 0 0;line-height:1.45}
 </style>
 
+<script src="uwe-break-rules.js?v=24"></script>
 <script defer src="uwe-pdf.js?v=23"></script>
 </head>
 <body>
@@ -36,8 +39,8 @@ main .card{background:rgba(255,255,255,.95)}
 <section id="signin" class="card" hidden><h2>Mitarbeiter-Anmeldung</h2><p class="muted">Den persönlichen Einladungslink vom Arbeitgeber öffnen oder den vollständigen Zugangscode hier einfügen. Danach die vom Arbeitgeber vergebene PIN eingeben.</p><label for="token">Persönlicher Zugangscode</label><textarea id="token" placeholder="Zugangscode aus der Einladung einfügen" spellcheck="false" autocapitalize="off"></textarea><div style="height:12px"></div><label for="pin">Persönliche PIN</label><input id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN eingeben" maxlength="12"><div class="actions"><button id="loginBtn">Anmelden</button></div><p id="notice" role="alert"></p></section>
 <section id="app" hidden>
 <div class="card"><div class="topline"><div><span class="pill">TESTMITARBEITER</span><h2 style="margin:12px 0 2px" id="employeeHeading"></h2><span class="muted" id="employeeId"></span></div><button class="alt" id="logoutBtn">Test beenden</button></div><p class="muted"><strong>TESTDATEN – keine echten Mitarbeiterstunden.</strong> Diese Teststunden bleiben auf diesem Gerät und werden nicht automatisch übertragen.</p></div>
-<div class="card" id="entryForm"><h2>Arbeitszeit erfassen</h2><p class="muted">Du kannst <strong>mehrere Einsätze pro Tag</strong> eintragen, z. B. morgens, nachmittags und abends. Jeder Zeitblock wird einzeln gespeichert und am Monatsende zusammengerechnet.</p><div class="grid"><div class="full"><label for="date">Datum</label><input id="date" type="date"></div><div><label for="start">Arbeitsbeginn</label><input id="start" type="time" value="08:00"></div><div><label for="end">Arbeitsende</label><input id="end" type="time" value="16:00"></div><div class="full"><label for="pause">Pause (Minuten)</label><input id="pause" type="number" value="30" min="0" max="1439"></div><div class="full"><label for="note">Bemerkung (optional)</label><input id="note" maxlength="200" placeholder="z. B. Schülertour"></div></div><div class="actions"><button id="saveBtn">Arbeitszeit speichern</button><button id="addBlockBtn" class="alt">+ Weiteren Einsatz am selben Tag</button><button id="clearBtn" class="alt">Anderen Tag eintragen</button></div><p id="editMsg" class="muted"></p></div>
-<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th>Einsatz</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
+<div class="card" id="entryForm"><h2>Arbeitszeit erfassen</h2><p class="muted">Du kannst <strong>mehrere Einsätze pro Tag</strong> eintragen, z. B. morgens, nachmittags und abends. Jeder Zeitblock wird einzeln gespeichert und am Monatsende zusammengerechnet.</p><div class="grid"><div class="full"><label for="date">Datum</label><input id="date" type="date"></div><div><label for="start">Arbeitsbeginn</label><input id="start" type="time" value="08:00"></div><div><label for="end">Arbeitsende</label><input id="end" type="time" value="16:00"></div><div class="full"><label for="pause">Pause (Minuten)</label><input id="pause" type="number" value="30" min="0" max="1439" step="1"><p id="pauseHint" class="muted" aria-live="polite"></p></div><div class="full"><label for="note">Bemerkung (optional)</label><input id="note" maxlength="200" placeholder="z. B. Schülertour"></div></div><div class="actions"><button id="saveBtn">Arbeitszeit speichern</button><button id="addBlockBtn" class="alt">+ Weiteren Einsatz am selben Tag</button><button id="clearBtn" class="alt">Anderen Tag eintragen</button></div><p id="breakError" class="break-error" role="alert" hidden></p><p id="editMsg" class="muted"></p></div>
+<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th>Einsatz</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><p id="monthBreakNote" class="break-error" role="alert" hidden></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
 <strong>PDF-Versand an UWE:</strong> Das Programm erstellt eine echte Datei mit der Endung <b>.pdf</b> (nicht .txt).<br>
 <strong>WhatsApp:</strong> Tippe auf „PDF per WhatsApp“, wähle im iPhone-Teilen-Menü WhatsApp und anschließend den Betriebskontakt UWE (0241 400 111 11). Prüfe die PDF vor „Senden“.<br>
 <strong>E-Mail:</strong> Tippe auf „PDF per E-Mail“, wähle Mail oder Outlook, trage die UWE-Betriebsadresse ein und sende die E-Mail mit dem PDF-Anhang.<br>
@@ -62,6 +65,39 @@ function monthly(){return records.filter(x=>x.date.slice(0,7)===ym()).sort((a,b)
 function fnum(n){return n.toFixed(2).replace('.',',')}
 
 let editingId=null;
+let pauseManuallyEdited=false;
+
+const breakRules=window.UweBreakRules;
+function currentEntry(){return{id:editingId||undefined,date:$('date').value,start:$('start').value,end:$('end').value,pause:Number($('pause').value),note:$('note').value.trim()}}
+function formError(message){$('breakError').textContent=message||'';$('breakError').hidden=!message;}
+function otherSameDay(r){return records.filter(x=>x.date===r.date&&x.id!==editingId);}
+function refreshPauseHint(){
+ const r=currentEntry(),minutes=breakRules.gross(r);
+ if(!r.date||!Number.isFinite(minutes)){$('pauseHint').textContent='Bitte Beginn und Ende eintragen.';return;}
+ const day=breakRules.evaluateDay([...otherSameDay(r),r],r.date);
+ if(!day.valid){$('pauseHint').textContent=day.reason;return;}
+ $('pauseHint').textContent='Für diesen Tag: '+(day.required?day.required+' Minuten Mindestpause':'unter 6 Stunden keine Mindestpause')+
+ '. Einsatzzeiten: '+(day.gross/60).toFixed(2).replace('.',',')+' Std.'+
+ (day.gaps?' Freie Zeit zwischen Einsätzen: '+day.gaps+' Min. (bereits unbezahlt).':'')+
+ (day.missing?' Noch fehlend: '+day.missing+' Min.':'')+
+ ' Nur tatsächlich genommene Pausen eintragen.';
+}
+function offerAutoPause(){
+ const r=currentEntry();
+ if(!pauseManuallyEdited){
+  const suggested=breakRules.suggestedPause(r,records);
+  if(suggested!==null)$('pause').value=String(suggested);
+ }
+ formError('');refreshPauseHint();
+}
+function checkMonthlyPause(){
+ const problems=breakRules.errorsForMonth(monthly(),ym());
+ if(!problems.length)return true;
+ const first=problems[0],d=first.date;
+ const msg='Bitte zunächst die Pause korrigieren. '+d.slice(8,10)+'.'+d.slice(5,7)+'.'+d.slice(0,4)+': '+first.message;
+ alert(msg);$('monthBreakNote').textContent=msg;$('monthBreakNote').hidden=false;return false;
+}
+
 function makeEntryId(){
   if(crypto.randomUUID)return crypto.randomUUID();
   return "e"+Date.now().toString(36)+"-"+Array.from(crypto.getRandomValues(new Uint8Array(8)),x=>x.toString(16).padStart(2,"0")).join("");
