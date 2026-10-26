@@ -82,11 +82,12 @@ Ohne Anmeldung (`app_anon`): `public_tenant_branding(slug) → (slug, name, bran
 |---|---|
 | `auth.get_login(email) → (user_id, password_hash)` | Hash holen; Prüfung mit `crypto.scrypt` + `timingSafeEqual` in der API |
 | `auth.create_session(user_id, ttl='12 hours', user_agent?) → (session_id, token, expires_at)` | Token einmalig als HttpOnly-Cookie setzen |
-| `auth.resolve_session(token) → (session_id, user_id, expires_at)` | je Anfrage; leeres Ergebnis = abgemeldet |
+| `auth.resolve_session(token, idle_minutes=120) → (session_id, user_id, expires_at)` | je Anfrage; prüft Ablauf, gesperrte Konten und Leerlauf (widerruft leerlaufende Sitzungen), aktualisiert `last_seen_at`; leeres Ergebnis = abgemeldet (seit 0008) |
 | `auth.revoke_session(token) → boolean` | Abmelden |
 | `auth.create_password_reset(email) → token \| null` | Link per E-Mail; Antwort an den Client immer gleich |
 | `auth.reset_password(token, password_hash) → user_id` | setzt Hash, beendet alle Sitzungen |
-| `auth.accept_invitation(token, password_hash) → user_id` | legt Konto an (oder nutzt vorhandenes), aktiviert Mitarbeiter |
+| `auth.invitation_needs_existing_login(token) → boolean` | Einladung gehört zu einer E-Mail mit bestehendem Konto (seit 0008) |
+| `auth.accept_invitation(token, password_hash) → user_id` | neues Konto: Hash Pflicht; bestehendes Konto: Hash muss `NULL` sein (sonst `PT409`), Konto wird ohne Passwortänderung verknüpft; aktiviert Mitarbeiter |
 
 Ablauf je Anfrage: Cookie → `resolve_session` (als `app_auth`) → `user_id` →
 neue Transaktion als `app_user` mit `request.jwt.claims.sub = user_id`.
@@ -100,7 +101,11 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 - JSON, UTF-8. Fehler: `{"error": {"code": "...", "message": "<deutscher Text>"}}`.
 - Sitzung per Cookie `__Host-sid` (HTTPS) bzw. `sid` (lokal http): `HttpOnly; SameSite=Strict; Path=/`,
   32 Byte Zufall, in `auth.sessions` nur als SHA-256-Hash. Ablauf 12 h, Leerlauf-Timeout 120 min.
-  Die Sitzung wird von der API selbst geprüft (Leerlauf-Prüfung; `auth.resolve_session` kennt keinen Leerlauf).
+  Prüfung je Anfrage mit `auth.resolve_session(token, SESSION_IDLE_MINUTES)` (als `app_auth`), danach in der
+  `app_user`-Transaktion `current_session_context()`: Hat die Person keine Mitgliedschaft in einem
+  **aktiven** Mandanten (und keine Plattformrolle), antwortet jede Anfrage mit 403
+  `tenant_suspended` „Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.“
+  (bestehende Sitzungen enden damit sofort; `GET /api/auth/session` liefert `null`).
 - POST/PUT/PATCH/DELETE: Pflicht `Content-Type: application/json` (sonst 415) und `Origin` aus
   `PUBLIC_ORIGIN` (sonst 403). Body-Limit 32 KB (Branding 1,2 MB).
 - Statuscodes zusätzlich zur Tabelle oben: 401 nicht angemeldet, 413 zu groß, 415 kein JSON,
@@ -113,12 +118,12 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 
 | Methode, Pfad | Body | Antwort |
 |---|---|---|
-| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · 401 einheitlicher Text · 403 Zugang inaktiv/Firma gesperrt · 429 |
+| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · 401 einheitlicher Text · 403 Zugang inaktiv bzw. `tenant_suspended` · 429 |
 | `POST /api/auth/logout` | `{}` | 204, Cookie gelöscht, Sitzung widerrufen |
 | `GET /api/auth/session` | – | 200 `Session` oder `null` (Session enthält zusätzlich `memberships`) |
 | `POST /api/auth/password-reset` | `{email}` | immer 204 (keine Kontenaufzählung); Link `PUBLIC_ORIGIN + RESET_LINK_PATH#token=…` |
 | `POST /api/auth/password-reset/confirm` | `{token, password}` | 204 · 400 Link ungültig/Passwort zu kurz (min. 10 Zeichen) |
-| `POST /api/auth/invitation/accept` | `{token, password}` | 204 (keine automatische Anmeldung) |
+| `POST /api/auth/invitation/accept` | `{token, password?}` | 200 `{existingAccount, message}`, keine automatische Anmeldung. Erst `invitation_needs_existing_login`: bestehendes Konto → Verknüpfung **ohne** Passwort (ein mitgesendetes Passwort wird nicht verwendet), `message` bittet um Anmeldung mit dem bisherigen Passwort; neues Konto → `password` Pflicht (min. 10 Zeichen). `PT409` → 409 `existing_account` |
 | `GET /api/public/tenants/:slug/branding` | – | Login-Seite (`app_anon`) |
 | `GET /api/health` | – | `{ok: true}` |
 
@@ -134,7 +139,7 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 | Einladung erneut senden | `POST /api/employees/:id/invitation` |
 | `listTimeEntries` | `GET /api/employees/:id/time-entries?month=YYYY-MM` |
 | `listTenantTimeEntries` | `GET /api/tenants/:tenantId/time-entries?from=YYYY-MM-DD&to=YYYY-MM-DD` (max. 400 Tage) |
-| `createTimeEntry` | `POST /api/employees/:id/time-entries` → 201 neu, **200 bei bereits vorhandener ID** (idempotent) |
+| `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |
 | `updateTimeEntry` | `PATCH /api/employees/:id/time-entries/:entryId` oder `PATCH /api/time-entries/:entryId` – `{patch, expectedVersion, reason?}` |
 | `deleteTimeEntry` | `DELETE` (gleiche Pfade) – `{expectedVersion, reason?}` (Soft-Delete) |
 | `listAllocations` / `setAllocation` | `GET /api/employees/:id/allocations` · `PUT /api/employees/:id/allocations/:month` `{minutes}` |
@@ -157,4 +162,4 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
   Schreibzugriffe je Mitarbeiter sind dafür per `pg_advisory_xact_lock` serialisiert.
   Vor dem Einreichen eines Monats wird derselbe Check für alle Tage des Monats ausgeführt.
 - Logos/Bildmarken: nur PNG/JPEG/WebP (Data-URL ≤ 300 KB, Signatur geprüft), https-URL oder
-  relativer Pfad; **SVG wird abgelehnt** (XSS-Risiko). Die DB-Prüfung erlaubt SVG weiterhin.
+  relativer Pfad; **SVG wird abgelehnt** (XSS-Risiko). Seit 0008 lehnt auch die DB-Prüfung SVG ab.

@@ -91,28 +91,20 @@ export async function createSession(
 }
 
 /**
- * Valid session for a cookie token, or null. Revokes sessions that were idle
- * for longer than idleMinutes. last_seen_at is refreshed at most once a minute.
+ * Valid session for a cookie token, or null. auth.resolve_session (0008)
+ * checks expiry, disabled accounts and the idle timeout (revokes idle
+ * sessions) and refreshes last_seen_at.
  */
 export async function resolveSession(pool: pg.Pool, token: string, idleMinutes: number): Promise<SessionRecord | null> {
   if (!SESSION_TOKEN_RE.test(token)) return null;
   return withTx(pool, "app_auth", null, async (q) => {
-    const r = await q.query<{ id: string; user_id: string; email: string; expires_at: Date; idle: boolean; touch: boolean }>(
-      `select s.id, s.user_id, u.email, s.expires_at,
-              coalesce(s.last_seen_at, s.created_at) < now() - make_interval(mins => $2) as idle,
-              coalesce(s.last_seen_at, s.created_at) < now() - interval '1 minute' as touch
-       from auth.sessions s join auth.users u on u.id = s.user_id
-       where s.token_hash = $1 and s.revoked_at is null and s.expires_at > now() and u.disabled_at is null`,
-      [sha256Hex(token), idleMinutes],
+    const r = await q.query<{ session_id: string; user_id: string; expires_at: Date; email: string }>(
+      `select s.session_id, s.user_id, s.expires_at, u.email
+         from auth.resolve_session($1, $2) s join auth.users u on u.id = s.user_id`,
+      [token, idleMinutes],
     );
     const s = r.rows[0];
-    if (!s) return null;
-    if (s.idle) {
-      await q.query("update auth.sessions set revoked_at = now() where id = $1", [s.id]);
-      return null;
-    }
-    if (s.touch) await q.query("update auth.sessions set last_seen_at = now() where id = $1", [s.id]);
-    return { sessionId: s.id, userId: s.user_id, email: s.email, expiresAt: s.expires_at };
+    return s ? { sessionId: s.session_id, userId: s.user_id, email: s.email, expiresAt: s.expires_at } : null;
   });
 }
 
@@ -146,8 +138,20 @@ export async function resetPassword(pool: pg.Pool, token: string, password: stri
   });
 }
 
-export async function acceptInvitation(pool: pg.Pool, token: string, password: string): Promise<string> {
-  const hash = await hashPassword(password);
+/** True when the invitation's e-mail already has an account (link without new password). */
+export async function invitationNeedsExistingLogin(pool: pg.Pool, token: string): Promise<boolean> {
+  return withTx(pool, "app_auth", null, async (q) => {
+    const r = await q.query<{ v: boolean }>("select auth.invitation_needs_existing_login($1) as v", [token]);
+    return Boolean(r.rows[0]?.v);
+  });
+}
+
+/**
+ * Accepts an invitation. password = null links an existing account (its
+ * password stays unchanged); for a new account a password is required.
+ */
+export async function acceptInvitation(pool: pg.Pool, token: string, password: string | null): Promise<string> {
+  const hash = password === null ? null : await hashPassword(password);
   return withTx(pool, "app_auth", null, async (q) => {
     const r = await q.query<{ user_id: string }>("select auth.accept_invitation($1, $2) as user_id", [token, hash]);
     return r.rows[0]!.user_id;

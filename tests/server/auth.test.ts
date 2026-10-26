@@ -226,7 +226,8 @@ describe("password reset (no account enumeration)", () => {
 describe("invitations", () => {
   it("accepts the seeded invitation (sets password, activates employee) without auto sign-in", async () => {
     const r = await t.call("POST", "/api/auth/invitation/accept", { body: { token: IDS.invitationTokenB, password: "Einladung-Passwort-1" } });
-    expect(r.status).toBe(204);
+    expect(r.status).toBe(200);
+    expect(r.body.existingAccount).toBe(false);
     expect(r.headers.get("set-cookie")).toBeNull();
     const login = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.invitedB, password: "Einladung-Passwort-1" } });
     expect(login.status).toBe(200);
@@ -250,10 +251,43 @@ describe("invitations", () => {
     expect(mail.to).toBe("neu.person@demo-krankentransporte.example");
     expect(mail.text).toContain(`${ORIGIN}/einladung#token=`);
     const accept = await t.call("POST", "/api/auth/invitation/accept", { body: { token: tokenFromMail(mail), password: "Erstes-Passwort-99" } });
-    expect(accept.status).toBe(204);
+    expect(accept.status).toBe(200);
     const login = await t.call("POST", "/api/auth/login", { body: { email: "neu.person@demo-krankentransporte.example", password: "Erstes-Passwort-99" } });
     expect(login.status).toBe(200);
     expect(login.body.employeeId).toBe(r.body.id);
+  });
+
+  it("an existing account is linked without changing its password, and the user is told so", async () => {
+    const ownerB = await t.login("ownerB");
+    const before = t.mails.length;
+    const r = await t.call("POST", `/api/tenants/${IDS.tenantB}/employees`, {
+      cookie: ownerB,
+      body: { displayName: "Sam Zweitjob", personnelNumber: "P-50", email: EMAILS.emp1A, role: "employee" },
+    });
+    expect(r.status).toBe(201);
+    await new Promise((res) => setTimeout(res, 50));
+    const token = tokenFromMail(t.mails[before]!);
+    const accept = await t.call("POST", "/api/auth/invitation/accept", { body: { token, password: "Wird-nicht-verwendet-1" } });
+    expect(accept.status).toBe(200);
+    expect(accept.body.existingAccount).toBe(true);
+    expect(accept.body.message).toMatch(/bisherigen Passwort an/);
+    expect((await t.call("POST", "/api/auth/login", { body: { email: EMAILS.emp1A, password: "Wird-nicht-verwendet-1" } })).status).toBe(401);
+    const login = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.emp1A, password: PASSWORD } });
+    expect(login.status).toBe(200);
+    expect(login.body.memberships.map((m: { tenantId: string }) => m.tenantId).sort()).toEqual([IDS.tenantA, IDS.tenantB].sort());
+    expect((await t.call("POST", "/api/auth/invitation/accept", { body: { token } })).status).toBe(400);
+  });
+
+  it("a new account needs a password", async () => {
+    const owner = await t.login("ownerA");
+    const before = t.mails.length;
+    await t.call("POST", `/api/tenants/${IDS.tenantA}/employees`, {
+      cookie: owner, body: { displayName: "Ohne Passwort", personnelNumber: "A-902", email: "ohne.passwort@demo-krankentransporte.example", role: "employee" },
+    });
+    await new Promise((res) => setTimeout(res, 50));
+    const r = await t.call("POST", "/api/auth/invitation/accept", { body: { token: tokenFromMail(t.mails[before]!) } });
+    expect(r.status).toBe(400);
+    expect(r.body.error.message).toMatch(/Passwort/);
   });
 
   it("a manager cannot invite a manager (owner only)", async () => {
@@ -263,5 +297,30 @@ describe("invitations", () => {
       body: { displayName: "Leitung Zwei", personnelNumber: "A-901", email: null, role: "manager" },
     });
     expect(r.status).toBe(403);
+  });
+});
+
+describe("suspended tenant", () => {
+  it("an existing session of a member stops working with a clear message; login is refused", async () => {
+    const emp = await t.login("ownerB"); // empB is rate-limited by an earlier test
+    expect((await t.call("GET", `/api/employees/${IDS.employees.ownerB}/time-entries?month=2026-10`, { cookie: emp })).status).toBe(200);
+    const admin = await t.login("superAdmin");
+    expect((await t.call("POST", `/api/platform/tenants/${IDS.tenantB}/status`, { cookie: admin, body: { status: "suspended", reason: "Test Sperre" } })).status).toBe(200);
+    try {
+      for (const path of [`/api/employees/${IDS.employees.ownerB}/time-entries?month=2026-10`, `/api/tenants/${IDS.tenantB}`]) {
+        const r = await t.call("GET", path, { cookie: emp });
+        expect(r.status).toBe(403);
+        expect(r.body.error).toEqual({ code: "tenant_suspended", message: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." });
+      }
+      expect((await t.call("GET", "/api/auth/session", { cookie: emp })).body).toBeNull();
+      const login = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.ownerB, password: PASSWORD } });
+      expect(login.status).toBe(403);
+      expect(login.body.error.code).toBe("tenant_suspended");
+      // platform staff keep working
+      expect((await t.call("GET", "/api/platform/tenants", { cookie: admin })).status).toBe(200);
+    } finally {
+      await t.call("POST", `/api/platform/tenants/${IDS.tenantB}/status`, { cookie: admin, body: { status: "active", reason: "Test Ende" } });
+    }
+    expect((await t.call("GET", `/api/tenants/${IDS.tenantB}`, { cookie: emp })).status).toBe(200);
   });
 });

@@ -63,6 +63,11 @@ describe("createApiRepository against the real API", () => {
     await expect(repo.listTimeEntries(IDS.employees.emp2A, "2026-10")).rejects.toBeInstanceOf(AccessDeniedError);
     await expect(repo.listTenants()).rejects.toBeInstanceOf(AccessDeniedError);
 
+    const migrated = await repo.createTimeEntry(IDS.employees.emp1A, { id: "legacy-api-0001", date: "2026-10-25", start: "08:00", end: "10:00", pauseMinutes: 0, note: "", source: "migration" });
+    expect(migrated.source).toBe("migration");
+    await expect(repo.createTimeEntry(IDS.employees.emp1A, { id: "legacy-api-0002", date: "2026-10-26", start: "08:00", end: "10:00", pauseMinutes: 0, note: "", source: "correction" as "app" }))
+      .rejects.toMatchObject({ status: 400 });
+
     await repo.deleteTimeEntry(created.id, updated.version);
     expect((await repo.listTimeEntries(IDS.employees.emp1A, "2026-10")).map((e) => e.id)).not.toContain(created.id);
 

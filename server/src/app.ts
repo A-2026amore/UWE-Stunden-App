@@ -11,7 +11,7 @@ import type { Session } from "../../platform/src/data/repository.ts";
 import type { TenantRole } from "../../platform/src/core/types.ts";
 import {
   createPasswordReset, createSession, getDummyHash, getLogin, ONE_TIME_TOKEN_RE, passwordProblem,
-  resolveSession, revokeSession, verifyPassword, acceptInvitation, resetPassword, PASSWORD_MAX, type SessionRecord,
+  resolveSession, revokeSession, verifyPassword, acceptInvitation, invitationNeedsExistingLogin, resetPassword, PASSWORD_MAX, type SessionRecord,
 } from "./auth.ts";
 import type { Config } from "./config.ts";
 import { withTx, type Queryable } from "./db.ts";
@@ -34,6 +34,8 @@ export interface Membership {
   employeeId: string;
   role: TenantRole;
   tenantName: string;
+  /** Since 0008: memberships of suspended/pending tenants are listed too. */
+  tenantStatus: "active" | "suspended" | "pending";
 }
 
 /** Session as in repository.ts, plus all memberships (for a later tenant switch). */
@@ -58,20 +60,17 @@ const defaultLog = (entry: Record<string, unknown>) => {
   else console.log(line);
 };
 
-export async function buildSession(q: Queryable, userId: string, email: string): Promise<{ session: ApiSession; blockedReason: string | null }> {
+export interface Blocked {
+  code: "tenant_suspended" | "forbidden";
+  message: string;
+}
+
+export async function buildSession(q: Queryable, userId: string, email: string): Promise<{ session: ApiSession; blocked: Blocked | null }> {
   const ctx = (await q.query<{ c: { memberships: Membership[]; platformRole: Session["platformRole"] } }>(
     "select public.current_session_context() as c",
   )).rows[0]!.c;
   const memberships = ctx.memberships ?? [];
-  let active: Membership | null = null;
-  if (memberships.length) {
-    const st = await q.query<{ id: string; status: string }>(
-      "select id, status from public.tenants where id = any($1::uuid[])",
-      [memberships.map((m) => m.tenantId)],
-    );
-    const activeTenants = new Set(st.rows.filter((r) => r.status === "active").map((r) => r.id));
-    active = memberships.find((m) => activeTenants.has(m.tenantId)) ?? null;
-  }
+  const active = memberships.find((m) => m.tenantStatus === "active") ?? null;
   const session: ApiSession = {
     userId,
     email,
@@ -81,13 +80,13 @@ export async function buildSession(q: Queryable, userId: string, email: string):
     platformRole: ctx.platformRole ?? null,
     memberships,
   };
-  let blockedReason: string | null = null;
+  let blocked: Blocked | null = null;
   if (!active && !session.platformRole) {
-    blockedReason = memberships.length
-      ? "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber."
-      : "Dein Zugang ist nicht aktiv. Bitte wende dich an deinen Arbeitgeber.";
+    blocked = memberships.length
+      ? { code: "tenant_suspended", message: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." }
+      : { code: "forbidden", message: "Dein Zugang ist nicht aktiv. Bitte wende dich an deinen Arbeitgeber." };
   }
-  return { session, blockedReason };
+  return { session, blocked };
 }
 
 export function createApp(deps: AppDeps) {
@@ -125,7 +124,13 @@ export function createApp(deps: AppDeps) {
     log,
     async asUser(ctx, fn) {
       const rec = await requireSession(ctx);
-      return withTx(pool, "app_user", rec.userId, (q) => fn(q, rec));
+      return withTx(pool, "app_user", rec.userId, async (q) => {
+        // An existing session stops working as soon as the tenant is suspended
+        // (RLS would only answer with empty results / generic 403).
+        const { blocked } = await buildSession(q, rec.userId, rec.email);
+        if (blocked) throw new HttpError(403, blocked.code, blocked.message);
+        return fn(q, rec);
+      });
     },
     asAnon(fn) {
       return withTx(pool, "app_anon", null, fn);
@@ -178,8 +183,8 @@ export function createApp(deps: AppDeps) {
     }
     limiters.loginKey.reset(key);
 
-    const { session, blockedReason } = await withTx(pool, "app_user", login.userId, (q) => buildSession(q, login.userId, email));
-    if (blockedReason) throw new HttpError(403, "forbidden", blockedReason);
+    const { session, blocked } = await withTx(pool, "app_user", login.userId, (q) => buildSession(q, login.userId, email));
+    if (blocked) throw new HttpError(403, blocked.code, blocked.message);
     const ua = typeof ctx.req.headers["user-agent"] === "string" ? ctx.req.headers["user-agent"] : null;
     const { token, expiresAt } = await createSession(pool, login.userId, config.sessionTtlHours, ua);
     log({ level: "info", msg: "login", requestId: ctx.requestId, userId: login.userId });
@@ -200,8 +205,8 @@ export function createApp(deps: AppDeps) {
     const token = ctx.cookies[cookieName];
     const rec = token ? await resolveSession(pool, token, config.sessionIdleMinutes) : null;
     if (!rec) return { status: 200, body: null, headers: token ? { "Set-Cookie": clearCookie() } : undefined };
-    const { session, blockedReason } = await withTx(pool, "app_user", rec.userId, (q) => buildSession(q, rec.userId, rec.email));
-    return { status: 200, body: blockedReason ? null : session };
+    const { session, blocked } = await withTx(pool, "app_user", rec.userId, (q) => buildSession(q, rec.userId, rec.email));
+    return { status: 200, body: blocked ? null : session };
   });
 
   // Always 204 for well-formed input – known and unknown addresses look the same.
@@ -224,30 +229,58 @@ export function createApp(deps: AppDeps) {
     return { status: 204 };
   });
 
-  async function tokenAndPassword(ctx: RequestContext): Promise<{ token: string; password: string }> {
+  function tokenBody(ctx: RequestContext): { token: string; password: unknown } {
     const wait = limiters.tokenIp.blockedFor(ctx.ip);
     if (wait > 0) throw tooMany(wait, "Versuche");
     limiters.tokenIp.hit(ctx.ip);
     const b = v.object(ctx.body, ["token", "password"]);
     if (typeof b.token !== "string" || !ONE_TIME_TOKEN_RE.test(b.token)) throw badRequest("Der Link ist ungültig oder abgelaufen.");
-    const problem = passwordProblem(b.password);
+    return { token: b.token, password: b.password };
+  }
+  function newPassword(password: unknown): string {
+    const problem = passwordProblem(password);
     if (problem) throw badRequest(problem);
-    return { token: b.token, password: b.password as string };
+    return password as string;
   }
 
   router.add("POST", "/api/auth/password-reset/confirm", async (ctx) => {
-    const { token, password } = await tokenAndPassword(ctx);
+    const b = tokenBody(ctx);
+    const token = b.token;
+    const password = newPassword(b.password);
     await resetPassword(pool, token, password);
     return { status: 204 };
   });
 
-  // Sets the password and activates the membership. No automatic sign-in: an
-  // existing account with that e-mail keeps its password (DB behaviour), so a
-  // session must only be created by a regular login.
-  router.add("POST", "/api/auth/invitation/accept", async (ctx) => {
-    const { token, password } = await tokenAndPassword(ctx);
-    await acceptInvitation(pool, token, password);
-    return { status: 204 };
+  // Activates the membership. New account → the password is set. Existing
+  // account with that e-mail → linked WITHOUT changing its password (a typed
+  // password is not used) and the user is told to sign in with the existing
+  // password. No automatic sign-in in either case.
+  router.add("POST", "/api/auth/invitation/accept", async (ctx): Promise<Reply> => {
+    const b = tokenBody(ctx);
+    if (await invitationNeedsExistingLogin(pool, b.token)) {
+      try {
+        await acceptInvitation(pool, b.token, null);
+      } catch (e) {
+        if ((e as { code?: string }).code === "PT409") throw new HttpError(409, "existing_account", (e as Error).message);
+        throw e;
+      }
+      return {
+        status: 200,
+        body: {
+          existingAccount: true,
+          message: "Für diese E-Mail-Adresse gibt es bereits ein Benutzerkonto. Die Einladung wurde damit verknüpft – bitte melde dich mit deinem bisherigen Passwort an.",
+        },
+      };
+    }
+    const password = newPassword(b.password);
+    try {
+      await acceptInvitation(pool, b.token, password);
+    } catch (e) {
+      // Race: an account with that e-mail was created in between.
+      if ((e as { code?: string }).code === "PT409") throw new HttpError(409, "existing_account", (e as Error).message);
+      throw e;
+    }
+    return { status: 200, body: { existingAccount: false, message: "Dein Passwort ist gespeichert. Du kannst dich jetzt anmelden." } };
   });
 
   registerDomainRoutes(router, app);

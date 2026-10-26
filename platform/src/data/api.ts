@@ -31,6 +31,12 @@ export class ApiError extends Error {
   }
 }
 
+export interface InvitationResult {
+  existingAccount: boolean;
+  /** German text for the user. */
+  message: string;
+}
+
 export interface SupportGrantInfo {
   tenantId: UUID;
   grantedUntil: string;
@@ -43,7 +49,12 @@ export interface ApiRepository extends Repository {
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
   confirmPasswordReset(token: string, password: string): Promise<void>;
-  acceptInvitation(token: string, password: string): Promise<void>;
+  /**
+   * New account: sets the password. Existing account with that e-mail: links
+   * the invitation without changing the password (existingAccount = true) –
+   * show `message` and ask the user to sign in with the existing password.
+   */
+  acceptInvitation(token: string, password?: string): Promise<InvitationResult>;
   resendInvitation(employeeId: UUID): Promise<void>;
 }
 
@@ -121,8 +132,8 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     async confirmPasswordReset(token, password) {
       await request<void>("POST", "/api/auth/password-reset/confirm", { token, password });
     },
-    async acceptInvitation(token, password) {
-      await request<void>("POST", "/api/auth/invitation/accept", { token, password });
+    acceptInvitation(token, password) {
+      return request<InvitationResult>("POST", "/api/auth/invitation/accept", password === undefined ? { token } : { token, password });
     },
 
     // ---- tenant
@@ -170,7 +181,9 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
       return remember(await request<TimeEntry[]>("GET", `/api/tenants/${enc(tenantId)}/time-entries?from=${enc(fromDate)}&to=${enc(toDate)}`));
     },
     async createTimeEntry(employeeId, entry: NewTimeEntry) {
-      const created = await request<TimeEntry>("POST", `/api/employees/${enc(employeeId)}/time-entries`, entry);
+      // `source` ("app" | "migration") is sent only when set; the server defaults to "app".
+      const body = { id: entry.id, date: entry.date, start: entry.start, end: entry.end, pauseMinutes: entry.pauseMinutes, note: entry.note, ...(entry.source ? { source: entry.source } : {}) };
+      const created = await request<TimeEntry>("POST", `/api/employees/${enc(employeeId)}/time-entries`, body);
       remember([created]);
       return created;
     },

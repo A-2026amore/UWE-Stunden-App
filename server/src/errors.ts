@@ -9,7 +9,7 @@ export type ErrorCode =
   | "invalid" | "unauthenticated" | "forbidden" | "not_found" | "method_not_allowed"
   | "version_conflict" | "overlap" | "duplicate" | "invalid_state" | "ambiguous"
   | "locked" | "payload_too_large" | "unsupported_media_type" | "rate_limited"
-  | "break_rule" | "internal";
+  | "break_rule" | "existing_account" | "tenant_suspended" | "internal";
 
 export class HttpError extends Error {
   readonly status: number;
