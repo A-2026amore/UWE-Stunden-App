@@ -13,7 +13,7 @@ export default defineConfig({
       {
         test: {
           name: "db",
-          include: ["tests/db/**/*.test.ts"],
+          include: ["tests/db/**/*.test.ts", "tests/server/**/*.test.ts"],
           environment: "node",
           // Database tests share one PostgreSQL instance and must not run in parallel.
           fileParallelism: false,
