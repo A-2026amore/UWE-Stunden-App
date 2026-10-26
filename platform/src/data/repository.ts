@@ -52,6 +52,8 @@ export interface NewTimeEntry {
   end: string;
   pauseMinutes: number;
   note: string;
+  /** "migration" for entries taken over from the legacy app; defaults to "app". */
+  source?: "app" | "migration";
 }
 
 export interface TenantOverview {
