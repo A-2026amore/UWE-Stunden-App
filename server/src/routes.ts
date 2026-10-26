@@ -334,7 +334,10 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       if (email) {
         const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
         const t = await one(q, "select name from public.tenants where id = $1", [id]);
-        mails.push(invitationMail(email, String((inv!.inv as { token: string }).token), String(t?.name ?? "")));
+        const data = inv!.inv as { token: string; expiresAt: string };
+        mails.push(invitationMail(email, String(data.token), String(t?.name ?? "")));
+        // The link itself is never returned: only the invited address receives it.
+        return json(201, { ...toEmployee(r!), invitation: { expiresAt: data.expiresAt, delivery: app.mailDelivery } });
       }
       return json(201, toEmployee(r!));
     });
@@ -350,7 +353,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       const e = await one(q, "select e.email, t.name from public.employees e join public.tenants t on t.id = e.tenant_id where e.id = $1", [id]);
       const data = inv!.inv as { invitationId: string; token: string; expiresAt: string };
       mails.push(invitationMail(String(e!.email), data.token, String(e!.name)));
-      return json(200, { invitationId: data.invitationId, expiresAt: data.expiresAt });
+      return json(200, { invitationId: data.invitationId, expiresAt: data.expiresAt, delivery: app.mailDelivery });
     });
     app.sendLater(mails);
     return result;

@@ -1,10 +1,33 @@
 /**
- * Repository wiring for the UI apps. The staging/demo build always uses the
- * in-browser DemoRepository; production will plug in the server API client.
+ * Repository wiring for the UI apps.
+ *
+ * Build-time switch `VITE_DATA_MODE`:
+ *  - "demo" (default, staging): in-browser DemoRepository with invented data;
+ *    every app area keeps its own demo login.
+ *  - "api": our own Node API (server/, docs/api.md) at `VITE_API_BASE`
+ *    (default: same origin). One HttpOnly session cookie is shared by all
+ *    areas of the origin.
  */
+import type { AuditEvent, UUID } from "../../core/types";
+import { createApiRepository, type ApiRepository, type AuthFailure, type SupportGrantInfo } from "../../data/api";
 import { createDemoRepository, memoryStorage, type DemoRepository, type KeyValueStorage } from "../../data/demo";
+import type { Repository } from "../../data/repository";
 
 export type AppArea = "app" | "chef" | "admin";
+export type DataMode = "demo" | "api";
+
+export const DATA_MODE: DataMode = import.meta.env.VITE_DATA_MODE === "api" ? "api" : "demo";
+/** True while the app runs on demo data (staging build). */
+export const IS_DEMO = DATA_MODE === "demo";
+/** API base URL without trailing slash ("" = same origin). */
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
+
+/** What the three apps use: the repository contract plus support-grant and platform-audit helpers (demo and API). */
+export interface AreaRepository extends Repository {
+  listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
+  getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
+  setSupportGrant(tenantId: UUID, hours: number): Promise<SupportGrantInfo | null>;
+}
 
 export function safeStorage(): KeyValueStorage {
   try {
@@ -17,17 +40,44 @@ export function safeStorage(): KeyValueStorage {
   }
 }
 
-const cache = new Map<AppArea, DemoRepository>();
+// ------------------------------------------------------------------ auth failures (api mode)
 
-/** One repository per app area; each area keeps its own login session. */
-export function getRepository(area: AppArea): DemoRepository {
-  let repo = cache.get(area);
+const authListeners = new Set<(f: AuthFailure) => void>();
+
+/** Expired session (401) or suspended tenant (403 tenant_suspended) – the app returns to its login. */
+export function onAuthFailure(listener: (f: AuthFailure) => void): () => void {
+  authListeners.add(listener);
+  return () => authListeners.delete(listener);
+}
+
+function emitAuthFailure(f: AuthFailure): void {
+  for (const l of [...authListeners]) {
+    try { l(f); } catch { /* a broken listener must not hide the error */ }
+  }
+}
+
+// ------------------------------------------------------------------ repositories
+
+const demoCache = new Map<AppArea, DemoRepository>();
+let api: ApiRepository | null = null;
+
+/** Demo build only: the in-browser demo database of one area (start page: reset). */
+export function getDemoRepository(area: AppArea): DemoRepository {
+  let repo = demoCache.get(area);
   if (!repo) {
     repo = createDemoRepository(safeStorage(), { sessionKey: `stundenwerk_demo_session_${area}` });
-    cache.set(area, repo);
+    demoCache.set(area, repo);
   }
   return repo;
 }
 
-/** True while the app runs on demo data (always true in this build). */
-export const IS_DEMO = true;
+/** API build only: the API client (one per page; the session cookie is shared by all areas). */
+export function getApiRepository(): ApiRepository {
+  if (!api) api = createApiRepository(API_BASE, { onAuthFailure: emitAuthFailure });
+  return api;
+}
+
+/** Repository of an app area (demo: own demo login per area; api: shared API client). */
+export function getRepository(area: AppArea): AreaRepository {
+  return DATA_MODE === "api" ? getApiRepository() : getDemoRepository(area);
+}

@@ -6,6 +6,7 @@ import { shiftMonth } from "../../../data/demo";
 import { workedMinutesInMonth } from "../../../core/workAccount";
 import { loadTenantMonth, useChef } from "../context";
 import { DemoBanner } from "../../shared/ui";
+import { IS_DEMO } from "../../shared/repo";
 
 export function DashboardPage() {
   const { repo, tenant, version } = useChef();
@@ -48,7 +49,7 @@ export function DashboardPage() {
         </div>
         <LinkButton href="#/mitarbeiter" icon="plus" variant="primary">Mitarbeiter einladen</LinkButton>
       </div>
-      {tenant.isDemo && <DemoBanner />}
+      {IS_DEMO && tenant.isDemo && <DemoBanner />}
       <div class="grid-4">
         <StatTile label="Mitarbeitende" value={staff.length} hint={`${active.length} aktiv, ${staff.length - active.length} eingeladen`} />
         <StatTile label={`Geleistete Stunden ${monthLabelDE(month)}`} value={hoursLabel(worked)} tone="brand" />

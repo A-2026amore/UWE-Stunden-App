@@ -22,6 +22,7 @@ Browser ──HTTPS──▶ Caddy ──▶ Node-API (127.0.0.1:3000) ──▶
 | `src/app.ts` | Anmeldung, Sitzungen, Passwort-Reset, Einladungen, Rate-Limits |
 | `src/routes.ts` | Fach-Endpunkte für alle Repository-Methoden, Pausenprüfung mit `platform/src/core` |
 | `src/auth.ts` | scrypt-Passwörter, Sitzungs-Token (nur SHA-256-Hash in der DB) |
+| `src/static.ts` | Optional: Auslieferung von `platform/dist` (`STATIC_DIR`) mit eigener CSP |
 | `src/mailer.ts` | E-Mail (minimaler SMTP-Client; ohne SMTP: Ausgabe ins Log nur in Entwicklung) |
 | `src/cli.ts` | Betriebsbefehl `set-password` |
 | `register.mjs`, `resolve-ts.mjs` | Lädt TypeScript direkt (Node-Typ-Entfernung) inkl. `platform/src/core` |
@@ -65,6 +66,7 @@ Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **
 | `SESSION_IDLE_MINUTES` | – | `120` | Sitzung endet nach so langer Inaktivität. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | – | – | Mailversand. `SMTP_TLS`: `implicit` (465), `starttls` (587, Standard), `none` (nur lokal/Test, in Produktion verboten). |
 | `RESET_LINK_PATH` / `INVITE_LINK_PATH` | – | `/passwort-neu` / `/einladung` | Pfade der Frontend-Seiten; das Token hängt als `#token=…` (Fragment, landet in keinem Server-Log). |
+| `STATIC_DIR` | – | aus | Verzeichnis des API-Builds (`VITE_DATA_MODE=api npm run build` → `platform/dist`). Gesetzt: alles außer `/api/…` wird als Datei daraus ausgeliefert (nur GET/HEAD, strenge CSP, siehe `docs/betrieb.md` Abschnitt 7). Fehlt das Verzeichnis, startet die API nicht. |
 | `RATE_LIMIT_WINDOW_MINUTES` | – | `15` | Zeitfenster der Rate-Limits. |
 | `RATE_LIMIT_LOGIN_PER_ACCOUNT` | – | `5` | Fehlversuche je IP + E-Mail. |
 | `RATE_LIMIT_LOGIN_PER_IP` | – | `100` | Anmeldeversuche je IP. |
@@ -96,6 +98,10 @@ speichert nur ihren SHA-256-Hash.
 npx vitest run --project db --no-file-parallelism tests/server
 ```
 
+`static.test.ts` prüft `STATIC_DIR` (CSP, Cache-Header, Weiterleitung `/passwort-neu` → `/passwort-neu/`,
+keine versteckten Dateien/Traversal/Symlinks, `/api` bleibt API) und dass Einladungsantworten nur
+`invitation: {expiresAt, delivery}` enthalten, nie Token oder Link.
+
 Startet einen Wegwerf-PostgreSQL (oder nutzt `DATABASE_URL` als Superuser), spielt Migrationen +
 Seed ein, setzt Demo-Passwörter über die Auth-Funktionen und prüft die API über echtes HTTP
 (u. a. Mandantentrennung für jede Ressource, Rollen, CSRF, Rate-Limit, Reset ohne Kontenaufzählung,
@@ -110,7 +116,7 @@ PostgreSQL 16 lauscht nur auf `127.0.0.1`, Domain `zeit.example.de` (Platzhalter
 ```bash
 sudo adduser --system --group --home /srv/uwe-zeit uwe-api
 cd /srv/uwe-zeit && sudo -u uwe-api npm ci   # pg steht derzeit unter devDependencies → nicht --omit=dev
-sudo -u uwe-api npm run build                # Frontend nach platform/dist
+sudo -u uwe-api env VITE_DATA_MODE=api npm run build   # Frontend (API-Modus) nach platform/dist
 ```
 
 **Datenbank:** Migrationen als Superuser einspielen (siehe oben, **ohne** `db/seed.sql`), dann
@@ -175,7 +181,10 @@ WantedBy=multi-user.target
 
 `sudo systemctl daemon-reload && sudo systemctl enable --now uwe-zeit-api` · Logs: `journalctl -u uwe-zeit-api`.
 
-**Caddy** `/etc/caddy/Caddyfile` (TLS-Zertifikat automatisch über Let's Encrypt):
+**Caddy** – empfohlen mit `STATIC_DIR=/srv/uwe-zeit/platform/dist` in der Umgebungsdatei: dann reicht
+`reverse_proxy 127.0.0.1:3000` für alles (Header und CSP setzt die API, siehe `docs/betrieb.md` Abschnitt 7.2).
+Alternative ohne `STATIC_DIR` – Caddy liefert die Dateien selbst aus und muss dann auch die CSP setzen
+(`/etc/caddy/Caddyfile`, TLS-Zertifikat automatisch über Let's Encrypt):
 
 ```caddy
 zeit.example.de {
@@ -192,6 +201,8 @@ zeit.example.de {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		-Server
 	}
 }

@@ -4,9 +4,16 @@
  * (`credentials: "include"`).
  *
  * Error mapping:
- *  - 403 (and 401 outside of signIn) → AccessDeniedError
+ *  - 401 outside of signIn → SessionExpiredError (an AccessDeniedError)
+ *  - 403 with code "tenant_suspended" → TenantSuspendedError (an AccessDeniedError)
+ *  - other 403 → AccessDeniedError
  *  - 409 with code "version_conflict" → ConflictError
+ *  - no connection → ApiError with status 0 and `network === true` (the sync
+ *    layer treats it like a fetch TypeError and keeps the change queued)
  *  - everything else → ApiError (status + code + German message from the server)
+ *
+ * Expired sessions and suspended tenants are additionally reported to
+ * `options.onAuthFailure`, so the apps can return to the login screen.
  *
  * The browser sends the Origin header itself; every write is sent as
  * `Content-Type: application/json` as required by the server's CSRF check.
@@ -29,7 +36,38 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
+  /** True when the server could not be reached (see isNetworkError in sync.ts). */
+  get network(): boolean {
+    return this.status === 0;
+  }
 }
+
+/** 401: the session cookie is missing, expired or idle-timed-out. */
+export class SessionExpiredError extends AccessDeniedError {
+  constructor(message = "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.") {
+    super(message);
+    this.name = "SessionExpiredError";
+  }
+}
+
+/** 403 tenant_suspended: the company access is blocked by the platform operator. */
+export class TenantSuspendedError extends AccessDeniedError {
+  constructor(message = "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.") {
+    super(message);
+    this.name = "TenantSuspendedError";
+  }
+}
+
+export type AuthFailure = { kind: "expired" | "suspended"; message: string };
+
+/** Returned by inviteEmployee / resendInvitation when an invitation was created. */
+export interface InvitationInfo {
+  expiresAt: string;
+  /** "email": sent via SMTP · "log": development server without SMTP (link in the server log) · "none": not sent (SMTP missing). */
+  delivery: "email" | "log" | "none";
+}
+
+export type InvitedEmployee = Employee & { invitation?: InvitationInfo };
 
 export interface InvitationResult {
   existingAccount: boolean;
@@ -55,12 +93,15 @@ export interface ApiRepository extends Repository {
    * show `message` and ask the user to sign in with the existing password.
    */
   acceptInvitation(token: string, password?: string): Promise<InvitationResult>;
-  resendInvitation(employeeId: UUID): Promise<void>;
+  inviteEmployee(tenantId: UUID, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }): Promise<InvitedEmployee>;
+  resendInvitation(employeeId: UUID): Promise<InvitationInfo | null>;
 }
 
 export interface ApiRepositoryOptions {
   /** Custom fetch (tests, SSR). Defaults to globalThis.fetch. */
   fetch?: typeof fetch;
+  /** Called on 401 (outside signIn) and on 403 tenant_suspended – e.g. to show the login again. */
+  onAuthFailure?: (failure: AuthFailure) => void;
 }
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -100,7 +141,17 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     const err = (data as { error?: { code?: string; message?: string } } | null)?.error;
     const code = err?.code ?? "error";
     const message = err?.message ?? `Anfrage fehlgeschlagen (${res.status}).`;
-    if (res.status === 403 || (res.status === 401 && !opts.signIn)) throw new AccessDeniedError(message);
+    if (res.status === 401 && !opts.signIn) {
+      const e = new SessionExpiredError(err?.message && code !== "unauthenticated" ? err.message : undefined);
+      options.onAuthFailure?.({ kind: "expired", message: e.message });
+      throw e;
+    }
+    if (res.status === 403 && code === "tenant_suspended") {
+      const e = new TenantSuspendedError(err?.message);
+      if (!opts.signIn) options.onAuthFailure?.({ kind: "suspended", message: e.message });
+      throw e;
+    }
+    if (res.status === 403) throw new AccessDeniedError(message);
     if (res.status === 409 && code === "version_conflict") throw new ConflictError(message);
     throw new ApiError(res.status, code, message);
   }
@@ -161,10 +212,11 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
       return request<Employee[]>("GET", `/api/tenants/${enc(tenantId)}/employees`);
     },
     inviteEmployee(tenantId, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }) {
-      return request<Employee>("POST", `/api/tenants/${enc(tenantId)}/employees`, input);
+      return request<InvitedEmployee>("POST", `/api/tenants/${enc(tenantId)}/employees`, input);
     },
     async resendInvitation(employeeId) {
-      await request<unknown>("POST", `/api/employees/${enc(employeeId)}/invitation`, {});
+      const r = await request<{ expiresAt: string; delivery?: InvitationInfo["delivery"] } | null>("POST", `/api/employees/${enc(employeeId)}/invitation`, {});
+      return r ? { expiresAt: r.expiresAt, delivery: r.delivery ?? "email" } : null;
     },
     updateEmployee(employeeId, patch) {
       return request<Employee>("PATCH", `/api/employees/${enc(employeeId)}`, patch);

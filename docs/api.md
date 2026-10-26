@@ -136,7 +136,7 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 | Support-Freigabe (UI) | `GET`/`PUT /api/tenants/:tenantId/support-grant` (`{hours: 0–168, reason?}`, 0 = widerrufen) |
 | `listEmployees` / `inviteEmployee` | `GET`/`POST /api/tenants/:tenantId/employees` (mit E-Mail → Einladung per Mail) |
 | `updateEmployee` / `setEmployeeStatus` | `PATCH /api/employees/:id` · `POST /api/employees/:id/status` `{status, reason}` |
-| Einladung erneut senden | `POST /api/employees/:id/invitation` |
+| Einladung erneut senden | `POST /api/employees/:id/invitation` → `{expiresAt, delivery}` (`delivery`: `sent` · `logged` · `failed`). Der Einladungslink wird nie an die Leitung zurückgegeben, nur an die eingeladene Adresse gesendet. Auch `inviteEmployee` liefert zusätzlich `invitation: {expiresAt, delivery}`. |
 | `listTimeEntries` | `GET /api/employees/:id/time-entries?month=YYYY-MM` |
 | `listTenantTimeEntries` | `GET /api/tenants/:tenantId/time-entries?from=YYYY-MM-DD&to=YYYY-MM-DD` (max. 400 Tage) |
 | `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |

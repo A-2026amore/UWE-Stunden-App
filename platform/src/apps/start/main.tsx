@@ -5,7 +5,7 @@ import {
   Alert, Button, Card, DialogProvider, Icon, PRODUCT_NAME, PRODUCT_NAME_NOTE, PRODUCT_TAGLINE, ToastProvider, setAssetBase, useDialogs, useToast,
 } from "../../design";
 import { DEMO_LOGINS, DEMO_PASSWORD } from "../../data/demo";
-import { getRepository } from "../shared/repo";
+import { IS_DEMO, getDemoRepository } from "../shared/repo";
 import { ProductMark } from "../shared/ui";
 
 setAssetBase("./");
@@ -24,9 +24,9 @@ function Start() {
     const ok = await dialogs.confirm({ title: "Demo-Daten zurücksetzen?", message: "Alle in diesem Browser gemachten Änderungen werden verworfen und die Beispieldaten neu erzeugt. Alle Bereiche werden abgemeldet.", confirmLabel: "Zurücksetzen", danger: true });
     if (!ok) return;
     setBusy(true);
-    const repo = getRepository("app");
+    const repo = getDemoRepository("app");
     repo.resetDemoData();
-    await Promise.all((["app", "chef", "admin"] as const).map((a) => getRepository(a).signOut()));
+    await Promise.all((["app", "chef", "admin"] as const).map((a) => getDemoRepository(a).signOut()));
     setBusy(false);
     toast("Demo-Daten wurden zurückgesetzt.");
   };
@@ -89,4 +89,33 @@ function Start() {
   );
 }
 
-render(<ToastProvider><DialogProvider><Start /></DialogProvider></ToastProvider>, document.getElementById("root")!);
+/** API build: plain entry page to the three areas (no demo data, no demo logins). */
+function ApiStart() {
+  return (
+    <main class="m-main" style={{ maxWidth: "var(--content-max-wide)", paddingBottom: "var(--space-10)" }} id="main">
+      <div class="stack">
+        <header class="row-between" style={{ paddingTop: "var(--space-4)" }}>
+          <ProductMark />
+        </header>
+        <div>
+          <h1 style={{ fontSize: "var(--text-3xl)" }}>{PRODUCT_NAME}</h1>
+          <p class="muted" style={{ fontSize: "var(--text-lg)" }}>{PRODUCT_TAGLINE}.</p>
+        </div>
+        <div class="grid-3">
+          {AREAS.map((a) => (
+            <Card key={a.href}>
+              <div class="stack-sm">
+                <span style={{ color: "var(--brand-primary-text)" }}><Icon name={a.icon} size={32} /></span>
+                <h2 class="mb-0">{a.title}</h2>
+                <p class="muted small">{a.text}</p>
+                <a class="btn btn-primary" href={a.href}>{a.title} öffnen</a>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+render(IS_DEMO ? <ToastProvider><DialogProvider><Start /></DialogProvider></ToastProvider> : <ApiStart />, document.getElementById("root")!);

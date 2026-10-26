@@ -209,9 +209,49 @@ danach nicht reproduzierbar, auch nicht mit 8 Wiederholungen und 4 Workern) – 
 
 ### 8.3 Nicht abgedeckt / Grenzen
 
-- Nur gegen das Demo-Repository (Browser) getestet, nicht gegen die echte API (`server/`, `platform/src/data/api.ts`).
-- Kein Service Worker für die Plattform-App: ein Neuladen **ohne** Netz startet die App nicht (nur der Simulationsschalter
-  übersteht ein Neuladen). Echter Offline-Start muss mit dem PWA-Shell-Caching ergänzt und auf Geräten getestet werden.
+- Diese Tests laufen gegen das Demo-Repository (Browser). Die echte API + PostgreSQL deckt Abschnitt 9 ab.
+- Offline-Start nach Neuladen ohne Netz: seit dem Service Worker der Mitarbeiter-App im Full-Stack-Test geprüft
+  (Abschnitt 9); auf echten Geräten (Abschnitt 5) weiterhin Pflicht.
 - Mandantentrennung wird hier nur über die Oberfläche bzw. die Demo-Prüfungen gezeigt; die verbindliche Grenze ist RLS in
   der Datenbank (`tests/db`).
 - WebKit/iPhone nicht lokal ausgeführt; Gerätetests nach Abschnitt 5 bleiben Pflicht.
+
+## 9. Full-Stack: Plattform im API-Modus gegen echte API und PostgreSQL
+
+Stand 26.10.2026, lokal ausgeführt (nur Chromium).
+
+```bash
+npx playwright test -c playwright.fullstack.config.ts --project desktop-chromium
+npx playwright test -c playwright.fullstack.config.ts --project mobile-android
+```
+
+Aufbau (`playwright.fullstack.config.ts`, `tests/e2e/fullstack/`, Dateien `*.fullstack.ts` – die normale
+`playwright.config.ts` nimmt sie nicht mit):
+
+1. `support/global-setup.ts` baut die Plattform einmal mit `VITE_DATA_MODE=api` in ein temporäres Verzeichnis
+   (oder nutzt `FULLSTACK_DIST`).
+2. Worker-Fixture `support/stack.ts` je Projekt: Wegwerf-PostgreSQL 16 über `tests/db/support/harness.ts`
+   (Migrationen + Seed), Passwörter mit dem Betriebsbefehl `server/src/cli.ts set-password`, API als eigener
+   Node-Prozess wie in Produktion (`server/src/main.ts`, `STATIC_DIR` = API-Build, `PUBLIC_ORIGIN` = eigene Adresse).
+   E-Mails werden aus dem Entwicklungs-Mailer-Log (ohne SMTP) gelesen.
+3. Automatische CSP-Prüfung: jede Konsolenmeldung „Content Security Policy“ lässt den Test fehlschlagen.
+   Prüfungen gegen den Server lesen die Datenbank direkt (Superuser-Verbindung nur für Assertions).
+
+| Datei | Abgedeckt |
+|---|---|
+| `employee.fullstack.ts` (8) | Echte Anmeldung ohne Demo-Zugänge/-Hinweise, falsches Passwort; Einsatz anlegen → Zeile in `time_entries` (Version 1, Herkunft `app`) → lokalen Speicher löschen + Neuladen → Einsatz kommt vom Server; offline erfassen (`context.setOffline`) → 0 Zeilen → Wiederverbindung → genau 1 Zeile, erneutes Synchronisieren ohne Duplikat, kein Schalter „Offline simulieren“; Sitzung serverseitig beendet → Speichern führt zur Anmeldung mit „Deine Sitzung ist abgelaufen …“, nichts verloren, nach Anmeldung genau 1 Zeile; gesperrter Mandant → deutsche Meldung beim Anmelden; Service Worker: Bereich `/app/`, nur Caches `stundenwerk-app-*`, keine `/api/`- und keine Chef-Dateien im Cache, nach Löschen aller Caches (wie durch die Alt-App) beim nächsten Start wieder vollständig, Neuladen ohne Netz öffnet die App; neue Version → „Neue Version verfügbar – neu laden“ → Seite lädt neu, eigener alter Cache ersetzt, fremder Cache bleibt; fremde Zeiten per API → 403. |
+| `chef-admin.fullstack.ts` (4) | Mitarbeiter reicht November ein → Leitung sieht den Einsatz unter „Arbeitszeiten“, gibt den Nachweis mit Begründung zurück → DB `returned` + `review_note`, Mitarbeiter sieht die Begründung; Inhaberin von Mandant B sieht keine Personen von A, API-Aufrufe mit IDs von A → 403; Super-Admin sieht Mandanten und Lizenzen, keine Namen/Zeiten, Zeit-Endpunkte → 403, Systemstatus „Erreichbar“; Mandantenkonto im Admin-Portal abgewiesen. |
+| `links.fullstack.ts` (3) | Passwort vergessen → Mail-Link `/passwort-neu#token=…` → Token verschwindet aus der Adresszeile → Wiederholung falsch → neues Passwort → Link ein zweites Mal ungültig → altes Passwort falsch, neues richtig; Einladung durch die Leitung → Hinweis „steht mit Link im Server-Log“ → Link `/einladung#token=…` → zu kurzes Passwort abgelehnt → Konto aktiv, Anmeldung; Einladung an eine E-Mail mit bestehendem Konto (anderer Mandant) → „Ich habe bereits ein Konto“ → Text der API, altes Passwort gilt weiter, zwei Mitgliedschaften. |
+
+Ergebnis: desktop-chromium 15/15, mobile-android 15/15; zusätzlich `--repeat-each 3` auf desktop-chromium 45/45.
+
+Weitere neue automatische Tests: `tests/server/static.test.ts` (6: `STATIC_DIR`, CSP, Cache-Header, Weiterleitung,
+Traversal/versteckte Dateien/Symlinks, Einladungsantwort ohne Token), `platform/src/data/api.test.ts` (401 →
+Sitzung abgelaufen, `tenant_suspended`, Netzfehler wird von der Sync-Schicht als Netzfehler erkannt,
+Einladungs-Zustellinfo), `platform/src/data/sync.test.ts` (anderes Konto zwischenzeitlich angemeldet → nichts wird
+unter diesem Konto gesendet), `platform/src/apps/employee/serviceWorker.test.ts` (Registrierung nur Produktion + HTTPS/localhost).
+
+Nicht abgedeckt: echter SMTP-Versand (nur Entwicklungs-Log), Betrieb hinter Caddy/TLS (`Secure`-Cookie,
+`__Host-sid`, HSTS) – nur ohne TLS auf `127.0.0.1` getestet; WebKit/iPhone; Vite-Entwicklungs-Proxy
+(`VITE_DEV_API_PROXY`) nicht ausgeführt.
+

@@ -597,7 +597,7 @@ export function ToastProvider({ children }: { children: ComponentChildren }) {
   const push = useCallback((message: string, tone: ToastItem["tone"] = "success") => {
     const id = ++seq.current;
     setItems((list) => [...list.slice(-2), { id, message, tone }]);
-    setTimeout(() => dismiss(id), tone === "error" ? 8000 : 5000);
+    setTimeout(() => dismiss(id), tone === "error" ? 10000 : 7000);
   }, [dismiss]);
   return (
     <ToastContext.Provider value={push}>

@@ -18,6 +18,9 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Designsystem mit White-Label und Demo von Mitarbeiter-App, Chef-Portal und Super-Admin.
 - Offline-Erfassung mit Synchronisierung und Konfliktbehandlung; Übernahme der Altdaten
   (Backup-Datei oder Browser-Speicher) mit Bericht vor dem Schreiben.
+- Produktionsmodus (`npm run build:api`): Apps arbeiten gegen die eigene API; Seiten „Passwort neu setzen“
+  und „Einladung annehmen“; Service Worker nur für die Mitarbeiter-App (Offline-Start); Gesamttests mit
+  echter Datenbank.
 - Tests: 231 Unit-, 175 Datenbank-/API- und 120 Browsertests (Chromium Desktop, Android-Emulation).
 
 ### Bekannte Fehler der Alt-App (dokumentiert, nicht geändert)

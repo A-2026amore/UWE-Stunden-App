@@ -5,7 +5,7 @@ import {
   Alert, Badge, Button, Card, Checkbox, Dialog, Icon, InputField, LinkButton, SelectField, Sidebar, StatTile, StatusPill, Table,
   DialogProvider, ToastProvider, TextareaField, applyBranding, useDialogs, useToast, type NavItem,
 } from "../../design";
-import { getRepository } from "../shared/repo";
+import { API_BASE, IS_DEMO, getRepository, onAuthFailure } from "../shared/repo";
 import { useRoute } from "../shared/router";
 import { LoginScreen, ProductMark } from "../shared/ui";
 import { PLAN_LABEL, dateTimeDE, formatDateDE } from "../shared/format";
@@ -13,6 +13,8 @@ import { errorText, useAsync } from "../shared/hooks";
 import { ACTION_LABEL } from "../shared/audit";
 
 const repo = getRepository("admin");
+
+const checkArea = (s: Session): string | null => (s.platformRole ? null : "Dieses Konto hat keinen Zugang zur Plattform-Administration.");
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Mandanten", icon: "building", match: "/" },
@@ -44,14 +46,23 @@ export function AdminApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
   const route = useRoute();
-  useEffect(() => { applyBranding(null); repo.currentSession().then(setSession); }, []);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    applyBranding(null);
+    repo.currentSession().then((s) => {
+      const problem = s ? checkArea(s) : null;
+      if (problem) setNotice(problem);
+      setSession(problem ? null : s);
+    }, (e: unknown) => { setNotice(errorText(e)); setSession(null); });
+  }, []);
+  useEffect(() => onAuthFailure((f) => { setNotice(f.message); setSession(null); }), []);
 
   if (session === undefined) return <p class="sr-only" role="status">Wird geladen …</p>;
   if (!session) {
     return (
       <LoginScreen area="admin" title="Plattform-Administration" subtitle="Nur für den Plattformbetreiber."
-        check={(s) => (s.platformRole ? null : "Dieses Konto hat keinen Zugang zur Plattform-Administration.")}
-        onSignedIn={(s) => { setSession(s); location.hash = "#/"; }} />
+        check={checkArea} notice={notice}
+        onSignedIn={(s) => { setNotice(null); setSession(s); location.hash = "#/"; }} />
     );
   }
   const signOut = async () => { await repo.signOut(); setSession(null); };
@@ -104,7 +115,9 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
     setBusy(true); setError(null);
     try {
       const o = await repo.createTenant(f);
-      toast(`Mandant „${o.tenant.name}“ angelegt. Einladung an ${f.ownerEmail} (Demo: Passwort „demo“).`);
+      toast(IS_DEMO
+        ? `Mandant „${o.tenant.name}“ angelegt. Einladung an ${f.ownerEmail} (Demo: Passwort „demo“).`
+        : `Mandant „${o.tenant.name}“ angelegt. Die Einladung wurde per E-Mail an ${f.ownerEmail} gesendet.`);
       setCreating(false);
       setF({ name: "", slug: "", ownerEmail: "", plan: "pilot_free", isDemo: false });
       setTick((t) => t + 1);
@@ -342,6 +355,25 @@ function SupportPage() {
 }
 
 function SystemPage() {
+  return IS_DEMO ? <DemoSystemPage /> : <ApiSystemPage />;
+}
+
+function ApiSystemPage() {
+  const health = useAsync(async () => {
+    const res = await fetch(`${API_BASE}/api/health`, { credentials: "include", headers: { Accept: "application/json" } });
+    return res.ok;
+  }, []);
+  const apiOk = health.data === true;
+  const items = [
+    { name: "Anwendung", status: "Betriebsbereit", ok: true, note: "Verbunden mit dem eigenen Server (API-Modus)." },
+    { name: "Server / API", status: health.loading ? "Wird geprüft …" : apiOk ? "Erreichbar" : "Nicht erreichbar", ok: apiOk, note: "Prüfung über /api/health (inkl. Datenbankverbindung)." },
+    { name: "E-Mail-Versand", status: "Siehe Server-Konfiguration", ok: false, note: "SMTP wird über Umgebungsvariablen eingerichtet (docs/betrieb.md)." },
+    { name: "Backups", status: "Auf dem Server", ok: false, note: "Täglicher verschlüsselter pg_dump – Einrichtung siehe docs/betrieb.md." },
+  ];
+  return <SystemList items={items} note="Statuswerte der Anwendung; Backups und E-Mail werden auf dem Server überwacht." />;
+}
+
+function DemoSystemPage() {
   const items = [
     { name: "Anwendung (Demo-Build)", status: "Betriebsbereit", ok: true, note: "Läuft vollständig im Browser." },
     { name: "Server / API", status: "Nicht verbunden", ok: false, note: "Demo-Modus – keine Verbindung zum Server vorgesehen." },
@@ -349,10 +381,14 @@ function SystemPage() {
     { name: "E-Mail-Versand", status: "Deaktiviert", ok: false, note: "Einladungen und Passwort-Links werden in der Demo nicht versendet." },
     { name: "Backups", status: "Noch nicht eingerichtet", ok: false, note: "Platzhalter." },
   ];
+  return <SystemList items={items} note="Platzhalter – echte Statuswerte folgen mit der Produktivumgebung." />;
+}
+
+function SystemList({ items, note }: { items: Array<{ name: string; status: string; ok: boolean; note: string }>; note: string }) {
   return (
     <div class="stack">
       <h1 class="page-title">Systemstatus</h1>
-      <Alert tone="warning"><p>Platzhalter – echte Statuswerte folgen mit der Produktivumgebung.</p></Alert>
+      <Alert tone="warning"><p>{note}</p></Alert>
       <Card>
         <ul class="list-plain stack">
           {items.map((i) => (

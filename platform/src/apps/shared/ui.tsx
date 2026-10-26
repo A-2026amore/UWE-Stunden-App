@@ -7,7 +7,7 @@ import { DEMO_LOGINS, DEMO_PASSWORD } from "../../data/demo";
 import {
   Alert, Button, Card, InputField, PRODUCT_NAME, PRODUCT_NAME_NOTE, resolveAsset,
 } from "../../design";
-import { getRepository, type AppArea } from "./repo";
+import { IS_DEMO, getRepository, type AppArea } from "./repo";
 import { errorText } from "./hooks";
 
 export function ProductMark({ compact }: { compact?: boolean }) {
@@ -44,11 +44,13 @@ export function DemoBanner() {
   );
 }
 
-export function LoginScreen({ area, title, subtitle, onSignedIn, check, children }: {
+export function LoginScreen({ area, title, subtitle, onSignedIn, check, notice, children }: {
   area: AppArea; title: string; subtitle: string;
   onSignedIn: (s: Session) => void;
   /** Returns an error text when the session may not use this area. */
   check: (s: Session) => string | null;
+  /** Shown above the form, e.g. "Sitzung abgelaufen" or "Firmenzugang gesperrt". */
+  notice?: string | null;
   children?: ComponentChildren;
 }) {
   const repo = getRepository(area);
@@ -98,6 +100,7 @@ export function LoginScreen({ area, title, subtitle, onSignedIn, check, children
         <Card>
           {mode === "login" && (
             <form class="stack" onSubmit={submit} noValidate>
+              {notice && !error && <Alert tone="warning" live>{notice}</Alert>}
               <InputField label="E-Mail-Adresse" type="email" autoComplete="username" value={email} onValue={setEmail} required />
               <InputField label="Passwort" type="password" autoComplete="current-password" value={password} onValue={setPassword} required />
               {error && <Alert tone="danger" live>{error}</Alert>}
@@ -118,13 +121,13 @@ export function LoginScreen({ area, title, subtitle, onSignedIn, check, children
           {mode === "resetSent" && (
             <div class="stack">
               <Alert tone="success" live title="Anfrage gesendet">
-                <p>Falls ein Konto mit dieser Adresse existiert, wurde ein Link versendet. Im Demo-Modus wird keine E-Mail verschickt – das Passwort ist immer „{DEMO_PASSWORD}“.</p>
+                <p>Falls ein Konto mit dieser Adresse existiert, wurde ein Link versendet.{IS_DEMO ? ` Im Demo-Modus wird keine E-Mail verschickt – das Passwort ist immer „${DEMO_PASSWORD}“.` : " Bitte prüfe dein Postfach (auch den Spam-Ordner). Der Link ist eine Stunde gültig."}</p>
               </Alert>
               <Button onClick={() => setMode("login")}>Zurück zur Anmeldung</Button>
             </div>
           )}
         </Card>
-        <Card muted>
+        {IS_DEMO && <Card muted>
           <div class="demo-hint stack-sm">
             <strong>Demo-Zugänge (Passwort: <code>{DEMO_PASSWORD}</code>)</strong>
             <ul class="list-plain stack-sm">
@@ -138,9 +141,9 @@ export function LoginScreen({ area, title, subtitle, onSignedIn, check, children
               ))}
             </ul>
           </div>
-        </Card>
+        </Card>}
         {children}
-        <p class="footer-note"><a href="../index.html">Zur Übersicht der Demo-Umgebung</a></p>
+        <p class="footer-note"><a href="../index.html">{IS_DEMO ? "Zur Übersicht der Demo-Umgebung" : "Zur Übersicht"}</a></p>
       </main>
     </div>
   );

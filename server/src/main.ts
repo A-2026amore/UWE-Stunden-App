@@ -26,6 +26,7 @@ server.listen(config.port, config.host, () => {
     production: config.production,
     origins: config.publicOrigins,
     smtp: config.smtp ? `${config.smtp.host}:${config.smtp.port}` : "nicht konfiguriert",
+    staticDir: config.staticDir ?? "aus",
   }));
 });
 

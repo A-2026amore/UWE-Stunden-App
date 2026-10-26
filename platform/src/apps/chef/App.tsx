@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Employee, Tenant } from "../../core/types";
 import type { Session } from "../../data/repository";
 import { Button, DialogProvider, Sidebar, ToastProvider, applyBranding, type NavItem } from "../../design";
-import { getRepository } from "../shared/repo";
+import { getRepository, onAuthFailure } from "../shared/repo";
 import { useRoute } from "../shared/router";
 import { LoginScreen, ProductMark, TenantLogo } from "../shared/ui";
 import { ROLE_LABEL } from "../shared/format";
@@ -18,6 +18,9 @@ import { SettingsPage } from "./pages/Settings";
 import { AuditPage } from "./pages/Audit";
 
 const repo = getRepository("chef");
+
+const checkArea = (s: Session): string | null =>
+  (s.role === "owner" || s.role === "manager" ? null : "Dieses Konto hat keinen Zugang zum Chef-Portal. Mitarbeitende nutzen bitte die Mitarbeiter-App.");
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Dashboard", icon: "chart", match: "/" },
@@ -36,9 +39,17 @@ export function ChefApp() {
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const route = useRoute();
 
-  useEffect(() => { repo.currentSession().then(setSession); }, []);
+  useEffect(() => {
+    repo.currentSession().then((s) => {
+      const problem = s ? checkArea(s) : null;
+      if (problem) setNotice(problem);
+      setSession(problem ? null : s);
+    }, (e: unknown) => { setNotice(errorText(e)); setSession(null); });
+  }, []);
+  useEffect(() => onAuthFailure((f) => { setNotice(f.message); setError(null); setData(null); setSession(null); }), []);
   useEffect(() => {
     if (!session?.tenantId) { setData(null); applyBranding(null); return; }
     Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId)])
@@ -57,8 +68,8 @@ export function ChefApp() {
     return (
       <LoginScreen
         area="chef" title="Chef-Portal" subtitle="Anmeldung für Inhaber und Vorgesetzte."
-        check={(s) => (s.role === "owner" || s.role === "manager" ? null : "Dieses Konto hat keinen Zugang zum Chef-Portal. Mitarbeitende nutzen bitte die Mitarbeiter-App.")}
-        onSignedIn={(s) => { setError(null); setSession(s); location.hash = "#/"; }}
+        check={checkArea} notice={notice}
+        onSignedIn={(s) => { setNotice(null); setError(null); setSession(s); location.hash = "#/"; }}
       />
     );
   }

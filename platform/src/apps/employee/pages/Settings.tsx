@@ -110,7 +110,7 @@ export function SettingsPage() {
       </Alert>
 
       <Button variant="danger" icon="logout" onClick={logout} block>Abmelden</Button>
-      <p class="footer-note">{PRODUCT_FULL_NAME} · Demo-Version · <a href="../index.html">Übersicht</a></p>
+      <p class="footer-note">{IS_DEMO ? <>{PRODUCT_FULL_NAME} · Demo-Version · <a href="../index.html">Übersicht</a></> : PRODUCT_FULL_NAME}</p>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import type { Session } from "../../data/repository";
 import { BottomNav, DialogProvider, ToastProvider, applyBranding, type NavItem } from "../../design";
 import type { SyncStatus } from "../../data/sync";
 import { useRoute } from "../shared/router";
+import { onAuthFailure } from "../shared/repo";
 import { LoginScreen, TenantLogo, Watermark } from "../shared/ui";
 import { currentMonth } from "../shared/format";
 import { errorText } from "../shared/hooks";
@@ -16,6 +17,7 @@ import { SettingsPage } from "./pages/Settings";
 import { LegacyImportPage } from "./pages/LegacyImport";
 import { getEmployeeRepository } from "./syncRepo";
 import { ConflictDialog, SyncIndicator } from "./SyncStatus";
+import { UpdateBanner } from "./UpdateBanner";
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Start", icon: "home", match: "/" },
@@ -27,6 +29,10 @@ const NAV: NavItem[] = [
 
 const repo = getEmployeeRepository();
 
+/** Error text when a session may not use the employee app. */
+const checkArea = (s: Session): string | null =>
+  (s.tenantId && s.employeeId ? null : "Dieses Konto gehört nicht zu einem Unternehmen. Bitte das Admin-Portal verwenden.");
+
 export function EmployeeApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [data, setData] = useState<{ tenant: Tenant; me: Employee } | null>(null);
@@ -35,11 +41,22 @@ export function EmployeeApp() {
   const [version, setVersion] = useState(0);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => repo.syncStatus());
   const [conflictsOpen, setConflictsOpen] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const route = useRoute();
 
   useEffect(() => {
-    repo.currentSession().then((s) => { setSession(s); setSyncStatus(repo.syncStatus()); if (s?.employeeId) repo.flush().catch(() => undefined); });
+    repo.currentSession().then((s) => {
+      const problem = s ? checkArea(s) : null;
+      if (problem) { setNotice(problem); setSession(null); return; }
+      setSession(s); setSyncStatus(repo.syncStatus()); if (s?.employeeId) repo.flush().catch(() => undefined);
+    }, (e: unknown) => { setNotice(errorText(e)); setSession(null); });
   }, []);
+
+  // API: expired session (401) or suspended company → back to the login with an explanation.
+  // Unsent changes stay in the outbox of this device and are sent after the next sign-in.
+  useEffect(() => onAuthFailure((f) => {
+    setNotice(f.message); setError(null); setData(null); setSession(null);
+  }), []);
 
   // Reload the pages whenever synchronisation changed the data (sent changes, new conflicts).
   useEffect(() => {
@@ -76,8 +93,10 @@ export function EmployeeApp() {
         area="app"
         title="Anmeldung für Mitarbeitende"
         subtitle="Melde dich mit den Zugangsdaten deines Arbeitgebers an."
-        check={(s) => (s.tenantId && s.employeeId ? null : "Dieses Konto gehört nicht zu einem Unternehmen. Bitte das Admin-Portal verwenden.")}
+        check={checkArea}
+        notice={notice}
         onSignedIn={async (s) => {
+          setNotice(null);
           // The login form signs in on the area repository; let the sync layer pick up the new session first.
           await repo.currentSession().catch(() => null);
           setSyncStatus(repo.syncStatus());
@@ -126,6 +145,7 @@ export function EmployeeApp() {
               <span class="xsmall muted" style={{ textAlign: "right" }}>{data.me.displayName}<br />Nr. {data.me.personnelNumber}</span>
             </header>
             <SyncIndicator status={syncStatus} onOpenConflicts={() => setConflictsOpen(true)} />
+            <UpdateBanner />
             <Watermark branding={data.tenant.branding} />
             <main class="m-main" id="main">{page}</main>
             <BottomNav items={NAV} current={route.path} />

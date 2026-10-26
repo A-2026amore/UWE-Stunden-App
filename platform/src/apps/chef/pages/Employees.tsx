@@ -3,7 +3,17 @@ import type { Employee, TenantRole } from "../../../core/types";
 import { Alert, Button, Card, Dialog, InputField, SelectField, StatusPill, Table, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
+import { IS_DEMO, getApiRepository } from "../../shared/repo";
+import type { InvitationInfo, InvitedEmployee } from "../../../data/api";
 import { useChef } from "../context";
+
+/** German text for an invitation sent through the API (where did it go, how long is it valid). */
+export function invitationText(name: string, email: string, info: InvitationInfo): { tone: "success" | "warning"; text: string } {
+  const until = `Der Link ist gültig bis ${dateTimeDE(info.expiresAt)}.`;
+  if (info.delivery === "email") return { tone: "success", text: `Die Einladung für ${name} wurde per E-Mail an ${email} gesendet. ${until}` };
+  if (info.delivery === "log") return { tone: "warning", text: `Entwicklungsserver ohne E-Mail-Versand: Die Einladung für ${name} (${email}) steht mit Link im Server-Log. ${until}` };
+  return { tone: "warning", text: `Die Einladung für ${name} wurde angelegt, aber nicht zugestellt: Der E-Mail-Versand ist auf dem Server nicht eingerichtet. Bitte den Betreiber informieren.` };
+}
 
 interface FormState { displayName: string; personnelNumber: string; email: string; role: TenantRole }
 const EMPTY: FormState = { displayName: "", personnelNumber: "", email: "", role: "employee" };
@@ -18,6 +28,7 @@ export function EmployeesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "invited" | "deactivated">("all");
+  const [sent, setSent] = useState<{ tone: "success" | "warning"; text: string } | null>(null);
 
   const open = (e: Employee | "new") => {
     setEditing(e);
@@ -31,8 +42,15 @@ export function EmployeesPage() {
     setError(null);
     try {
       if (editing === "new") {
-        const emp = await repo.inviteEmployee(tenant.id, { displayName: form.displayName, personnelNumber: form.personnelNumber, email: form.email.trim() || null, role: form.role });
-        toast(`${emp.displayName} wurde eingeladen.${emp.email ? " (Demo: keine E-Mail versendet, Passwort „demo“)" : ""}`);
+        const emp: InvitedEmployee = await repo.inviteEmployee(tenant.id, { displayName: form.displayName, personnelNumber: form.personnelNumber, email: form.email.trim() || null, role: form.role });
+        if (IS_DEMO) {
+          toast(`${emp.displayName} wurde eingeladen.${emp.email ? " (Demo: keine E-Mail versendet, Passwort „demo“)" : ""}`);
+        } else {
+          toast(`${emp.displayName} wurde angelegt.`);
+          setSent(emp.email && emp.invitation
+            ? invitationText(emp.displayName, emp.email, emp.invitation)
+            : { tone: "warning", text: `${emp.displayName} hat keine E-Mail-Adresse – es wurde keine Einladung versendet. Trage eine E-Mail-Adresse ein und sende die Einladung dann erneut.` });
+        }
       } else if (editing) {
         await repo.updateEmployee(editing.id, { displayName: form.displayName, personnelNumber: form.personnelNumber, email: form.email.trim() || null, ...(form.role !== editing.role ? { role: form.role } : {}) });
         toast("Änderungen gespeichert.");
@@ -67,6 +85,16 @@ export function EmployeesPage() {
     }
   };
 
+  const resend = async (e: Employee) => {
+    try {
+      const info = await getApiRepository().resendInvitation(e.id);
+      setSent(info && e.email ? invitationText(e.displayName, e.email, info) : null);
+      toast("Einladung erneut erstellt.");
+    } catch (err) {
+      toast(errorText(err), "error");
+    }
+  };
+
   const list = (q.data ?? []).filter((e) => filter === "all" || e.status === filter);
   const set = (k: keyof FormState) => (v: string) => setForm({ ...form, [k]: v });
 
@@ -77,6 +105,7 @@ export function EmployeesPage() {
         <Button icon="plus" onClick={() => open("new")}>Mitarbeiter einladen</Button>
       </div>
       {q.error && <Alert tone="danger" live>{q.error}</Alert>}
+      {sent && <Alert tone={sent.tone} live title="Einladung"><p data-testid="invitation-status">{sent.text}</p></Alert>}
       <Card>
         <div class="toolbar">
           <SelectField label="Anzeigen" value={filter} onValue={(v) => setFilter(v as typeof filter)} options={[
@@ -100,6 +129,9 @@ export function EmployeesPage() {
               key: "a", header: "Aktionen", actions: true, render: (e) => (
                 <div class="btn-row" style={{ justifyContent: "flex-end" }}>
                   <Button size="sm" variant="secondary" icon="edit" onClick={() => open(e)} aria-label={`${e.displayName} bearbeiten`}>Bearbeiten</Button>
+                  {!IS_DEMO && e.status === "invited" && e.email && (
+                    <Button size="sm" variant="ghost" icon="mail" onClick={() => resend(e)} aria-label={`Einladung an ${e.displayName} erneut senden`}>Erneut einladen</Button>
+                  )}
                   {e.id !== me.id && (
                     <Button size="sm" variant={e.status === "deactivated" ? "secondary" : "ghost"} onClick={() => toggle(e)} aria-label={`${e.displayName} ${e.status === "deactivated" ? "aktivieren" : "deaktivieren"}`}>
                       {e.status === "deactivated" ? "Aktivieren" : "Deaktivieren"}

@@ -369,6 +369,13 @@ export function createSyncingRepository(inner: Repository, opts: SyncOptions): S
     const own = s as Session & { employeeId: UUID };
     let networkFailed = false;
     lastError = null;
+    if (isOnline() && load(s.userId).outbox.length > 0 && await signedInAsSomeoneElse(s)) {
+      // API mode shares one session cookie per origin: another account was signed in
+      // (e.g. in the Chef-Portal tab). Never send this user's changes under that account.
+      lastError = "Auf diesem Gerät ist inzwischen ein anderes Konto angemeldet. Deine Änderungen bleiben gespeichert – bitte melde dich wieder mit deinem Konto an.";
+      emit();
+      return;
+    }
     while (isOnline()) {
       const op = load(s.userId).outbox[0];
       if (!op) break;
@@ -381,6 +388,16 @@ export function createSyncingRepository(inner: Repository, opts: SyncOptions): S
       update(s.userId, (st) => { st.lastSyncAt = now().toISOString(); });
     }
     emit();
+  }
+
+  /** True when the server reports a different signed-in user than the cached session (null/offline → false). */
+  async function signedInAsSomeoneElse(s: Session): Promise<boolean> {
+    try {
+      const current = await inner.currentSession();
+      return !!current && current.userId !== s.userId;
+    } catch {
+      return false;
+    }
   }
 
   /** Sends one op; on success / conflict / rejection the op leaves the outbox. */

@@ -69,6 +69,23 @@ let env: Env;
 beforeEach(async () => { env = await setup(); });
 
 describe("offline capture and flush", () => {
+  it("another account signed in meanwhile (shared session cookie) → nothing is sent under that account", async () => {
+    const { sync, storage, online, net } = env;
+    online.value = false;
+    await sync.createTimeEntry(ANNA, entry("other-1", "06:00", "07:00", "fremdes-konto"));
+    // The session behind the sync layer changes (e.g. sign-in in another tab of the same origin).
+    await net.repo.signIn("ben@demo-kt.example", "demo");
+    online.value = true;
+    const status = await sync.flush();
+    expect(status.pending).toBe(1);
+    expect(status.error).toMatch(/anderes Konto angemeldet/);
+    expect(serverEntries(storage, "fremdes-konto")).toHaveLength(0);
+    // Back to the own account → the change is sent.
+    await net.repo.signIn("anna@demo-kt.example", "demo");
+    expect((await sync.flush()).pending).toBe(0);
+    expect(serverEntries(storage, "fremdes-konto")).toHaveLength(1);
+  });
+
   it("two offline creates → exactly two server entries after flush, no duplicates on repeated flush", async () => {
     const { sync, storage, online } = env;
     online.value = false;

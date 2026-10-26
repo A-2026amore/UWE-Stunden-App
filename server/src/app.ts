@@ -20,6 +20,7 @@ import { Router, createRequestHandler, serializeCookie, type Reply, type Request
 import type { Mail, Mailer } from "./mailer.ts";
 import { RateLimiter } from "./rateLimit.ts";
 import { registerDomainRoutes } from "./routes.ts";
+import { withStaticFiles } from "./static.ts";
 import * as v from "./validate.ts";
 
 export interface AppDeps {
@@ -51,6 +52,8 @@ export interface AppContext {
   /** Sends mails after the transaction committed; failures are logged, never shown. */
   sendLater(mails: Mail[]): void;
   link(kind: "reset" | "invite", token: string): string;
+  /** How mails leave this server: SMTP, development log (no SMTP) or not at all (production without SMTP). */
+  mailDelivery: "email" | "log" | "none";
   log: (entry: Record<string, unknown>) => void;
 }
 
@@ -122,6 +125,7 @@ export function createApp(deps: AppDeps) {
     config,
     pool,
     log,
+    mailDelivery: config.smtp ? "email" : config.production ? "none" : "log",
     async asUser(ctx, fn) {
       const rec = await requireSession(ctx);
       return withTx(pool, "app_user", rec.userId, async (q) => {
@@ -285,11 +289,12 @@ export function createApp(deps: AppDeps) {
 
   registerDomainRoutes(router, app);
 
-  const handler = createRequestHandler(router, {
+  const apiHandler = createRequestHandler(router, {
     allowedOrigins: config.publicOrigins,
     secure: config.secureCookies,
     trustProxy: config.trustProxy,
     log,
   });
+  const handler = config.staticDir ? withStaticFiles(apiHandler, { root: config.staticDir, secure: config.secureCookies, log }) : apiHandler;
   return { handler, limiters, cookieName };
 }

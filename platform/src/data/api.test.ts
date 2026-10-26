@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, createApiRepository } from "./api";
+import { ApiError, SessionExpiredError, TenantSuspendedError, createApiRepository, type AuthFailure } from "./api";
+import { isNetworkError } from "./sync";
 import { AccessDeniedError, ConflictError } from "./repository";
 
 interface Call { url: string; init: RequestInit }
@@ -60,5 +61,46 @@ describe("createApiRepository (fetch mocked)", () => {
     await repo.deleteTimeEntry("e-9", 3);
     expect(f.calls[1]).toMatchObject({ url: "https://zeit.example/api/employees/emp-1/time-entries/e-1", init: { method: "DELETE", body: JSON.stringify({ expectedVersion: 1, reason: "Grund" }) } });
     expect(f.calls[2]!.url).toBe("https://zeit.example/api/time-entries/e-9");
+  });
+
+  it("401 → SessionExpiredError, 403 tenant_suspended → TenantSuspendedError, both reported to onAuthFailure", async () => {
+    const f = fakeFetch([
+      { status: 401, body: err("unauthenticated", "Bitte melde dich an.") },
+      { status: 403, body: err("tenant_suspended", "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.") },
+      { status: 403, body: err("tenant_suspended", "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.") },
+    ]);
+    const failures: AuthFailure[] = [];
+    const repo = createApiRepository("", { fetch: f.fn, onAuthFailure: (x) => failures.push(x) });
+    const expired = repo.listEmployees("t");
+    await expect(expired).rejects.toBeInstanceOf(SessionExpiredError);
+    await expect(expired).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(repo.getTenant("t")).rejects.toBeInstanceOf(TenantSuspendedError);
+    // At sign-in the message is shown in the form – no extra notification.
+    await expect(repo.signIn("a@b.example", "x")).rejects.toMatchObject({ message: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." });
+    expect(failures).toEqual([
+      { kind: "expired", message: "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an." },
+      { kind: "suspended", message: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." },
+    ]);
+  });
+
+  it("no connection → ApiError that the sync layer treats as network error (change stays queued)", async () => {
+    const failing = (async () => { throw new TypeError("Failed to fetch"); }) as typeof fetch;
+    const repo = createApiRepository("", { fetch: failing });
+    const e = await repo.listTimeEntries("emp", "2026-11").catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ApiError);
+    expect((e as ApiError).network).toBe(true);
+    expect(isNetworkError(e)).toBe(true);
+    expect(isNetworkError(new ApiError(400, "invalid", "x"))).toBe(false);
+  });
+
+  it("returns the invitation delivery info of the server", async () => {
+    const f = fakeFetch([
+      { status: 201, body: { id: "e-1", displayName: "X", invitation: { expiresAt: "2026-11-01T10:00:00.000Z", delivery: "email" } } },
+      { status: 200, body: { invitationId: "i", expiresAt: "2026-11-02T10:00:00.000Z", delivery: "none" } },
+    ]);
+    const repo = createApiRepository("", { fetch: f.fn });
+    const emp = await repo.inviteEmployee("t", { displayName: "X", personnelNumber: "1", email: "x@y.example", role: "employee" });
+    expect(emp.invitation).toEqual({ expiresAt: "2026-11-01T10:00:00.000Z", delivery: "email" });
+    expect(await repo.resendInvitation("e-1")).toEqual({ expiresAt: "2026-11-02T10:00:00.000Z", delivery: "none" });
   });
 });

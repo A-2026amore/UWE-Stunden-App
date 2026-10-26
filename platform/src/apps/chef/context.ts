@@ -2,12 +2,12 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import type { Employee, MonthAllocation, Tenant, TimeEntry } from "../../core/types";
 import type { Session } from "../../data/repository";
-import type { DemoRepository } from "../../data/demo";
+import type { AreaRepository } from "../shared/repo";
 import { activeShifts } from "../../core/time";
 import { summarizeMonth, type WorkAccountMonthSummary } from "../../core/workAccount";
 
 export interface ChefCtx {
-  repo: DemoRepository;
+  repo: AreaRepository;
   session: Session;
   tenant: Tenant;
   me: Employee;
@@ -40,7 +40,7 @@ export interface TenantMonth {
 }
 
 /** Loads all data of a tenant needed for monthly overviews. */
-export async function loadTenantMonth(repo: DemoRepository, tenant: Tenant, month: string): Promise<TenantMonth> {
+export async function loadTenantMonth(repo: AreaRepository, tenant: Tenant, month: string): Promise<TenantMonth> {
   const [from, to] = monthRange(month);
   const [employees, entries] = await Promise.all([repo.listEmployees(tenant.id), repo.listTenantTimeEntries(tenant.id, from, to)]);
   const allocLists = await Promise.all(employees.map((e) => repo.listAllocations(e.id)));

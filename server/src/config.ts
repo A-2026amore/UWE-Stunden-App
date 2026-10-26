@@ -44,6 +44,8 @@ export interface Config {
   resetLinkPath: string;
   inviteLinkPath: string;
   rateLimit: RateLimitConfig;
+  /** Built frontend (platform/dist) served by the API itself; null = API only (e.g. Caddy serves the files). */
+  staticDir: string | null;
 }
 
 function int(env: NodeJS.ProcessEnv, name: string, def: number, min: number, max: number): number {
@@ -108,6 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlHours: int(env, "SESSION_TTL_HOURS", 12, 1, 24 * 30),
     sessionIdleMinutes: int(env, "SESSION_IDLE_MINUTES", 120, 5, 24 * 60),
     smtp,
+    staticDir: env.STATIC_DIR ? env.STATIC_DIR : null,
     resetLinkPath: env.RESET_LINK_PATH ?? "/passwort-neu",
     inviteLinkPath: env.INVITE_LINK_PATH ?? "/einladung",
     rateLimit: {
