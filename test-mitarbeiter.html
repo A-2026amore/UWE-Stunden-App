@@ -52,6 +52,16 @@ main .card{background:rgba(255,255,255,.95)}
 .uwa-disclaimer{font-size:12px;line-height:1.55;color:#6a5650;background:#fffaef;border:1px solid #f0dfb1;border-radius:10px;padding:12px;margin:20px 0 2px}
 @media(max-width:560px){.uwa-stats{grid-template-columns:1fr 1fr}.uwa-month-stats{grid-template-columns:1fr}.uwa-stat strong{font-size:19px}.uwa-presets{grid-template-columns:repeat(4,minmax(0,1fr))}.uwa-presets button{font-size:11px;padding:9px 3px}}
 @media(max-width:370px){.uwa-stats{grid-template-columns:1fr}}
+
+.month-net-panel{margin:13px 0 17px;padding:14px 16px;background:#edf7f6;border:1px solid #aadbd4;border-left:5px solid #00a99e;border-radius:12px}
+.month-net-title{font-size:12px;color:#456a6e;font-weight:700;line-height:1.5}
+.month-net-value{font-size:30px;font-weight:850;color:#067a7b;line-height:1.25;margin:2px 0 12px;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.month-net-line{display:flex;justify-content:space-between;align-items:center;gap:12px;border-top:1px solid #cee4e2;padding-top:9px;margin-top:8px;font-size:13px;color:#28535a}
+.month-net-line strong{font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.month-net-line.deposited strong{color:#a15a22}
+.month-net-help{font-size:12px;line-height:1.55;margin:0 0 12px;color:#506e72}
+@media(max-width:390px){.month-net-value{font-size:26px}.month-net-panel{padding:12px}.month-net-line{font-size:12px}.month-net-line strong{font-size:14px}}
+
 </style>
 
 <script src="uwe-break-rules.js?v=24"></script>
@@ -67,7 +77,14 @@ main .card{background:rgba(255,255,255,.95)}
 <section id="app" hidden>
 <div class="card"><div class="topline"><div><span class="pill">TESTMITARBEITER</span><h2 style="margin:12px 0 2px" id="employeeHeading"></h2><span class="muted" id="employeeId"></span></div><button class="alt" id="logoutBtn">Test beenden</button></div><p class="muted"><strong>TESTDATEN – keine echten Mitarbeiterstunden.</strong> Diese Teststunden bleiben auf diesem Gerät und werden nicht automatisch übertragen.</p></div>
 <div class="card" id="entryForm"><h2>Arbeitszeit erfassen</h2><p class="muted">Du kannst <strong>mehrere Einsätze pro Tag</strong> eintragen, z. B. morgens, nachmittags und abends. Jeder Zeitblock wird einzeln gespeichert und am Monatsende zusammengerechnet.</p><div class="grid"><div class="full"><label for="date">Datum</label><input id="date" type="date"></div><div><label for="start">Arbeitsbeginn</label><input id="start" type="time" value="08:00"></div><div><label for="end">Arbeitsende</label><input id="end" type="time" value="16:00"></div><div class="full"><label for="pause">Pause (Minuten)</label><input id="pause" type="number" value="30" min="0" max="1439" step="1"><p id="pauseHint" class="muted" aria-live="polite"></p></div><div class="full"><label for="note">Bemerkung (optional)</label><input id="note" maxlength="200" placeholder="z. B. Schülertour"></div></div><div class="actions"><button id="saveBtn">Arbeitszeit speichern</button><button id="addBlockBtn" class="alt">+ Weiteren Einsatz am selben Tag</button><button id="clearBtn" class="alt">Anderen Tag eintragen</button></div><p id="breakError" class="break-error" role="alert" hidden></p><p id="editMsg" class="muted"></p></div>
-<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th>Einsatz</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><p id="monthBreakNote" class="break-error" role="alert" hidden></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
+<div class="card"><div class="topline"><h2>Monatsübersicht</h2><input id="month" type="month" aria-label="Monat wählen" style="width:auto"></div><div class="total" id="total"></div>
+<div id="monthNetPanel" class="month-net-panel" aria-live="polite">
+  <div class="month-net-title">Monatsstunden für die Abrechnung vorgesehen</div>
+  <div class="month-net-value" id="monthNetHours">0,00 Std.</div>
+  <div class="month-net-line"><span>Tatsächlich geleistete Stunden</span><strong id="monthGrossHours">0,00 Std.</strong></div>
+  <div class="month-net-line deposited"><span>Davon ins Arbeitszeitkonto übertragen</span><strong id="monthDepositedHours">–0,00 Std.</strong></div>
+</div>
+<p class="month-net-help" id="monthNetHelp">Die geleisteten Stunden bleiben vollständig dokumentiert. Die Monatsstunden für die Abrechnung werden nach deiner gespeicherten Übertragung berechnet.</p><div class="scroll"><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause</th><th>Stunden</th><th>Einsatz</th></tr></thead><tbody id="rows"></tbody></table></div><p class="muted" id="empty"></p><p id="monthBreakNote" class="break-error" role="alert" hidden></p><div class="actions"><button type="button" id="shareBtn" class="send-whatsapp">PDF per WhatsApp</button><button type="button" id="emailPdfBtn">PDF per E-Mail</button><button type="button" id="pdfPreviewBtn" class="alt">PDF anzeigen</button><button type="button" id="pdfDownloadBtn" class="alt">PDF speichern</button><button type="button" id="pdfBtn" class="alt">PDF drucken</button><button type="button" id="csvBtn" class="alt">CSV speichern</button></div><p id="pdfStatus" class="muted" aria-live="polite"></p><div class="whatsapp-box">
 <strong>PDF-Versand an UWE:</strong> Das Programm erstellt eine echte Datei mit der Endung <b>.pdf</b> (nicht .txt).<br>
 <strong>WhatsApp:</strong> Tippe auf „PDF per WhatsApp“, wähle im iPhone-Teilen-Menü WhatsApp und anschließend den Betriebskontakt UWE (0241 400 111 11). Prüfe die PDF vor „Senden“.<br>
 <strong>E-Mail:</strong> Tippe auf „PDF per E-Mail“, wähle Mail oder Outlook, trage die UWE-Betriebsadresse ein und sende die E-Mail mit dem PDF-Anhang.<br>
@@ -481,6 +498,7 @@ function saveWorkSplit(){
  workState=workLib.persist(next);
  workMonthDisplayed="";
  renderWorkAccount();
+ renderMonthNetHours();
  workError("");
  $("uwaNotice").textContent="Gespeichert: "+workLib.hours(minutes)+" Std. für "+
   workMonthLabel(ym())+" ins Testkonto Schuljahr "+
@@ -495,11 +513,34 @@ function startWorkAccount(){
  $("uwaAll").addEventListener("click",()=>quickWorkSplit(1));
 }
 
+function renderMonthNetHours(){
+  const month=ym();
+  const gross=Math.round(monthly().reduce((total,entry)=>total+worked(entry),0)*60);
+  const account=getWorkState();
+  if(!account){
+    $('monthGrossHours').textContent=workLib.hours(gross)+' Std.';
+    $('monthDepositedHours').textContent='—';
+    $('monthNetHours').textContent='—';
+    $('monthNetHelp').textContent='Das Arbeitszeitkonto konnte nicht geladen werden. Bitte zuerst ein Backup sichern und den Fehler im Arbeitszeitkonto prüfen.';
+    return;
+  }
+  const accountSummary=workLib.summary(account,records,month);
+  const transferred=accountSummary.allocated;
+  const available=accountSummary.available;
+  $('monthGrossHours').textContent=workLib.hours(accountSummary.total)+' Std.';
+  $('monthDepositedHours').textContent='–'+workLib.hours(transferred)+' Std.';
+  $('monthNetHours').textContent=workLib.hours(available)+' Std.';
+  $('monthNetHelp').textContent=transferred>accountSummary.total?
+    'Achtung: Ins Arbeitszeitkonto wurden mehr Stunden übertragen als aktuell geleistet. Bitte die Monatsaufteilung korrigieren.' :
+    'Die tatsächlichen Arbeitszeiten bleiben vollständig gespeichert. Für die Abrechnung vorgesehen: geleistete Monatsstunden abzüglich deiner gespeicherten Übertragung ins Arbeitszeitkonto (Test, vorbehaltlich UWE-Prüfung).';
+}
+
 function render(){
   const list=monthly();
   const sum=list.reduce((a,x)=>a+worked(x),0);
   const days=new Set(list.map(x=>x.date)).size;
-  $('total').textContent=fnum(sum)+' Std. · '+list.length+' Einsätze an '+days+(days===1?' Tag':' Tagen');
+  $('total').textContent=fnum(sum)+' Std. tatsächlich geleistet · '+list.length+' Einsätze an '+days+(days===1?' Tag':' Tagen');
+  renderMonthNetHours();
   const dayTotals=new Map();
   for(const x of list)dayTotals.set(x.date,(dayTotals.get(x.date)||0)+worked(x));
   $('rows').innerHTML=list.map((x,i)=>{
