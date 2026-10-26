@@ -507,8 +507,26 @@ function formatMonthDE(month){return /^\d{4}-\d{2}$/.test(month)?month.slice(5,7
 function report(){const m=monthly();const lines=['UWE KRANKENTRANSPORTE – STUNDENNACHWEIS','Mitarbeiter: '+employee.name,'Personalnummer: '+employee.eid,'Monat: '+formatMonthDE(ym()),'',...m.map(x=>`${x.date} | ${x.start}–${x.end} | Pause ${x.pause} min | ${fnum(worked(x))} Std. | ${x.note}`),'','Gesamt: '+fnum(m.reduce((a,x)=>a+worked(x),0))+' Stunden'];return lines.join('\n')}
 function download(name,content,type){const b=new Blob([content],{type}),u=URL.createObjectURL(b),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}
 function filename(kind,ext){return `UWE-${kind}-${employee.eid}-${ym()}.${ext}`}
-function printSheet(){if(!monthly().length){alert('Keine Einträge für diesen Monat.');return}if(!checkMonthlyPause())return;const w=window.open('','_blank');if(!w){alert('Bitte Pop-ups für die Druckfunktion zulassen.');return}const m=monthly();const rows=m.map(x=>`<tr><td>${escapeHtml(x.date.split('-').reverse().join('.'))}</td><td>${escapeHtml(x.start)}</td><td>${escapeHtml(x.end)}</td><td>${x.pause}</td><td>${fnum(worked(x))}</td><td>${escapeHtml(x.note)}</td></tr>`).join('');w.document.write(`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${escapeHtml(filename('Stundenzettel','pdf'))}</title><style>body{font:13px Arial,sans-serif;color:#18383c;padding:28px;position:relative}body::before{content:"";position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);width:65%;height:350px;background:url("${new URL("./uwe-fluegel.svg",location.href).href}") center/contain no-repeat;opacity:.07;pointer-events:none;z-index:-1}h1{color:#087f89;margin-bottom:0}small{color:#526c70}table{border-collapse:collapse;width:100%;margin-top:20px}td,th{padding:9px 6px;border-bottom:1px solid #aaa;text-align:left}footer{margin-top:34px}strong{font-size:18px}</style></head><body><img src="${new URL("./uwe-logo.svg",location.href).href}" alt="UWE Krankentransporte" style="display:block;width:290px;max-width:100%;height:auto;margin-bottom:18px"><small>Arbeitszeitnachweis</small><h2>Monat ${escapeHtml(formatMonthDE(ym()))}</h2><p><b>Mitarbeiter:</b> ${escapeHtml(employee.name)} &nbsp; <b>Personalnummer:</b> ${escapeHtml(employee.eid)}</p><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause (min)</th><th>Std.</th><th>Bemerkung</th></tr></thead><tbody>${rows}</tbody></table><footer><strong>Gesamtsumme: ${fnum(m.reduce((a,x)=>a+worked(x),0))} Stunden</strong><p>Erstellt am ${escapeHtml(new Date().toLocaleDateString('de-DE'))}</p></footer></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),200)}
-function csv(){if(!monthly().length){alert('Keine Einträge vorhanden.');return}if(!checkMonthlyPause())return;const escapeCsv=v=>'"'+String(v).replace(/"/g,'""')+'"';const rows=[['Datum','Mitarbeiter','Personalnummer','Beginn','Ende','Pause (Min.)','Stunden','Bemerkung'],...monthly().map(x=>[x.date,employee.name,employee.eid,x.start,x.end,x.pause,fnum(worked(x)),x.note])];download(filename('Stunden','csv'),'\ufeff'+rows.map(r=>r.map(escapeCsv).join(';')).join('\r\n'),'text/csv;charset=utf-8')}
+function printSheet(){if(!monthly().length){alert('Keine Einträge für diesen Monat.');return}if(!checkMonthlyPause())return;if(!validateWorkAccountBeforeExport())return;const extra=workAccountForPdf();const w=window.open('','_blank');if(!w){alert('Bitte Pop-ups für die Druckfunktion zulassen.');return}const m=monthly();const rows=m.map(x=>`<tr><td>${escapeHtml(x.date.split('-').reverse().join('.'))}</td><td>${escapeHtml(x.start)}</td><td>${escapeHtml(x.end)}</td><td>${x.pause}</td><td>${fnum(worked(x))}</td><td>${escapeHtml(x.note)}</td></tr>`).join('');w.document.write(`<!doctype html><html lang="de"><head><meta charset="utf-8"><title>${escapeHtml(filename('Stundenzettel','pdf'))}</title><style>body{font:13px Arial,sans-serif;color:#18383c;padding:28px;position:relative}body::before{content:"";position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);width:65%;height:350px;background:url("${new URL("./uwe-fluegel.svg",location.href).href}") center/contain no-repeat;opacity:.07;pointer-events:none;z-index:-1}h1{color:#087f89;margin-bottom:0}small{color:#526c70}table{border-collapse:collapse;width:100%;margin-top:20px}td,th{padding:9px 6px;border-bottom:1px solid #aaa;text-align:left}footer{margin-top:34px}strong{font-size:18px}</style></head><body><img src="${new URL("./uwe-logo.svg",location.href).href}" alt="UWE Krankentransporte" style="display:block;width:290px;max-width:100%;height:auto;margin-bottom:18px"><small>Arbeitszeitnachweis</small><h2>Monat ${escapeHtml(formatMonthDE(ym()))}</h2><p><b>Mitarbeiter:</b> ${escapeHtml(employee.name)} &nbsp; <b>Personalnummer:</b> ${escapeHtml(employee.eid)}</p><table><thead><tr><th>Datum</th><th>Beginn</th><th>Ende</th><th>Pause (min)</th><th>Std.</th><th>Bemerkung</th></tr></thead><tbody>${rows}</tbody></table><footer><strong>Gesamtsumme: ${fnum(m.reduce((a,x)=>a+worked(x),0))} Stunden</strong>${extra?('<section style="background:#edf7f5;border:1px solid #a4d6cd;border-radius:9px;margin-top:18px;padding:12px;line-height:1.7"><b>ARBEITSZEITKONTO (TEST) – Wunsch des Mitarbeiters</b><div>Davon ins Konto: '+workLib.hours(extra.allocatedMinutes)+' Std.</div><div>Für die Abrechnung vorgemerkt: '+workLib.hours(extra.billingMinutes)+' Std.</div><div>Test-Kontostand: '+workLib.hours(extra.balanceMinutes)+' Std. | Stichtag: 19.07.2027 (Sommerferien NRW)</div><small>Unverbindlich – erst nach Arbeitgeberprüfung und entsprechender Vereinbarung.</small></section>'):''}<p>Erstellt am ${escapeHtml(new Date().toLocaleDateString('de-DE'))}</p></footer></body></html>`);w.document.close();w.focus();setTimeout(()=>w.print(),200)}
+function csv(){
+  if(!monthly().length){alert("Keine Einträge vorhanden.");return;}
+  if(!checkMonthlyPause()||!validateWorkAccountBeforeExport())return;
+  const escapeCsv=value=>'"'+String(value).replace(/"/g,'""')+'"';
+  const rows=[["Datum","Mitarbeiter","Personalnummer","Beginn","Ende","Pause (Min.)","Stunden","Bemerkung"],
+    ...monthly().map(x=>[x.date,employee.name,employee.eid,x.start,x.end,x.pause,fnum(worked(x)),x.note])];
+  const account=workAccountForPdf();
+  if(account){
+    rows.push([],["ARBEITSZEITKONTO – TEST (Wunsch des Mitarbeiters)"]);
+    rows.push(["Geleistete Stunden",workLib.hours(account.workedMinutes)]);
+    rows.push(["Davon ins Arbeitszeitkonto",workLib.hours(account.allocatedMinutes)]);
+    rows.push(["Für Abrechnung vorgemerkt",workLib.hours(account.billingMinutes)]);
+    rows.push(["Kontostand nach diesem Monat",workLib.hours(account.balanceMinutes)]);
+    rows.push(["Stichtag Sommerferien NRW","19.07.2027"]);
+    rows.push(["Wichtiger Hinweis","Testkonto – keine automatische oder verbindliche Lohnverrechnung"]);
+  }
+  download(filename("Stunden","csv"),"\ufeff"+rows.map(r=>r.map(escapeCsv).join(";")).join("\r\n"),
+    "text/csv;charset=utf-8");
+}
 function backup(){const payload={app:'UWE Stunden',version:3,eid:employee.eid,name:employee.name,exportedAt:new Date().toISOString(),entries:records};download('UWE-Backup-'+employee.eid+'-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload,null,2),'application/json')}
 async function restore(input){
   const file=input.files?.[0];
@@ -540,10 +558,11 @@ async function restore(input){
 
 const UWE_WHATSAPP_BUSINESS_NUMBER="0241 400 111 11";
 function pdfArgs(){
-  return {employee,month:ym(),records:monthly(),test:false};
+  return {employee,month:ym(),records:monthly(),test:false,account:workAccountForPdf()};
 }
 function pdfFile(){
   if(!checkMonthlyPause())return null;
+  if(!validateWorkAccountBeforeExport())return null;
   if(!monthly().length){
     alert("Bitte zuerst Arbeitszeiten für den ausgewählten Monat speichern.");
     return null;
