@@ -96,10 +96,25 @@
     s+=line(M,H-(test?225:186),W-M,H-(test?225:186));
     return s;
   }
-  function createBlob({employee,month,records,test=false}){
+  function createBlob({employee,month,records,test=false,account=null}){
     if(!employee||!employee.name||!employee.eid||!/^\d{4}-\d{2}$/.test(month)||!Array.isArray(records)||!records.length)
       throw new Error("Für diesen Monat sind keine gültigen Arbeitszeiten zum Export vorhanden.");
     const entries=records.slice().sort((a,b)=>String(a.date).localeCompare(String(b.date))||String(a.start).localeCompare(String(b.start))||String(a.end).localeCompare(String(b.end)));
+
+    // Optional, explicitly test-only account figures: never replace the actual worked hours.
+    let acc=null;
+    if(account&&account.test===true&&month>="2026-11"){
+      const fields=["workedMinutes","allocatedMinutes","billingMinutes","balanceMinutes","initialMinutes"];
+      if(fields.some(key=>!Number.isSafeInteger(account[key]))||
+         account.initialMinutes!==-6000||
+         account.allocatedMinutes<0||
+         account.billingMinutes<0||
+         account.billingMinutes+account.allocatedMinutes!==account.workedMinutes||
+         account.initialDeadline!=="2027-07-19")
+        throw new Error("Arbeitszeitkonto kann nicht korrekt in die PDF übernommen werden.");
+      acc=account;
+    }
+
     const widths=[77,58,58,58,59,205];
     const heads=["Datum","Beginn","Ende","Pause","Std.","Bemerkung"];
     const pages=[];
@@ -129,10 +144,24 @@
       sections.push(line(M,y-height,W-M,y-height));
       y-=height;
     }
-    if(y<133)openPage();
+    if(acc&&Math.abs(Math.round(sum*60)-acc.workedMinutes)>1)
+      throw new Error("Die Monatsstunden im Arbeitszeitkonto stimmen nicht mit dem Stundennachweis überein.");
+    if(y<(acc?198:133))openPage();
     y-=24;
-    sections.push(rect(M,y-8,WIDTH,35,"0.88 0.95 0.95"));
-    sections.push(txt(M+12,y+4,"GESAMT: "+totalText(sum)+" Stunden",15,true,"0.03 0.45 0.49"));
+    if(acc){
+      // Reserve the entire account summary below the monthly total.
+      sections.push(rect(M,y-72,WIDTH,99,"0.88 0.95 0.95"));
+      sections.push(txt(M+12,y+4,"GESAMT GELEISTET: "+totalText(sum)+" Stunden",14,true,"0.03 0.45 0.49"));
+      sections.push(txt(M+12,y-17,"ARBEITSZEITKONTO - TEST / Aufteilungswunsch des Mitarbeiters",8.4,true,"0.14 0.36 0.38"));
+      sections.push(txt(M+12,y-34,"Ins Konto: "+totalText(acc.allocatedMinutes/60)+" Std.   |   Zur Abrechnung vorgemerkt: "+
+        totalText(acc.billingMinutes/60)+" Std.",9,false,"0.12 0.23 0.25"));
+      sections.push(txt(M+12,y-49,"Kontostand nach diesem Monat: "+totalText(acc.balanceMinutes/60)+
+        " Std.   |   Startsaldo: -100,00 Std.",9,false,"0.12 0.23 0.25"));
+      sections.push(txt(M+12,y-63,"Ziel: 19.07.2027 (Sommerferien NRW). Ohne Freigabe keine verbindliche Verrechnung.",7.3,false,"0.35 0.36 0.36"));
+    }else{
+      sections.push(rect(M,y-8,WIDTH,35,"0.88 0.95 0.95"));
+      sections.push(txt(M+12,y+4,"GESAMT: "+totalText(sum)+" Stunden",15,true,"0.03 0.45 0.49"));
+    }
     for(let p=0;p<pages.length;p++) {
       pages[p].push(line(M,62,W-M,62));
       pages[p].push(txt(M,46,"Erstellt: "+new Date().toLocaleDateString("de-DE"),8));
