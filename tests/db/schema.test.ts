@@ -87,7 +87,9 @@ describe("schema and seed", () => {
     );
     expect(rows.map((r) => r.rolname)).toEqual(["app_anon", "app_api", "app_auth", "app_service", "app_user"]);
     for (const r of rows) {
-      expect(r.rolcanlogin).toBe(false);
+      // app_api gets LOGIN from operations (and from tests/server on a shared server), never from migrations.
+      if (r.rolname !== "app_api") expect(r.rolcanlogin, r.rolname).toBe(false);
+      else expect(r.rolinherit).toBe(false);
       expect(r.rolbypassrls).toBe(r.rolname === "app_service");
     }
   });

@@ -13,6 +13,7 @@ Kein Supabase, kein PostgREST: Davor sitzt eine eigene Node-API (siehe `docs/api
 | `0005_rls.sql` | Row-Level-Security-Richtlinien |
 | `0006_functions.sql` | RPC-Funktionen (Zeiten, Konto, Monatsabschluss, Einladungen, Support, Plattform, Anmeldung) |
 | `0007_grants.sql` | Rechtevergabe je Rolle |
+| `0008_hardening.sql` | Nachschärfung nach API-Review (additiv): nur aktive Mandanten, keine SVG-Data-URLs, Einladung bei bestehendem Konto, Leerlauf-Timeout, Zahlenformat, Mitarbeiterzahlen, E-Mail verknüpfter Konten |
 
 Anwenden (als Superuser bzw. Datenbankeigentümer, in Dateireihenfolge):
 
@@ -47,9 +48,9 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 
 | Tabelle | Zweck / wichtige Regeln |
 |---|---|
-| `tenants` | Mandant. `slug` eindeutig, `status` active/suspended/pending, `is_demo`. `branding`, `contact`, `settings` als jsonb mit Prüffunktion (Farben `#RRGGBB`, Bild-URLs nur `https://`, relativer Pfad oder `data:image/…;base64`, WhatsApp nur Ziffern mit Ländervorwahl). |
+| `tenants` | Mandant. `slug` eindeutig, `status` active/suspended/pending (nur `active` gibt Mitgliedern Zugriff), `is_demo`. `branding`, `contact`, `settings` als jsonb mit Prüffunktion (Farben `#RRGGBB`; Bild-URLs nur `https://`, relativer Pfad ohne `//`/`..` oder `data:image/png|jpeg|webp;base64` – **kein SVG** seit 0008; WhatsApp nur Ziffern mit Ländervorwahl). Bereits gespeicherte SVG-Data-URLs (vor 0008) werden erst beim nächsten Ändern des Brandings abgelehnt. |
 | `licenses` | Tarif `pilot_free/standard/business/enterprise`, `status`, `price_cents`, `billing none/manual/provider`, `valid_until` NULL = unbegrenzt. CHECK: `pilot_free` ⇒ `price_cents = 0` und `billing = 'none'`. Keine automatische Umstellung (kein Trigger/Job ändert den Tarif). |
-| `employees` | Mitgliedschaft einer Person in einem Mandanten: `role` employee/manager/owner, `status` invited/active/deactivated, `personnel_number` eindeutig je Mandant, `user_id` → `auth.users` (erst nach Annahme der Einladung). |
+| `employees` | Mitgliedschaft einer Person in einem Mandanten: `role` employee/manager/owner, `status` invited/active/deactivated, `personnel_number` eindeutig je Mandant, `user_id` → `auth.users` (erst nach Annahme der Einladung). `email` ist änderbar, solange kein Konto verknüpft ist; danach gesperrt (Anmelde-Adresse liegt in `auth.users`, siehe `docs/security.md`). |
 | `platform_admins` | Plattformpersonal `super_admin` / `support`. Nur per Wartungszugang pflegbar. |
 | `support_access_grants` | Vom Inhaber erteilte, befristete Freigabe (max. 30 Tage, per RPC max. 168 h) für Plattformpersonal; optional an eine Person gebunden; widerrufbar. |
 | `invitations` | Einladung je Mitarbeiter (Ablauf, angenommen, widerrufen). Der Token liegt nur gehasht in `auth.one_time_tokens`. |
@@ -65,7 +66,7 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 | Regel | Umsetzung |
 |---|---|
 | Keine Überschneidung von Einsätzen desselben Mitarbeiters (inkl. Nachtschicht) | Exclusion-Constraint `time_entries_no_overlap` (gist, `employee_id =`, `period &&`, nur nicht gelöschte) → Fehler `23P01` |
-| Max. 12 h je Einsatz | CHECK `duration_minutes between 1 and 720` + Trigger mit strengerem Mandantenwert `breakPolicy.maxShiftMinutes` → `23514` |
+| Max. 12 h je Einsatz | CHECK `duration_minutes between 1 and 720` + Trigger mit strengerem Mandantenwert `breakPolicy.maxShiftMinutes` → `23514` (Meldung mit deutschem Zahlenformat, z. B. „630 Minuten (10,5 Stunden)“) |
 | Pause ≥ 0 und < Dauer | CHECK + Trigger → `23514` |
 | Kein hartes Löschen | kein DELETE-Recht + Trigger → `42501`; Löschen = `deleted_at` setzen |
 | Versionskonflikt | Trigger: gesendete `version` ≠ gespeicherte → `PT409`; sonst `version + 1` |
@@ -107,6 +108,10 @@ Konto deaktiviert) – rechtlich *zu prüfen, keine Rechtsberatung*.
 
 L = lesen, A = anlegen, Ä = ändern, – = kein Zugriff. „eigen“ = eigene Mitarbeiterzeile (aktiv).
 Kein Zugriff auf andere Mandanten in keiner Zeile. DELETE gibt es für niemanden.
+Alle Mandantenrollen gelten nur, solange der Mandant `status = 'active'` hat (seit 0008): Bei
+`suspended`/`pending` sehen und ändern Mitarbeiter, Leitung und Inhaber nichts mehr – auch nicht die
+eigene Mitarbeiterzeile. Plattformpersonal sieht weiterhin Metadaten (und mit aktiver Freigabe die Daten).
+`current_session_context()` listet die Mitgliedschaft dann mit `tenantStatus`, damit die API „Firmenzugang gesperrt“ anzeigen kann.
 
 | Tabelle | Mitarbeiter | Leitung (manager) | Inhaber (owner) | super_admin | support | Plattform mit aktiver Freigabe |
 |---|---|---|---|---|---|---|

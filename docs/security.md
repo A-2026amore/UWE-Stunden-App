@@ -15,6 +15,9 @@
   `set local role app_user` und `set_config('request.jwt.claims', '{"sub":"<user-uuid>"}', true)`.
   `auth.uid()` liest diese Einstellung. Die Benutzer-ID setzt **ausschließlich** die API nach
   geprüfter Sitzung – nie ungeprüft aus Client-Eingaben.
+- Mitgliedschaften wirken nur bei Mandantenstatus `active`. Ein gesperrter (`suspended`) oder noch
+  nicht freigeschalteter (`pending`) Mandant ist für alle seine Mitglieder vollständig gesperrt
+  (lesen und schreiben, auch Inhaber). Plattformpersonal sieht weiterhin die Metadaten.
 - Prüfungen im Frontend dienen nur der Bedienbarkeit; die Sicherheitsgrenze ist die Datenbank.
 - Automatisierte Tests (`tests/db/tenant-isolation.test.ts`) prüfen für jede Tabelle, dass Nutzer
   von Mandant A Zeilen von Mandant B weder lesen, anlegen noch ändern können.
@@ -62,7 +65,23 @@ API-Endpunkte bzw. `pgaudit` auf dem Server.
   nur den Hash in `auth.users.password_hash`.
 - Sitzungs-, Passwort-Reset- und Einladungs-Tokens erzeugt die DB (`gen_random_uuid`, 244 Bit) und
   gibt sie **einmalig** zurück; gespeichert wird nur der SHA-256-Hash.
+- Sitzungen: absolute Laufzeit (`expires_at`) plus Leerlauf-Timeout. `auth.resolve_session(token,
+  leerlauf_minuten = 120)` aktualisiert `last_seen_at` und widerruft Sitzungen, die länger als die
+  Leerlaufzeit unbenutzt waren.
 - Passwort-Reset: Token 1 h gültig, einmal verwendbar, widerruft alle Sitzungen.
+- Einladung für eine E-Mail-Adresse, zu der es **bereits ein Konto** gibt (z. B. Person arbeitet für
+  zwei Mandanten): `auth.accept_invitation(token, passwort_hash)` lehnt ein neu eingegebenes Passwort
+  mit Fehler `PT409` ab („Für diese E-Mail-Adresse gibt es bereits ein Benutzerkonto. Bitte melde dich
+  mit deinem bisherigen Passwort an …“) – das bestehende Passwort wird nie still überschrieben oder
+  ignoriert. Mit `passwort_hash = NULL` wird die Mitgliedschaft ohne Passwortänderung mit dem
+  bestehenden Konto verknüpft (der Besitz des Einladungslinks an diese Adresse genügt wie beim
+  Passwort-Reset). `auth.invitation_needs_existing_login(token)` sagt der API vorab, welcher Fall vorliegt.
+- Anmelde-E-Mail: Die Adresse in `auth.users` ist die einzige Anmelde-Adresse. Ist ein Mitarbeiter
+  mit einem Konto verknüpft, kann `employees.email` nicht mehr über die Anfragerollen geändert werden
+  (auch nicht von Leitung/Inhaber). Bewusst **keine Synchronisierung** nach `auth.users`: Sonst könnte
+  die Leitung eines Mandanten die Anmelde-Adresse einer Person ändern, die auch zu anderen Mandanten
+  gehört, und über „Passwort vergessen“ das Konto übernehmen. Adressänderungen verknüpfter Konten
+  erledigt die Plattformverwaltung (Wartungszugang) nach Prüfung.
   `create_password_reset` gibt für unbekannte Adressen `NULL` zurück – die API muss in beiden
   Fällen gleich antworten (keine Kontenaufzählung).
 - `auth.*` ist nur für `app_auth` und SECURITY-DEFINER-Funktionen zugänglich, nie für `app_user`.
@@ -76,6 +95,8 @@ API-Endpunkte bzw. `pgaudit` auf dem Server.
 - Freigegebene Monate sind gesperrt; Korrekturen nur durch die Leitung mit Begründung, im Audit-Log.
   Die interne Korrekturkennung (`app.statement_correction`) wirkt nur innerhalb der
   SECURITY-DEFINER-Funktion; setzt eine Anfragerolle sie selbst, wird sie ignoriert (getestet).
+- Logos/Zeichen: nur PNG, JPEG, WebP (Data-URL), `https://` oder relative Pfade; SVG-Data-URLs werden
+  in der Datenbank abgelehnt (SVG kann Skripte enthalten). Die API prüft zusätzlich Größe und Dateisignatur.
 - `audit_log` ist append-only (UPDATE/DELETE/TRUNCATE werden auch für den Superuser abgelehnt,
   solange der Trigger aktiv ist). Anfragerollen können keine Audit-Einträge schreiben.
 - Alle SECURITY-DEFINER-Funktionen setzen `search_path = ''` und verwenden voll qualifizierte Namen.
