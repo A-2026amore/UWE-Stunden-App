@@ -746,7 +746,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const created: TimeEntry = {
           id: entry.id, tenantId: emp.tenantId, employeeId, date: entry.date, start: entry.start, end: entry.end,
           pauseMinutes: entry.pauseMinutes, note, version: 1, createdAt: now, updatedAt: now, deletedAt: null,
-          source: byManager ? "correction" : "app",
+          source: byManager ? "correction" : entry.source === "migration" ? "migration" : "app",
         };
         db.entries.push(created);
         if (byManager) addAudit(db, s, { tenantId: emp.tenantId, action: "time_entry.created_by_manager", entity: "time_entry", entityId: created.id, before: null, after: created, reason: null });

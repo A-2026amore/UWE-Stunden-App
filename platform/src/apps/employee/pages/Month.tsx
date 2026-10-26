@@ -11,6 +11,7 @@ import { downloadBlob } from "../../shared/format";
 import { navigate } from "../../shared/router";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { useEmployee } from "../context";
+import { syncStateOf } from "../../../data/sync";
 
 export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   const { repo, me, tenant, month, setMonth, version, changed } = useEmployee();
@@ -148,7 +149,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
                 <div class="shift" key={x.id}>
                   <div class="shift-main">
                     <div class="shift-time">{x.start}–{x.end} Uhr</div>
-                    <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}</div>
+                    <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}</div>
                   </div>
                   {!locked && <>
                     <Button size="sm" variant="ghost" icon="edit" aria-label={`Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} bearbeiten`} onClick={() => navigate(`/erfassen/${x.id}?datum=${x.date}`)} />

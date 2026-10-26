@@ -2,10 +2,13 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 import type { Employee, Tenant } from "../../core/types";
 import type { Session } from "../../data/repository";
-import type { DemoRepository } from "../../data/demo";
+import type { SyncingRepository, SyncStatus } from "../../data/sync";
 
 export interface EmployeeCtx {
-  repo: DemoRepository;
+  /** Offline-first repository (sync layer around the area repository). */
+  repo: SyncingRepository;
+  syncStatus: SyncStatus;
+  openConflicts: () => void;
   session: Session;
   tenant: Tenant;
   me: Employee;

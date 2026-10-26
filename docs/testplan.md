@@ -175,3 +175,43 @@ Weitere Beobachtungen (kein Testfehlschlag, aber für die Migration wichtig):
 - Testdaten landen nicht im Echtbestand; gesperrte Mitarbeiter verlieren keine Stunden.
 - Alle Tests dieses Plans grün (bekannte Alt-Fehler L1–L4 in der neuen Plattform als **behoben** nachgewiesen).
 - Gerätetest-Checkliste (Abschnitt 5) auf echtem iPhone und Android-Gerät abgehakt.
+
+## 8. Plattform: Offline-Synchronisierung, Altdaten-Import und E2E (Demo-Build)
+
+Stand 26.10.2026, lokal ausgeführt (Chromium „desktop-chromium“ und „mobile-android“; WebKit/iPhone lokal nicht installiert).
+
+### 8.1 Unit-Tests
+
+| Datei | Inhalt |
+|---|---|
+| `platform/src/data/sync.test.ts` (20 Tests) | Sync-Schicht mit Speicher im Arbeitsspeicher und Demo-Repository als „Server“: 2× offline erfassen → nach `flush()` genau 2 Server-Einträge, wiederholtes `flush()` ohne Duplikate; Netzabbruch **nach** Speicherung auf dem Server (Antwort verloren) und **vor** Erreichen des Servers → Wiederholung ohne Duplikate; verlorene Antwort bei Änderung wird als „bereits übernommen“ erkannt (kein falscher Konflikt); Reihenfolge Ändern/Löschen; Löschen eines nie gesendeten Eintrags sendet nichts; Outbox übersteht Neuladen und Abmelden; Lesen offline aus dem Cache; Pausenregel/Überschneidung/Arbeitszeitkonto lokal vor dem Einreihen geprüft; Versionskonflikt behält Server-Version und lokale Änderung („meine Version“ / „Server-Version“); vom Server abgelehnte Änderung wird als Konflikt aufbewahrt, nie verworfen; sofortige Ablehnung online geht an das Formular zurück; `AccessDeniedError` stoppt die Übertragung, Outbox bleibt; Monatsnachweis erst nach vollständiger Übertragung; ID eines auf dem Server gelöschten Eintrags wird nicht still wiederbelebt; fremde Mitarbeiter/Mandanten werden nicht gecacht und bleiben gesperrt. |
+| `platform/src/apps/employee/legacyImport.test.ts` (7 Tests) | Import-Planung mit `tests/fixtures/legacy-storage.ts`: Backup v2/v3/v4, Bericht vor dem Schreiben (gelesen, zu übernehmen, vorhanden, Duplikate, ungültig, nicht übernehmbar), Monatssummen alt/neu (Oktober 7,50 h, November 30,75 h), Aufteilungen, idempotenter Re-Import, fremde Personalnummer abgelehnt, Testmodus-Backup abgelehnt, Browser-Snapshot nur eigene Personalnummer, kaputte/überlappende Einträge mit Begründung. |
+
+### 8.2 E2E-Tests `tests/e2e/platform/` (19 Tests × 2 Projekte = 38)
+
+Ausführen: `npx playwright test tests/e2e/platform --project desktop-chromium --project mobile-android`
+(die Konfiguration baut die Plattform und startet die Vorschau auf `http://127.0.0.1:4174`).
+
+Determinismus: jeder Test läuft in einem frischen Browser-Kontext (leerer `localStorage` → neue Demo-Daten);
+`page.clock.setFixedTime` friert „heute“ auf Fr 20.11.2026 10:00 ein (Import-Tests: 15.03.2027), Timer laufen normal.
+Prüfungen gegen den „Server“ lesen die Demo-Datenbank (`stundenwerk_demo_db_v1`) direkt aus.
+
+| Datei | Abgedeckt |
+|---|---|
+| `employee.spec.ts` | Startseite (drei Bereiche, Demo-Zugänge); falsches Passwort; Mitarbeiterin: Einsatz anlegen mit Pausenregel-Meldung (7 h ohne Pause → „Es fehlen noch 30 Minuten …“, Speichern verweigert), bearbeiten, löschen (Soft Delete), Monatssumme = Summe der Tagessummen = Summe in der Datenbank; Arbeitszeitkonto (Mandant ohne Freigabepflicht): 50 % übertragen → Abrechnung = geleistet − übertragen, geleistete Stunden unverändert, Monatsseite identisch, zu hohe Übertragung abgelehnt; PDF-Download (`%PDF-`, mehr als eine Seite bei > 20 Einsätzen); Monatsnachweis einreichen sperrt den Monat. |
+| `offline.spec.ts` | Echte Offline-Phase (`context.setOffline`): 2 Einsätze offline, Anzeige „2 Änderungen warten auf Übertragung“, nichts auf dem Server; nach Wiederverbindung automatische Übertragung (Ereignis `online`), genau 2 Einträge, erneutes Synchronisieren ohne Duplikate. Entwicklerschalter „Offline simulieren“: Outbox übersteht Neuladen, Einreichen offline verweigert, nach Ausschalten übertragen. Konflikt: offline geändert, gleichzeitig Server-Korrektur → Konflikt-Dialog zeigt beide Versionen, „Meine Version behalten“ schreibt Version 3, nichts still überschrieben. |
+| `legacy-import.spec.ts` | Backup v4 per Dateiauswahl (`filechooser`): Bericht vor dem Schreiben (6 gelesen/6 zu übernehmen, Monatssummen, Aufteilungen), vor Bestätigung nichts geschrieben, nach Bestätigung 6 Einträge + 2 Aufteilungen, Monatsseite zeigt 30,75 h; Re-Import v4 und v3 → 0 zu übernehmen. Fremde Personalnummer und kaputte Datei abgelehnt. Import aus den Alt-Schlüsseln desselben Browsers (geteiltes Gerät): nur eigene Personalnummer, Alt-Schlüssel danach byte-gleich, Re-Import idempotent. |
+| `chef-tenants-admin.spec.ts` | Chef: Dashboard-Kennzahlen (7 Mitarbeitende, 6 aktiv/1 eingeladen, 1 offener Nachweis), keine Personen des anderen Mandanten; Zurückgeben nur mit Begründung (leere Begründung → Fehlermeldung), Mitarbeiter sieht die Begründung; Freigeben. Firmenfarbe + WhatsApp-Nummer ändern → in der Mitarbeiter-App desselben Mandanten sichtbar (CSS-Variable `--brand-primary`, `wa.me`-Link), beim anderen Mandanten unverändert. Zwei Mandanten: unterschiedliche Logos und Telefonnummern. Mandantentrennung: Mitarbeiterin von Mandant B öffnet `#/erfassen/<ID eines Eintrags von Mandant A>` → „Kein Zugriff“, Eintrag unverändert; Leitung von B sieht keine Personen von A. Super-Admin: Badge „Kostenlos – Pilot“ nur beim Pilotmandanten, Mandantendetail ohne Namen/Zeiten und „Keine Freigabe“; nach Freigabe durch den Inhaber „Freigabe durch den Mandanten aktiv“. |
+
+Ergebnis: 38 von 38 bestanden. Stabilität mit `--repeat-each 3` (114 Läufe) dreimal geprüft: zweimal 114/114, einmal
+2 Fehlschläge desselben Tests („create with pause rule …“, `toBeVisible`, unter paralleler Last, Ursache nicht ermittelt,
+danach nicht reproduzierbar, auch nicht mit 8 Wiederholungen und 4 Workern) – als möglicher Flake beobachten.
+
+### 8.3 Nicht abgedeckt / Grenzen
+
+- Nur gegen das Demo-Repository (Browser) getestet, nicht gegen die echte API (`server/`, `platform/src/data/api.ts`).
+- Kein Service Worker für die Plattform-App: ein Neuladen **ohne** Netz startet die App nicht (nur der Simulationsschalter
+  übersteht ein Neuladen). Echter Offline-Start muss mit dem PWA-Shell-Caching ergänzt und auf Geräten getestet werden.
+- Mandantentrennung wird hier nur über die Oberfläche bzw. die Demo-Prüfungen gezeigt; die verbindliche Grenze ist RLS in
+  der Datenbank (`tests/db`).
+- WebKit/iPhone nicht lokal ausgeführt; Gerätetests nach Abschnitt 5 bleiben Pflicht.

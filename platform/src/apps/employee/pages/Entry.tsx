@@ -3,7 +3,8 @@ import { activeShifts, findOverlapAcrossDays, formatClock, grossMinutes, netMinu
 import { evaluateDay, issueForDay, suggestedPause } from "../../../core/breaks";
 import type { ShiftLike, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
-import { Alert, Button, Card, EmptyState, InputField, useDialogs, useToast } from "../../../design";
+import { syncStateOf } from "../../../data/sync";
+import { Alert, Button, Card, EmptyState, InputField, LinkButton, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, hoursLabel, newId, todayISO } from "../../shared/format";
 import { navigate } from "../../shared/router";
@@ -107,7 +108,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
       changed();
       resetForNext({ end });
     } catch (err) {
-      setError(err instanceof ConflictError ? "Der Eintrag wurde zwischenzeitlich geändert. Bitte die Seite neu laden." : errorText(err));
+      setError(err instanceof ConflictError ? `${err.message} Deine Änderung ist gespeichert – bitte unter „Konflikte lösen“ entscheiden, welche Version gilt.` : errorText(err));
     } finally {
       setBusy(false);
     }
@@ -131,6 +132,19 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
   };
 
   const dayEntries = (q.data?.entries ?? []).filter((x) => x.date === date);
+  // A manipulated or foreign entry id (e.g. another tenant's) is never loaded: show access denied.
+  const missing = !!editId && !!q.data && !editing && !q.data.entries.some((x) => x.id === editId);
+  if (missing) {
+    return (
+      <div class="stack">
+        <h1 class="page-title">Einsatz bearbeiten</h1>
+        <Alert tone="danger" live title="Kein Zugriff">
+          <p>Dieser Eintrag wurde nicht gefunden oder gehört nicht zu deinem Konto.</p>
+        </Alert>
+        <LinkButton href="#/erfassen" variant="primary" icon="plus">Neue Arbeitszeit erfassen</LinkButton>
+      </div>
+    );
+  }
 
   return (
     <div class="stack">
@@ -187,7 +201,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
               <div class="shift" key={x.id}>
                 <div class="shift-main">
                   <div class="shift-time">{x.start}–{x.end} Uhr</div>
-                  <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}</div>
+                  <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}</div>
                 </div>
                 {!locked && <>
                   <Button size="sm" variant="ghost" icon="edit" aria-label={`Einsatz ${x.start}–${x.end} bearbeiten`} onClick={() => navigate(`/erfassen/${x.id}?datum=${x.date}`)} />

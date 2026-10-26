@@ -6,7 +6,7 @@ import { createDemoRepository, memoryStorage, type DemoRepository, type KeyValue
 
 export type AppArea = "app" | "chef" | "admin";
 
-function safeStorage(): KeyValueStorage {
+export function safeStorage(): KeyValueStorage {
   try {
     const probe = "__stundenwerk_probe__";
     localStorage.setItem(probe, "1");

@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Employee, Tenant } from "../../core/types";
 import type { Session } from "../../data/repository";
 import { BottomNav, DialogProvider, ToastProvider, applyBranding, type NavItem } from "../../design";
-import { getRepository } from "../shared/repo";
+import type { SyncStatus } from "../../data/sync";
 import { useRoute } from "../shared/router";
 import { LoginScreen, TenantLogo, Watermark } from "../shared/ui";
 import { currentMonth } from "../shared/format";
@@ -13,6 +13,9 @@ import { EntryPage } from "./pages/Entry";
 import { MonthPage } from "./pages/Month";
 import { AccountPage } from "./pages/Account";
 import { SettingsPage } from "./pages/Settings";
+import { LegacyImportPage } from "./pages/LegacyImport";
+import { getEmployeeRepository } from "./syncRepo";
+import { ConflictDialog, SyncIndicator } from "./SyncStatus";
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Start", icon: "home", match: "/" },
@@ -22,7 +25,7 @@ const NAV: NavItem[] = [
   { href: "#/einstellungen", label: "Profil", icon: "settings", match: "/einstellungen" },
 ];
 
-const repo = getRepository("app");
+const repo = getEmployeeRepository();
 
 export function EmployeeApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -30,9 +33,23 @@ export function EmployeeApp() {
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState(currentMonth());
   const [version, setVersion] = useState(0);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => repo.syncStatus());
+  const [conflictsOpen, setConflictsOpen] = useState(false);
   const route = useRoute();
 
-  useEffect(() => { repo.currentSession().then(setSession); }, []);
+  useEffect(() => {
+    repo.currentSession().then((s) => { setSession(s); setSyncStatus(repo.syncStatus()); if (s?.employeeId) repo.flush().catch(() => undefined); });
+  }, []);
+
+  // Reload the pages whenever synchronisation changed the data (sent changes, new conflicts).
+  useEffect(() => {
+    let prev = repo.syncStatus();
+    return repo.subscribe((s) => {
+      setSyncStatus(s);
+      if (s.pending < prev.pending || s.conflicts !== prev.conflicts || s.lastSyncAt !== prev.lastSyncAt) setVersion((v) => v + 1);
+      prev = s;
+    });
+  }, []);
 
   useEffect(() => {
     if (!session?.tenantId || !session.employeeId) { setData(null); applyBranding(null); return; }
@@ -60,7 +77,13 @@ export function EmployeeApp() {
         title="Anmeldung für Mitarbeitende"
         subtitle="Melde dich mit den Zugangsdaten deines Arbeitgebers an."
         check={(s) => (s.tenantId && s.employeeId ? null : "Dieses Konto gehört nicht zu einem Unternehmen. Bitte das Admin-Portal verwenden.")}
-        onSignedIn={(s) => { setError(null); setSession(s); location.hash = "#/"; }}
+        onSignedIn={async (s) => {
+          // The login form signs in on the area repository; let the sync layer pick up the new session first.
+          await repo.currentSession().catch(() => null);
+          setSyncStatus(repo.syncStatus());
+          repo.flush().catch(() => undefined);
+          setError(null); setSession(s); location.hash = "#/";
+        }}
       />
     );
   }
@@ -77,7 +100,8 @@ export function EmployeeApp() {
   if (!data) return <p class="sr-only" role="status">Wird geladen …</p>;
 
   const ctx: EmployeeCtx = {
-    repo, session, tenant: data.tenant, me: data.me, month, setMonth, version,
+    repo, session, tenant: data.tenant, me: data.me, month, setMonth, version, syncStatus,
+    openConflicts: () => setConflictsOpen(true),
     changed: () => setVersion((v) => v + 1),
     signOut: async () => { await repo.signOut(); setSession(null); setData(null); },
   };
@@ -87,7 +111,7 @@ export function EmployeeApp() {
     case "/erfassen": page = <EntryPage editId={route.parts[0] ?? null} presetDate={route.query.get("datum")} />; break;
     case "/monat": page = <MonthPage initialMonth={route.query.get("m")} />; break;
     case "/konto": page = <AccountPage />; break;
-    case "/einstellungen": page = <SettingsPage />; break;
+    case "/einstellungen": page = route.parts[0] === "import" ? <LegacyImportPage /> : <SettingsPage />; break;
     default: page = <StartPage />;
   }
 
@@ -101,9 +125,11 @@ export function EmployeeApp() {
               <TenantLogo name={data.tenant.name} branding={data.tenant.branding} showSlogan />
               <span class="xsmall muted" style={{ textAlign: "right" }}>{data.me.displayName}<br />Nr. {data.me.personnelNumber}</span>
             </header>
+            <SyncIndicator status={syncStatus} onOpenConflicts={() => setConflictsOpen(true)} />
             <Watermark branding={data.tenant.branding} />
             <main class="m-main" id="main">{page}</main>
             <BottomNav items={NAV} current={route.path} />
+            <ConflictDialog open={conflictsOpen} onClose={() => setConflictsOpen(false)} />
           </div>
         </DialogProvider>
       </ToastProvider>
