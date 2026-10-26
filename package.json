@@ -1,0 +1,41 @@
+{
+  "name": "zeiterfassung-plattform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mandantenfähige Zeiterfassungsplattform (Arbeitstitel), hervorgegangen aus der UWE Stunden-App",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite --config platform/vite.config.ts",
+    "build": "vite build --config platform/vite.config.ts",
+    "preview": "vite preview --config platform/vite.config.ts",
+    "typecheck": "tsc -p platform/tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:db": "vitest run --project db",
+    "test:e2e": "playwright test",
+    "serve:legacy": "node scripts/serve-static.mjs . 4173"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
+    "@preact/preset-vite": "^2.10.6",
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0",
+    "jsdom": "^29.1.1",
+    "pg": "^8.23.1",
+    "preact": "^10.29.8",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^6.4.5",
+    "vitest": "^3.2.7"
+  }
+}
