@@ -11,13 +11,14 @@
     "dev": "vite --config platform/vite.config.ts",
     "build": "vite build --config platform/vite.config.ts",
     "preview": "vite preview --config platform/vite.config.ts",
-    "typecheck": "tsc -p platform/tsconfig.json --noEmit",
+    "typecheck": "tsc -p platform/tsconfig.json --noEmit && tsc -p server/tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:db": "vitest run --project db --no-file-parallelism",
     "test:e2e": "playwright test",
-    "serve:legacy": "node scripts/serve-static.mjs . 4173"
+    "serve:legacy": "node scripts/serve-static.mjs . 4173",
+    "start:server": "node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs server/src/main.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
