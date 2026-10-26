@@ -104,13 +104,19 @@
     // Optional, explicitly test-only account figures: never replace the actual worked hours.
     let acc=null;
     if(account&&account.test===true&&month>="2026-11"){
-      const fields=["workedMinutes","allocatedMinutes","billingMinutes","balanceMinutes","initialMinutes"];
+      const fields=["workedMinutes","eligibleMinutes","allocatedMinutes","billingMinutes","balanceMinutes","initialMinutes"];
       if(fields.some(key=>!Number.isSafeInteger(account[key]))||
          account.initialMinutes!==-6000||
          account.allocatedMinutes<0||
          account.billingMinutes<0||
          account.billingMinutes+account.allocatedMinutes!==account.workedMinutes||
-         account.initialDeadline!=="2027-07-19")
+         account.allocatedMinutes>account.eligibleMinutes||
+         account.eligibleMinutes>account.workedMinutes||
+         !/^20\d{2}\/\d{2}$/.test(account.schoolYear||"")||
+         !/^20\d{2}-\d{2}-\d{2}$/.test(account.schoolStart||"")||
+         !/^20\d{2}-\d{2}-\d{2}$/.test(account.schoolEnd||"")||
+         !/^20\d{2}-\d{2}-\d{2}$/.test(account.summerStart||"")||
+         account.schoolStart>account.schoolEnd||account.schoolEnd>=account.summerStart)
         throw new Error("Arbeitszeitkonto kann nicht korrekt in die PDF übernommen werden.");
       acc=account;
     }
@@ -146,18 +152,23 @@
     }
     if(acc&&Math.abs(Math.round(sum*60)-acc.workedMinutes)>1)
       throw new Error("Die Monatsstunden im Arbeitszeitkonto stimmen nicht mit dem Stundennachweis überein.");
-    if(y<(acc?198:133))openPage();
+    if(y<(acc?225:133))openPage();
     y-=24;
     if(acc){
-      // Reserve the entire account summary below the monthly total.
-      sections.push(rect(M,y-72,WIDTH,99,"0.88 0.95 0.95"));
-      sections.push(txt(M+12,y+4,"GESAMT GELEISTET: "+totalText(sum)+" Stunden",14,true,"0.03 0.45 0.49"));
-      sections.push(txt(M+12,y-17,"ARBEITSZEITKONTO - TEST / Aufteilungswunsch des Mitarbeiters",8.4,true,"0.14 0.36 0.38"));
+      // Work shifts stay in the original readable full-width table; yearly
+      // balance appears only in a separate labeled TEST section.
+      sections.push(rect(M,y-100,WIDTH,127,"0.88 0.95 0.95"));
+      sections.push(txt(M+12,y+5,"GESAMT GELEISTET: "+totalText(sum)+" Stunden",14,true,"0.03 0.45 0.49"));
+      sections.push(txt(M+12,y-16,"ARBEITSZEITKONTO - TEST | Schuljahr "+acc.schoolYear,9,true,"0.14 0.36 0.38"));
       sections.push(txt(M+12,y-34,"Ins Konto: "+totalText(acc.allocatedMinutes/60)+" Std.   |   Zur Abrechnung vorgemerkt: "+
         totalText(acc.billingMinutes/60)+" Std.",9,false,"0.12 0.23 0.25"));
-      sections.push(txt(M+12,y-49,"Kontostand nach diesem Monat: "+totalText(acc.balanceMinutes/60)+
-        " Std.   |   Startsaldo: -100,00 Std.",9,false,"0.12 0.23 0.25"));
-      sections.push(txt(M+12,y-63,"Ziel: 19.07.2027 (Sommerferien NRW). Ohne Freigabe keine verbindliche Verrechnung.",7.3,false,"0.35 0.36 0.36"));
+      sections.push(txt(M+12,y-51,"Anrechenbare Schulzeit in diesem Monat: "+
+        totalText(acc.eligibleMinutes/60)+" Std.",9,false,"0.12 0.23 0.25"));
+      sections.push(txt(M+12,y-67,"Jahresstand nach diesem Monat: "+
+        totalText(acc.balanceMinutes/60)+" Std.   |   Start je Schuljahr: -100,00 Std.",8.7,false,"0.12 0.23 0.25"));
+      sections.push(txt(M+12,y-84,"Letzter Schultag: "+dateText(acc.schoolEnd)+
+        "   |   NRW-Sommerferien ab "+dateText(acc.summerStart),8,false,"0.24 0.33 0.35"));
+      sections.push(txt(M+12,y-95,"Neues Schuljahr: erneut -100 Std. | Vorjahr bleibt dokumentiert | Keine verbindliche Lohnverrechnung.",7,false,"0.35 0.36 0.36"));
     }else{
       sections.push(rect(M,y-8,WIDTH,35,"0.88 0.95 0.95"));
       sections.push(txt(M+12,y+4,"GESAMT: "+totalText(sum)+" Stunden",15,true,"0.03 0.45 0.49"));
