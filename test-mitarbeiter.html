@@ -270,198 +270,228 @@ function save(){
   render();
 }
 
+
 const workLib=window.UweWorkAccount;
 let workState=null,workStateProblem="",workMonthDisplayed="",workHolidayRequests=new Set();
 function getWorkState(){
-  if(!employee)return null;
-  if(workState&&workState.eid===employee.eid)return workState;
-  if(workStateProblem)return null;
-  try{workState=workLib.load(employee.eid);return workState;}
-  catch(e){workStateProblem=e.message||"Das Arbeitszeitkonto kann nicht geöffnet werden.";return null;}
+ if(!employee)return null;
+ if(workState&&workState.eid===employee.eid)return workState;
+ if(workStateProblem)return null;
+ try{workState=workLib.load(employee.eid);return workState;}
+ catch(e){workStateProblem=e.message||"Arbeitszeitkonto kann nicht geöffnet werden.";return null;}
 }
 function workMonthLabel(month){
-  if(!/^\d{4}-\d{2}$/.test(month))return month;
-  return new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1)
-    .toLocaleDateString("de-DE",{month:"long",year:"numeric"});
+ if(!/^\d{4}-\d{2}$/.test(month))return month;
+ return new Date(Number(month.slice(0,4)),Number(month.slice(5,7))-1,1)
+   .toLocaleDateString("de-DE",{month:"long",year:"numeric"});
 }
 function workError(message){
-  $("uwaNotice").textContent=message||"";
-  $("uwaNotice").style.color=message?"#a13939":"";
+ $("uwaNotice").textContent=message||"";
+ $("uwaNotice").style.color=message?"#a13939":"";
 }
 function workLabel(target,minutes){$(target).textContent=workLib.hours(minutes)+" Std.";}
+function schoolYearName(info){
+ return info?.label||"noch nicht bestimmt";
+}
 function workAccountForPdf(){
-  const account=getWorkState();
-  if(!account||ym()<workLib.START_MONTH)return null;
-  const stats=workLib.summary(account,records,ym());
-  return {test:true,workedMinutes:stats.total,allocatedMinutes:stats.allocated,
-    billingMinutes:stats.available,balanceMinutes:stats.balance,
-    initialMinutes:workLib.START_MINUTES,initialDeadline:workLib.FIRST_DEADLINE};
+ const account=getWorkState();
+ if(!account)return null;
+ const stats=workLib.summary(account,records,ym());
+ const school=stats.schoolYear;
+ if(school.status!=="active")return null;
+ return{test:true,schoolYear:school.label,schoolStart:school.start,
+   schoolEnd:school.lastSchoolDay,summerStart:school.summerStart,
+   workedMinutes:stats.total,eligibleMinutes:stats.eligibleWorked,
+   allocatedMinutes:stats.allocated,billingMinutes:stats.available,
+   balanceMinutes:stats.balance,initialMinutes:workLib.START_MINUTES};
 }
 function validateWorkAccountBeforeExport(){
-  const state=getWorkState();
-  if(!state){alert(workStateProblem||"Das Arbeitszeitkonto ist nicht verfügbar.");return false;}
-  const conflicts=workLib.invalidAllocations(state,records,ym());
-  if(conflicts.length){
-    const x=conflicts[0];
-    alert("Arbeitszeitkonto prüfen: Für "+x.month+" wurden "+
-      workLib.hours(x.allocated)+" Std. ins Konto übertragen, aber nur "+
-      workLib.hours(x.worked)+" Std. erfasst. Bitte zuerst die Aufteilung korrigieren.");
+ const state=getWorkState();
+ if(!state){alert(workStateProblem||"Arbeitszeitkonto ist nicht verfügbar.");return false;}
+ const conflicts=workLib.invalidAllocations(state,records,ym());
+ if(conflicts.length){
+  const x=conflicts[0];
+  alert("Arbeitszeitkonto prüfen: Im Monat "+x.month+" wurden "+
+    workLib.hours(x.allocated)+" Std. ins Konto übertragen, aber nur "+
+    workLib.hours(x.worked)+" Std. während der Schulzeit erfasst. Bitte die Aufteilung korrigieren.");
+  return false;
+ }
+ if(workMonthDisplayed===ym()&&workLib.calendarForMonth(ym()).status==="active"){
+  try{
+   const entered=$("uwaInput").value.trim();
+   const proposed=entered?workLib.parseHours(entered):0;
+   if(proposed!==workLib.allocation(state,ym())){
+    alert("Die neue Aufteilung ist noch nicht gespeichert. Bitte zuerst auf „Aufteilung für diesen Monat speichern“ tippen.");
     return false;
-  }
-  if(ym()>=workLib.START_MONTH&&workMonthDisplayed===ym()){
-    try{
-      const entered=$("uwaInput").value.trim();
-      const proposed=entered?workLib.parseHours(entered):0;
-      if(proposed!==workLib.allocation(state,ym())){
-        alert("Du hast die Aufteilung dieses Monats geändert, aber noch nicht gespeichert. Bitte zuerst auf „Aufteilung ... speichern“ tippen.");
-        return false;
-      }
-    }catch(e){
-      alert("Bitte die Stundenangabe im Arbeitszeitkonto korrigieren: "+e.message);
-      return false;
-    }
-  }
-  return true;
+   }
+  }catch(e){alert("Arbeitszeitkonto: "+e.message);return false;}
+ }
+ return true;
+}
+function refreshSchoolCalendar(year){
+ if(!Number.isInteger(year)||year<2031||year>2100||workHolidayRequests.has(year))return;
+ workHolidayRequests.add(year);
+ workLib.findHolidayOnline(year).then(result=>{
+  if(result&&employee){renderWorkAccount();}
+  else if(employee)$("uwaSummer").textContent="Der NRW-Sommerferientermin "+
+    year+" ist noch nicht zuverlässig abrufbar. Bitte später erneut prüfen. Unbekannte Schuljahre werden nicht geraten.";
+ }).catch(()=>{});
 }
 function renderWorkAccount(){
-  if(!employee)return;
-  const account=getWorkState();
-  if(!account){
-    $("uwaNotice").textContent=workStateProblem||"Das Konto kann nicht gelesen werden. Bitte zuerst ein Backup sichern.";
-    $("uwaNotice").style.color="#ab3535";
-    $("uwaSave").disabled=true;
-    return;
-  }
-  $("uwaSave").disabled=false;
-  const month=ym();
-  if(workMonthDisplayed!==month){
-    workMonthDisplayed=month;
-    $("uwaInput").value=workLib.hours(workLib.allocation(account,month));
-    workError("");
-  }
-  let details;
-  try{details=workLib.summary(account,records,month);}
-  catch(e){workError(e.message);return;}
-  const entireBalance=workLib.balanceAll(account);
-  workLabel("uwaBalance",entireBalance);
-  workLabel("uwaRemaining",Math.max(0,-entireBalance));
-  const progress=Math.max(0,Math.min(100,(entireBalance+6000)/6000*100));
-  $("uwaProgressFill").style.width=progress.toFixed(1)+"%";
-  $("uwaProgress").setAttribute("aria-valuenow",String(Math.round(progress)));
-  $("uwaProgressLabel").textContent=entireBalance>=0?
-    "Ziel erreicht: 100 Teststunden ausgeglichen."+(entireBalance>0?" Zusätzliches Guthaben: "+workLib.hours(entireBalance)+" Std.":""):
-    Math.round(progress)+" % der 100 Teststunden ausgeglichen.";
-  const deadline=workLib.formatDate(workLib.FIRST_DEADLINE);
-  const days=workLib.daysUntil(workLib.FIRST_DEADLINE);
-  $("uwaDeadline").textContent=entireBalance>=0?
-    "Ziel erreicht: Die ursprünglichen –100 Stunden sind ausgeglichen. Stichtag war der "+deadline+" (NRW-Sommerferien).":
-    days<0?
-      "Stichtag "+deadline+" überschritten: Es fehlen noch "+workLib.hours(-entireBalance)+" Std. Das Konto wird NICHT automatisch auf Null gesetzt.":
-      "Ziel bis zum Beginn der Sommerferien NRW: "+deadline+
-      " · noch "+days+" Tage · noch "+workLib.hours(-entireBalance)+" Std. auszugleichen.";
-  const refMonth=/^\d{4}-\d{2}$/.test(month)?month:new Date().toISOString().slice(0,7);
-  const atDate=new Date(Number(refMonth.slice(0,4)),Number(refMonth.slice(5,7))-1,1,12,0);
-  const next=workLib.nextSummer(atDate);
-  if(next){
-    $("uwaSummer").textContent="Sommerferien NRW "+next.year+": ab "+workLib.formatDate(next.date)+
-      ". Termin aus dem offiziellen NRW-/KMK-Ferienkalender. Die App berücksichtigt die veröffentlichten Jahre automatisch.";
-  }else{
-    const year=atDate.getFullYear();
-    const futureYear=year>=2031?year:2031;
-    $("uwaSummer").textContent="Sommerferien-Termin für "+futureYear+
-      " noch nicht offiziell hinterlegt. Die App sucht bei Internetverbindung nach einem neuen Ferientermin.";
-    if(!workHolidayRequests.has(futureYear)){
-      workHolidayRequests.add(futureYear);
-      workLib.findHolidayOnline(futureYear).then(result=>{
-        if(result&&employee)$("uwaSummer").textContent="Sommerferien NRW "+result.year+": ab "+
-          workLib.formatDate(result.date)+" ("+result.source+").";
-        else if(employee)$("uwaSummer").textContent="Sommerferien "+futureYear+
-          ": Noch kein verlässlicher Termin abrufbar. Die Angabe wird bei späteren App-Updates ergänzt.";
-      }).catch(()=>{});
-    }
-  }
-  $("uwaMonthTitle").textContent=workMonthLabel(month);
-  workLabel("uwaWorked",details.total);
-  workLabel("uwaTransferred",details.allocated);
-  workLabel("uwaBillable",details.available);
-  const eligible=details.eligible;
-  $("uwaInput").disabled=!eligible;
-  $("uwaSave").disabled=!eligible;
-  for(const id of ["uwaNone","uwaQuarter","uwaHalf","uwaAll"])$(id).disabled=!eligible;
-  $("uwaInputHelp").textContent=eligible?
-    "In diesem Monat kannst du höchstens "+workLib.hours(details.total)+
-    " Std. verteilen. Es werden nur tatsächlich geleistete Stunden berücksichtigt.":
-    "Das Arbeitszeitkonto startet erst im November 2026. Die früher erfassten Arbeitsstunden bleiben unberührt.";
-  const months=new Set([month]);
-  for(const r of records)if(r&&r.date&&r.date.slice(0,7)>=workLib.START_MONTH)months.add(r.date.slice(0,7));
-  for(const key of Object.keys(account.allocations))months.add(key);
-  const ordered=[...months].filter(x=>x>=workLib.START_MONTH).sort();
-  $("uwaHistory").innerHTML=ordered.map(m=>{
-    const sum=workLib.summary(account,records,m);
-    const mTxt=m.slice(5,7)+"-"+m.slice(0,4);
-    return "<tr><td>"+mTxt+"</td><td>"+workLib.hours(sum.total)+"</td><td>"+
-      workLib.hours(sum.allocated)+"</td><td><strong>"+workLib.hours(sum.balance)+"</strong></td></tr>";
-  }).join("");
-  $("uwaEmptyHistory").hidden=ordered.length>0;
-  const errors=workLib.invalidAllocations(account,records);
-  if(errors.length){
-    workError("Bitte prüfen: In "+errors[0].month+" sind mehr Stunden dem Konto zugeteilt als derzeit erfasst. Die Monatsaufteilung muss korrigiert werden.");
-  }
-  refreshWorkPreview();
+ if(!employee)return;
+ const account=getWorkState();
+ if(!account){
+  workError(workStateProblem||"Arbeitszeitkonto konnte nicht gelesen werden. Bitte zuerst ein Backup sichern.");
+  $("uwaSave").disabled=true;return;
+ }
+ const month=ym();
+ if(workMonthDisplayed!==month){
+  workMonthDisplayed=month;
+  $("uwaInput").value=workLib.hours(workLib.allocation(account,month));
+  workError("");
+ }
+ let stats;
+ try{stats=workLib.summary(account,records,month);}
+ catch(e){workError(e.message);return;}
+ const school=stats.schoolYear,active=school.status==="active";
+ const schoolLabel=active?school.label:school.previous?.label||"kein bestätigtes Schuljahr";
+ $("uwaSchoolYear").textContent=active?
+   "Schuljahr "+school.label+" · "+workLib.formatDate(school.start)+" bis "+workLib.formatDate(school.lastSchoolDay):
+   school.status==="vacation"?"Sommerferien – vorheriges Schuljahr "+schoolLabel+" abgeschlossen":
+   "Schuljahr noch nicht bestimmt";
+ const remaining=Math.max(0,-stats.overallBalance);
+ workLabel("uwaBalance",stats.overallBalance);
+ workLabel("uwaRemaining",remaining);
+ const progress=Math.max(0,Math.min(100,(stats.overallBalance-workLib.START_MINUTES)/(-workLib.START_MINUTES)*100));
+ $("uwaProgressFill").style.width=progress.toFixed(1)+"%";
+ $("uwaProgress").setAttribute("aria-valuenow",String(Math.round(progress)));
+ $("uwaProgressLabel").textContent=stats.overallBalance>=0?
+  "Das Ziel dieses Schuljahres ist erreicht."+
+    (stats.overallBalance>0?" Zusätzliches Testguthaben: "+workLib.hours(stats.overallBalance)+" Std.":""):
+  Math.round(progress)+" % der 100 Teststunden in diesem Schuljahr ausgeglichen.";
+ if(active){
+  const date=workLib.formatDate(school.lastSchoolDay),days=workLib.daysUntil(school.lastSchoolDay);
+  $("uwaDeadline").textContent=stats.overallBalance>=0?
+    "Schuljahr "+school.label+": Die 100 Teststunden sind ausgeglichen. Letzter Schultag: "+date+".":
+    days>=0?"Schuljahr "+school.label+": Ziel bis zum letzten Schultag "+date+
+      " (noch "+days+" Tage). Es fehlen "+workLib.hours(remaining)+" Std. bis Null.":
+      "Schuljahr "+school.label+" ist abgeschlossen (letzter Schultag "+date+
+      "). Endsaldo: "+workLib.hours(stats.overallBalance)+" Std. Der Altstand bleibt dokumentiert.";
+  $("uwaSummer").textContent="NRW-Sommerferien "+school.summerStart.slice(0,4)+": "+
+    workLib.formatDate(school.summerStart)+" bis "+workLib.formatDate(school.summerEnd)+
+    ". Neues Schuljahr ab "+workLib.formatDate(school.afterSummerStart)+
+    " mit einem neuen Test-Startsaldo von –100,00 Std.";
+ }else if(school.status==="vacation"){
+  $("uwaDeadline").textContent="Sommerferien: Das bisherige Schuljahreskonto ist abgeschlossen. "+
+   "Ab "+workLib.formatDate(school.afterSummerStart)+
+   " beginnt der Mitarbeiter automatisch ein neues Testkonto mit –100 Stunden.";
+  $("uwaSummer").textContent="NRW-Sommerferien: "+
+    workLib.formatDate(school.summerStart)+" bis "+workLib.formatDate(school.summerEnd)+
+    ". Frühere Schuljahreskonten bleiben gespeichert.";
+ }else{
+  $("uwaDeadline").textContent="Der Schuljahreszeitraum ist noch nicht bestätigt. "+
+    "Bis zur Aktualisierung können keine Übertragungen ins Arbeitszeitkonto erfolgen.";
+  $("uwaSummer").textContent="Die App prüft online, sobald neue NRW-Ferientermine veröffentlicht sind.";
+  const y=Number(month.slice(0,4));
+  if(y>=2030){refreshSchoolCalendar(y>=2031?y:y+1);refreshSchoolCalendar(y+1);}
+ }
+ $("uwaMonthTitle").textContent=workMonthLabel(month);
+ workLabel("uwaWorked",stats.total);
+ workLabel("uwaTransferred",stats.allocated);
+ workLabel("uwaBillable",stats.available);
+ $("uwaInput").disabled=!active;
+ $("uwaSave").disabled=!active;
+ for(const id of ["uwaNone","uwaQuarter","uwaHalf","uwaAll"])$(id).disabled=!active;
+ $("uwaInputHelp").textContent=active?
+  "Im "+workMonthLabel(month)+" sind "+workLib.hours(stats.total)+
+  " Std. insgesamt erfasst, davon "+workLib.hours(stats.eligibleWorked)+
+  " Std. innerhalb der Schulzeit. Nur diese Schulstunden können dem Konto zugeteilt werden.":
+  school.status==="vacation"?
+    "Während der Sommerferien sind keine Übertragungen auf das abgeschlossene Schuljahreskonto möglich.":
+    "Für diesen Monat ist noch kein bestätigtes Schuljahr vorhanden.";
+ const months=new Set([month]);
+ for(const r of records)if(r?.date&&r.date.slice(0,7)>=workLib.START_MONTH)months.add(r.date.slice(0,7));
+ for(const key of Object.keys(account.allocations))months.add(key);
+ const ordered=[...months].filter(x=>x>=workLib.START_MONTH).sort();
+ $("uwaHistory").innerHTML=ordered.map(m=>{
+  const row=workLib.summary(account,records,m);
+  const label=row.schoolYear.status==="active"?row.schoolYear.label:"Ferien";
+  return "<tr><td>"+m.slice(5,7)+"-"+m.slice(0,4)+"</td><td>"+label+
+    "</td><td>"+workLib.hours(row.total)+"</td><td>"+workLib.hours(row.allocated)+
+    "</td><td><strong>"+(row.schoolYear.status==="active"?workLib.hours(row.balance):"—")+
+    "</strong></td></tr>";
+ }).join("");
+ $("uwaEmptyHistory").hidden=ordered.length>0;
+ const schoolYears=workLib.cyclesWithBalances(account);
+ $("uwaPastYears").innerHTML=schoolYears.map(obj=>{
+  const c=obj.cycle;
+  return "<tr><td>"+c.label+"</td><td>"+workLib.formatDate(c.start)+
+    "</td><td>"+workLib.formatDate(c.lastSchoolDay)+
+    "</td><td><strong>"+workLib.hours(obj.balance)+" Std.</strong></td></tr>";
+ }).join("");
+ const conflicts=workLib.invalidAllocations(account,records);
+ if(conflicts.length){
+  const issue=conflicts[0];
+  workError("Bitte prüfen: "+issue.month+" enthält "+workLib.hours(issue.allocated)+
+    " zugeteilte Stunden, aber nur "+workLib.hours(issue.worked)+" anrechenbare Schulstunden.");
+ }
+ refreshWorkPreview();
 }
 function refreshWorkPreview(){
-  if(!employee||!workState||ym()<workLib.START_MONTH){
-    $("uwaPreview").textContent="Das Arbeitszeitkonto kann ab November 2026 verwendet werden.";
-    $("uwaPreview").className="uwa-preview";
-    return;
-  }
-  const stats=workLib.summary(workState,records,ym());
-  try{
-    const text=$("uwaInput").value.trim();
-    const selected=text?workLib.parseHours(text):0;
-    if(selected>stats.total)throw Error("Es wurden nur "+workLib.hours(stats.total)+" Std. gearbeitet. Eine höhere Übertragung ist nicht möglich.");
-    const projectedBalance=workLib.balanceAll(workState)-stats.allocated+selected;
-    $("uwaPreview").className="uwa-preview";
-    $("uwaPreview").textContent="Wenn du diese Auswahl speicherst: "+
-      workLib.hours(selected)+" Std. gehen ins Testkonto, "+
-      workLib.hours(stats.total-selected)+" Std. bleiben für die Abrechnung vorgesehen. "+
-      "Dein neuer Kontostand wäre "+workLib.hours(projectedBalance)+" Std."+
-      (selected===stats.allocated?" (Bereits gespeichert.)":" (Noch NICHT gespeichert.)");
-  }catch(e){
-    $("uwaPreview").className="uwa-preview uwa-error";
-    $("uwaPreview").textContent=e.message;
-  }
+ const state=getWorkState();
+ if(!employee||!state){$("uwaPreview").textContent="Arbeitszeitkonto noch nicht verfügbar.";return;}
+ const stats=workLib.summary(state,records,ym());
+ if(stats.schoolYear.status!=="active"){
+  $("uwaPreview").className="uwa-preview";
+  $("uwaPreview").textContent="In den Sommerferien oder ohne bestätigten Schuljahrstermin kann nichts übertragen werden.";
+  return;
+ }
+ try{
+  const raw=$("uwaInput").value.trim();
+  const selected=raw?workLib.parseHours(raw):0;
+  if(selected>stats.eligibleWorked)throw Error("Es können nur "+workLib.hours(stats.eligibleWorked)+
+    " Std. der Schulzeit übertragen werden.");
+  const next=stats.overallBalance-stats.allocated+selected;
+  $("uwaPreview").className="uwa-preview";
+  $("uwaPreview").textContent="Für Schuljahr "+stats.schoolYear.label+": "+
+    workLib.hours(selected)+" Std. ins Testkonto, "+
+    workLib.hours(stats.total-selected)+" Std. zur Abrechnung vorgemerkt. "+
+    "Neuer Schuljahresstand: "+workLib.hours(next)+" Std."+
+    (selected===stats.allocated?" (Bereits gespeichert.)":" (Noch NICHT gespeichert.)");
+ }catch(e){
+  $("uwaPreview").className="uwa-preview uwa-error";
+  $("uwaPreview").textContent=e.message;
+ }
 }
 function quickWorkSplit(fraction){
-  const state=getWorkState();
-  if(!state||ym()<workLib.START_MONTH)return;
-  const available=workLib.worked(records,ym());
-  const toDeposit=Math.round(available*fraction);
-  $("uwaInput").value=workLib.hours(toDeposit);
-  workError("");
-  refreshWorkPreview();
+ const state=getWorkState();
+ if(!state||workLib.calendarForMonth(ym()).status!=="active")return;
+ const eligible=workLib.eligibleWorked(records,ym());
+ $("uwaInput").value=workLib.hours(Math.round(eligible*fraction));
+ workError("");refreshWorkPreview();
 }
 function saveWorkSplit(){
-  const account=getWorkState();
-  if(!account)throw Error(workStateProblem||"Arbeitszeitkonto nicht verfügbar.");
-  const text=$("uwaInput").value.trim();
-  if(!text)throw Error("Bitte die gewünschte Stundenzahl eingeben. Für keine Übertragung 0 verwenden.");
-  const minutes=workLib.parseHours(text);
-  const next=workLib.update(account,records,ym(),minutes);
-  workState=workLib.persist(next);
-  workMonthDisplayed="";
-  renderWorkAccount();
-  workError("");
-  $("uwaNotice").textContent="Gespeichert: "+workLib.hours(minutes)+" Std. für "+
-    workMonthLabel(ym())+" dem Test-Arbeitszeitkonto zugeteilt. Bitte den Monatsnachweis an UWE senden.";
-  $("uwaNotice").style.color="#086d65";
+ const state=getWorkState();
+ if(!state)throw Error(workStateProblem||"Arbeitszeitkonto nicht verfügbar.");
+ const value=$("uwaInput").value.trim();
+ if(!value)throw Error("Bitte die Stundenzahl angeben. Für keine Übertragung 0 eintragen.");
+ const minutes=workLib.parseHours(value);
+ const next=workLib.update(state,records,ym(),minutes);
+ workState=workLib.persist(next);
+ workMonthDisplayed="";
+ renderWorkAccount();
+ workError("");
+ $("uwaNotice").textContent="Gespeichert: "+workLib.hours(minutes)+" Std. für "+
+  workMonthLabel(ym())+" ins Testkonto Schuljahr "+
+  workLib.calendarForMonth(ym()).label+" übernommen. Bitte den Monatsnachweis an UWE senden.";
+ $("uwaNotice").style.color="#086d65";
 }
 function startWorkAccount(){
-  $("uwaInput").addEventListener("input",()=>{workError("");refreshWorkPreview();});
-  $("uwaNone").addEventListener("click",()=>quickWorkSplit(0));
-  $("uwaQuarter").addEventListener("click",()=>quickWorkSplit(.25));
-  $("uwaHalf").addEventListener("click",()=>quickWorkSplit(.5));
-  $("uwaAll").addEventListener("click",()=>quickWorkSplit(1));
+ $("uwaInput").addEventListener("input",()=>{workError("");refreshWorkPreview();});
+ $("uwaNone").addEventListener("click",()=>quickWorkSplit(0));
+ $("uwaQuarter").addEventListener("click",()=>quickWorkSplit(.25));
+ $("uwaHalf").addEventListener("click",()=>quickWorkSplit(.5));
+ $("uwaAll").addEventListener("click",()=>quickWorkSplit(1));
 }
 
 function render(){
