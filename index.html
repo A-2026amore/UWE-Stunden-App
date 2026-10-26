@@ -26,10 +26,34 @@ main .card{background:rgba(255,255,255,.95)}
 @media(max-width:520px){table{font-size:12px}th,td{padding:7px 4px}td button{padding:6px;font-size:11px}}
 .break-error{padding:12px;border:1px solid #e2a8a8;background:#fff1ee;color:#9b3434;border-radius:9px;font-size:14px;font-weight:650;margin:10px 0}
 #pauseHint{font-size:13px;color:#497076;margin:7px 0 0;line-height:1.45}
+
+.uwa-account{border-top:3px solid #00a99e}
+.uwa-tag{display:inline-block;background:#fff0ca;border-radius:6px;padding:3px 8px;margin-left:4px;color:#704c0a;font-size:11px;letter-spacing:.4px;vertical-align:middle}
+.uwa-account h3{font-size:17px;margin:8px 0 10px;color:#193c42}
+.uwa-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:15px 0}
+.uwa-stat{background:#ecf6f5;border-radius:11px;padding:13px 10px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.uwa-stat span{font-size:12px;color:#527279;line-height:1.3}
+.uwa-stat strong{font-size:20px;color:#087f89;white-space:nowrap}
+.uwa-stat small{font-size:11px;color:#607a7c;line-height:1.3}
+.uwa-progress{height:13px;width:100%;background:#dfebea;border-radius:12px;overflow:hidden}
+#uwaProgressFill{width:0%;height:100%;border-radius:12px;background:#00a99e;transition:width .15s}
+.uwa-deadline{background:#f3f8f7;border-left:4px solid #00a99e;border-radius:8px;padding:12px 14px;font-size:14px;line-height:1.5;font-weight:700;margin:12px 0}
+.uwa-month,.uwa-history{margin-top:20px;padding-top:16px;border-top:1px solid #e3eeed}
+.uwa-edit{display:flex;align-items:center;gap:10px;max-width:350px}
+.uwa-edit input{font-weight:750;font-size:20px}
+.uwa-edit span{font-size:13px;font-weight:700;color:#4c656a}
+.uwa-presets{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0}
+.uwa-presets button{padding:10px 4px;font-size:12px;min-height:39px}
+.uwa-preview{background:#eff9f5;border:1px solid #bbe5d8;padding:12px;border-radius:9px;font-size:14px;color:#1a5558;line-height:1.5}
+.uwa-preview.uwa-error{background:#fff1ef;border-color:#e9b4ae;color:#993333}
+.uwa-disclaimer{font-size:12px;line-height:1.55;color:#6a5650;background:#fffaef;border:1px solid #f0dfb1;border-radius:10px;padding:12px;margin:20px 0 2px}
+@media(max-width:560px){.uwa-stats{grid-template-columns:1fr 1fr}.uwa-month-stats{grid-template-columns:1fr}.uwa-stat strong{font-size:19px}.uwa-presets{grid-template-columns:repeat(4,minmax(0,1fr))}.uwa-presets button{font-size:11px;padding:9px 3px}}
+@media(max-width:370px){.uwa-stats{grid-template-columns:1fr}}
 </style>
 <script src="uwe-config.js"></script>
 <script src="uwe-access-check.js?v=16"></script>
 <script src="uwe-break-rules.js?v=24"></script>
+<script src="uwe-arbeitszeitkonto.js?v=25"></script>
 <script defer src="uwe-pdf.js?v=23"></script>
 </head>
 <body>
@@ -47,6 +71,57 @@ main .card{background:rgba(255,255,255,.95)}
 <strong>Wichtig:</strong> Die App kann die Empfängerauswahl nicht umgehen und nicht ohne deine Bestätigung senden. Wenn keine Dateifreigabe angeboten wird, verwende „PDF speichern“ und hänge die PDF in WhatsApp oder Mail als Dokument an.
 
 </div><p class="muted">Versandversion 4 – ausschließlich PDF-Dateifreigabe, kein Stundenzettel als Nachrichtentext.</p></div>
+
+<div class="card uwa-account" id="uwaAccount">
+  <div class="topline">
+    <h2>Arbeitszeitkonto <span class="uwa-tag">TEST</span></h2>
+  </div>
+  <p class="muted">Hier entscheidest <strong>du selbst</strong>, wie viele deiner geleisteten Monatsstunden auf dein Arbeitszeitkonto gebucht werden sollen. Die restlichen Stunden sind für die spätere Abrechnung vorgesehen. <strong>Deine erfassten Arbeitszeiten bleiben unverändert.</strong></p>
+  <div class="uwa-stats">
+    <div class="uwa-stat"><span>Einmaliger Startsaldo</span><strong>–100,00 Std.</strong><small>ab November 2026</small></div>
+    <div class="uwa-stat"><span>Aktueller Kontostand</span><strong id="uwaBalance">–100,00 Std.</strong><small>inklusive aller gespeicherten Übertragungen</small></div>
+    <div class="uwa-stat"><span>Noch bis Null</span><strong id="uwaRemaining">100,00 Std.</strong><small>auszugleichende Teststunden</small></div>
+  </div>
+  <div class="uwa-progress" role="progressbar" aria-label="Fortschritt des Test-Arbeitszeitkontos" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="uwaProgress">
+    <div id="uwaProgressFill"></div>
+  </div>
+  <p class="muted" id="uwaProgressLabel">Bisher 0 % der 100 Teststunden ausgeglichen.</p>
+  <div class="uwa-deadline" id="uwaDeadline">Ziel: Kontostand Null bis zu den Sommerferien 2027 in NRW.</div>
+  <p class="muted" id="uwaSummer">Jährlicher Sommerferien-Termin NRW wird geprüft …</p>
+  <div class="uwa-month">
+    <h3>Monatsstunden aufteilen: <span id="uwaMonthTitle">November 2026</span></h3>
+    <p class="muted">Die Auswahl gilt für den Monat aus deiner Monatsübersicht oben. Du kannst deine Entscheidung später ändern.</p>
+    <div class="uwa-stats uwa-month-stats">
+      <div class="uwa-stat"><span>Geleistete Stunden</span><strong id="uwaWorked">0,00 Std.</strong></div>
+      <div class="uwa-stat"><span>Ins Arbeitszeitkonto</span><strong id="uwaTransferred">0,00 Std.</strong></div>
+      <div class="uwa-stat"><span>Für Abrechnung vorgesehen</span><strong id="uwaBillable">0,00 Std.</strong></div>
+    </div>
+    <label for="uwaInput">Wie viele Stunden möchtest du aus diesem Monat ins Konto übertragen?</label>
+    <div class="uwa-edit">
+      <input id="uwaInput" type="text" inputmode="decimal" autocomplete="off" placeholder="z. B. 20,00" aria-describedby="uwaInputHelp">
+      <span>Stunden</span>
+    </div>
+    <p class="muted" id="uwaInputHelp">Du kannst 0 Stunden wählen oder bis zur Zahl der tatsächlich geleisteten Monatsstunden.</p>
+    <div class="uwa-presets">
+      <button type="button" class="alt" id="uwaNone">0 Std.</button>
+      <button type="button" class="alt" id="uwaQuarter">25 %</button>
+      <button type="button" class="alt" id="uwaHalf">50 %</button>
+      <button type="button" class="alt" id="uwaAll">Alle</button>
+    </div>
+    <p id="uwaPreview" class="uwa-preview" aria-live="polite">Wähle oben die Übertragung.</p>
+    <div class="actions"><button id="uwaSave" type="button">Aufteilung für diesen Monat speichern</button></div>
+    <p id="uwaNotice" class="muted" role="status" aria-live="polite"></p>
+  </div>
+  <div class="uwa-history">
+    <h3>Bisherige Monatsaufteilungen</h3>
+    <div class="scroll"><table>
+      <thead><tr><th>Monat</th><th>Geleistet</th><th>Ins Konto</th><th>Saldo danach</th></tr></thead>
+      <tbody id="uwaHistory"></tbody>
+    </table></div>
+    <p id="uwaEmptyHistory" class="muted">Noch keine Stunden ab November 2026 vorhanden.</p>
+  </div>
+  <p class="uwa-disclaimer"><strong>Wichtig:</strong> Dieses Arbeitszeitkonto ist zunächst nur ein <strong>Test</strong>. Die –100 Stunden sind kein rechtlich bestätigter Minussaldo. Deine Auswahl ist ein Vorschlag für UWE und ersetzt weder die arbeitsvertragliche Vereinbarung noch die Lohnabrechnung. Eine Auszahlung oder Verrechnung erfolgt nicht automatisch. Das Konto wird zum Ferienstichtag <strong>nicht automatisch zurückgesetzt</strong>.</p>
+</div>
 <div class="card"><h2>Datensicherung</h2><p class="muted">Bitte regelmäßig ein Backup erstellen. Wenn du Browserdaten löschst oder das Handy verlierst, können ungesicherte Stunden verloren gehen.</p><div class="actions"><button id="backupBtn" class="alt">Backup herunterladen</button></div><label for="restore" style="margin-top:17px">Eigenes Backup wiederherstellen</label><input id="restore" type="file" accept="application/json,.json"></div>
 </section>
 </main>
