@@ -5,10 +5,11 @@
  *  - DemoRepository (src/data/demo.ts): runs fully in the browser with
  *    anonymised seed data for two separate demo companies. Used for staging
  *    previews and E2E tests. NEVER holds real personal data.
- *  - SupabaseRepository (src/data/supabase.ts): talks to PostgreSQL through
- *    Supabase. Tenant isolation is enforced by Row Level Security in the
- *    database (supabase/migrations) – the client-side checks here are only
- *    for usability, never the security boundary.
+ *  - ApiRepository (src/data/api.ts): talks to our own Node API (server/),
+ *    which runs every request under PostgreSQL Row Level Security
+ *    (db/migrations). Tenant isolation is enforced in the database – the
+ *    client-side checks here are only for usability, never the security
+ *    boundary.
  *
  * Every method acts on behalf of the signed-in Session. Implementations must
  * reject access to other tenants' data with AccessDeniedError.

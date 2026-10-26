@@ -19,9 +19,6 @@
     "test:e2e": "playwright test",
     "serve:legacy": "node scripts/serve-static.mjs . 4173"
   },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.118.0"
-  },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.63.0",
