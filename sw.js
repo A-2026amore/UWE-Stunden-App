@@ -1,4 +1,4 @@
-const CACHE='uwe-stunden-v27-netto-monatsstunden-20261026';
+const CACHE='uwe-stunden-v28-speicherschutz-20261026';
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./','./index.html','./test-mitarbeiter.html','./uwe-pdf.js?v=26','./uwe-arbeitszeitkonto.js?v=26','./uwe-break-rules.js?v=24','./uwe-logo.svg','./uwe-fluegel.svg','./chef-mobil.html','./chef-staff.js?v=21','./chef-mobil.js?v=21','./uwe-access-check.js?v=16','./chef-manifest.json','./chef-pwa.json','./chef-icon.svg','./uwe-config.js','./manifest.json','./icon.svg','./icon-192.png','./icon-512.png','./apple-touch-icon.png'])).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{if(event.request.method!=='GET')return;
