@@ -1,0 +1,111 @@
+/*
+ * Design tokens of the platform design system.
+ *
+ * All colours, sizes and effects are CSS custom properties. Tenant branding
+ * (white-label) only overrides the --brand-* variables at runtime via
+ * applyBranding() in branding.ts – components never hard-code brand colours.
+ */
+:root {
+  /* ---- neutral palette (product default, high contrast) */
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f5f7f8;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1f4f5;
+  --color-border: #d3dcdf;
+  --color-border-strong: #8a9ca1;
+  --color-text: #13262b;
+  --color-text-muted: #4a5f65;
+  --color-text-inverse: #ffffff;
+
+  /* ---- brand (overridden per tenant by applyBranding) */
+  --brand-primary: #2d4f73;
+  --brand-primary-hover: #243f5c;
+  --brand-on-primary: #ffffff;
+  /* primary colour adjusted to reach ≥ 4.5:1 on white for text / icons */
+  --brand-primary-text: #2d4f73;
+  --brand-primary-soft: #e9eef4;
+  --brand-secondary: #4a6a8a;
+  --brand-on-secondary: #ffffff;
+  --brand-accent: #3b82c4;
+  --brand-accent-text: #275f94;
+  --brand-accent-soft: #eaf2fa;
+
+  /* ---- semantic status colours (all text colours ≥ 4.5:1 on their bg) */
+  --color-success: #146c43;
+  --color-success-bg: #e6f4ec;
+  --color-success-border: #9fd2b6;
+  --color-warning: #7a4a00;
+  --color-warning-bg: #fff4dc;
+  --color-warning-border: #f0cf8a;
+  --color-danger: #b42318;
+  --color-danger-hover: #93190f;
+  --color-danger-bg: #fdecea;
+  --color-danger-border: #f1b0a9;
+  --color-info: #1d4f91;
+  --color-info-bg: #e8f0fb;
+  --color-info-border: #aac4ea;
+
+  /* ---- focus ring: fixed, independent of tenant colours */
+  --focus-color: #0b57d0;
+  --focus-ring: 0 0 0 3px #ffffff, 0 0 0 6px var(--focus-color);
+
+  /* ---- typography (system font stack, no web fonts) */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --text-xs: 0.75rem;   /* 12 */
+  --text-sm: 0.875rem;  /* 14 */
+  --text-md: 1rem;      /* 16 */
+  --text-lg: 1.125rem;  /* 18 */
+  --text-xl: 1.25rem;   /* 20 */
+  --text-2xl: 1.5rem;   /* 24 */
+  --text-3xl: 1.875rem; /* 30 */
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --weight-regular: 400;
+  --weight-medium: 550;
+  --weight-bold: 700;
+
+  /* ---- spacing: 4px grid */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ---- radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* ---- shadows */
+  --shadow-sm: 0 1px 2px rgba(16, 36, 41, 0.08);
+  --shadow-md: 0 2px 8px rgba(16, 36, 41, 0.08), 0 1px 2px rgba(16, 36, 41, 0.06);
+  --shadow-lg: 0 12px 32px rgba(16, 36, 41, 0.18);
+
+  /* ---- sizes */
+  --touch-target: 44px;
+  --bottom-nav-height: 64px;
+  --sidebar-width: 264px;
+  --content-max: 720px;
+  --content-max-wide: 1200px;
+
+  --duration-fast: 120ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
