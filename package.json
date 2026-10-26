@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
-    "test:db": "vitest run --project db",
+    "test:db": "vitest run --project db --no-file-parallelism",
     "test:e2e": "playwright test",
     "serve:legacy": "node scripts/serve-static.mjs . 4173"
   },
