@@ -28,6 +28,8 @@ main .card{background:rgba(255,255,255,.95)}
 #pauseHint{font-size:13px;color:#497076;margin:7px 0 0;line-height:1.45}
 
 .uwa-account{border-top:3px solid #00a99e}
+.uwa-school-year{display:inline-block;color:#075c63;background:#d7f4ef;padding:9px 13px;margin:0;border-radius:9px;font-weight:800;font-size:14px}
+#uwaPastYears td{font-size:12px}
 .uwa-tag{display:inline-block;background:#fff0ca;border-radius:6px;padding:3px 8px;margin-left:4px;color:#704c0a;font-size:11px;letter-spacing:.4px;vertical-align:middle}
 .uwa-account h3{font-size:17px;margin:8px 0 10px;color:#193c42}
 .uwa-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:15px 0}
@@ -76,21 +78,22 @@ main .card{background:rgba(255,255,255,.95)}
   <div class="topline">
     <h2>Arbeitszeitkonto <span class="uwa-tag">TEST</span></h2>
   </div>
-  <p class="muted">Hier entscheidest <strong>du selbst</strong>, wie viele deiner geleisteten Monatsstunden auf dein Arbeitszeitkonto gebucht werden sollen. Die restlichen Stunden sind für die spätere Abrechnung vorgesehen. <strong>Deine erfassten Arbeitszeiten bleiben unverändert.</strong></p>
+  <p class="muted">Du entscheidest selbst, wie viele Monatsstunden du dem <strong>Test-Arbeitszeitkonto dieses Schuljahres</strong> zuteilen möchtest. <strong>Jedes neue NRW-Schuljahr beginnt nach den Sommerferien erneut bei –100 Stunden.</strong> Deine Arbeitszeiten bleiben unverändert. Die Auswahl ist zunächst unverbindlich und muss von UWE geprüft werden.</p>
+  <p class="uwa-school-year" id="uwaSchoolYear">Schuljahr wird ermittelt …</p>
   <div class="uwa-stats">
-    <div class="uwa-stat"><span>Einmaliger Startsaldo</span><strong>–100,00 Std.</strong><small>ab November 2026</small></div>
-    <div class="uwa-stat"><span>Aktueller Kontostand</span><strong id="uwaBalance">–100,00 Std.</strong><small>inklusive aller gespeicherten Übertragungen</small></div>
+    <div class="uwa-stat"><span>Startsaldo pro Schuljahr</span><strong>–100,00 Std.</strong><small>Neustart nach jeder Sommerferienzeit</small></div>
+    <div class="uwa-stat"><span>Kontostand dieses Schuljahres</span><strong id="uwaBalance">–100,00 Std.</strong><small>andere Schuljahre bleiben getrennt</small></div>
     <div class="uwa-stat"><span>Noch bis Null</span><strong id="uwaRemaining">100,00 Std.</strong><small>auszugleichende Teststunden</small></div>
   </div>
   <div class="uwa-progress" role="progressbar" aria-label="Fortschritt des Test-Arbeitszeitkontos" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="uwaProgress">
     <div id="uwaProgressFill"></div>
   </div>
   <p class="muted" id="uwaProgressLabel">Bisher 0 % der 100 Teststunden ausgeglichen.</p>
-  <div class="uwa-deadline" id="uwaDeadline">Ziel: Kontostand Null bis zu den Sommerferien 2027 in NRW.</div>
-  <p class="muted" id="uwaSummer">Jährlicher Sommerferien-Termin NRW wird geprüft …</p>
+  <div class="uwa-deadline" id="uwaDeadline">Ziel: Kontostand Null bis zum letzten Schultag vor den NRW-Sommerferien.</div>
+  <p class="muted" id="uwaSummer">Schuljahresbeginn und nächster NRW-Ferientermin werden geprüft …</p>
   <div class="uwa-month">
     <h3>Monatsstunden aufteilen: <span id="uwaMonthTitle">November 2026</span></h3>
-    <p class="muted">Die Auswahl gilt für den Monat aus deiner Monatsübersicht oben. Du kannst deine Entscheidung später ändern.</p>
+    <p class="muted">Die Auswahl gilt für den Monat aus deiner Monatsübersicht oben. Du kannst sie später ändern. <strong>Während der Sommerferien können keine Stunden dem Schuljahreskonto zugeteilt werden.</strong></p>
     <div class="uwa-stats uwa-month-stats">
       <div class="uwa-stat"><span>Geleistete Stunden</span><strong id="uwaWorked">0,00 Std.</strong></div>
       <div class="uwa-stat"><span>Ins Arbeitszeitkonto</span><strong id="uwaTransferred">0,00 Std.</strong></div>
@@ -115,12 +118,14 @@ main .card{background:rgba(255,255,255,.95)}
   <div class="uwa-history">
     <h3>Bisherige Monatsaufteilungen</h3>
     <div class="scroll"><table>
-      <thead><tr><th>Monat</th><th>Geleistet</th><th>Ins Konto</th><th>Saldo danach</th></tr></thead>
+      <thead><tr><th>Monat</th><th>Schuljahr</th><th>Geleistet</th><th>Ins Konto</th><th>Saldo danach</th></tr></thead>
       <tbody id="uwaHistory"></tbody>
     </table></div>
-    <p id="uwaEmptyHistory" class="muted">Noch keine Stunden ab November 2026 vorhanden.</p>
+    <p id="uwaEmptyHistory" class="muted">Noch keine Monatsaufteilungen vorhanden.</p>
+  <h3>Abgeschlossene und laufende Schuljahre</h3>
+  <div class="scroll"><table><thead><tr><th>Schuljahr</th><th>Start</th><th>Ende / Stichtag</th><th>Letzter Kontostand</th></tr></thead><tbody id="uwaPastYears"></tbody></table></div>
   </div>
-  <p class="uwa-disclaimer"><strong>Wichtig:</strong> Dieses Arbeitszeitkonto ist zunächst nur ein <strong>Test</strong>. Die –100 Stunden sind kein rechtlich bestätigter Minussaldo. Deine Auswahl ist ein Vorschlag für UWE und ersetzt weder die arbeitsvertragliche Vereinbarung noch die Lohnabrechnung. Eine Auszahlung oder Verrechnung erfolgt nicht automatisch. Das Konto wird zum Ferienstichtag <strong>nicht automatisch zurückgesetzt</strong>.</p>
+  <p class="uwa-disclaimer"><strong>Wichtig:</strong> Dieses Arbeitszeitkonto ist zunächst nur ein <strong>Test</strong>. Die –100 Stunden sind kein rechtlich bestätigter Minussaldo. Deine Auswahl ist ein Vorschlag für UWE und ersetzt weder die arbeitsvertragliche Vereinbarung noch die Lohnabrechnung. Eine Auszahlung oder Verrechnung erfolgt nicht automatisch. <strong>Beim Schuljahreswechsel beginnt ein neues Testkonto mit –100 Stunden;</strong> das Konto des Vorjahres bleibt unverändert sichtbar. Bestehende Guthaben und Ansprüche werden dadurch nicht gelöscht.</p>
 </div>
 <div class="card"><h2>Datensicherung</h2><p class="muted">Bitte regelmäßig ein Backup erstellen. Wenn du Browserdaten löschst oder das Handy verlierst, können ungesicherte Stunden verloren gehen.</p><div class="actions"><button id="backupBtn" class="alt">Backup herunterladen</button></div><label for="restore" style="margin-top:17px">Eigenes Backup wiederherstellen</label><input id="restore" type="file" accept="application/json,.json"></div>
 </section>
