@@ -58,3 +58,20 @@ Datenbanktests starten automatisch einen temporären lokalen PostgreSQL-16-Serve
 | Datenbankfehler | Wiederherstellung aus Tages-Backup bzw. Point-in-Time-Recovery (WAL-Archiv); danach Geräte synchronisieren lassen, Offline-Einträge werden idempotent nachgeladen |
 | Fehlerhafte Plattform-Version | Vorherige Version des Builds erneut ausliefern; Datenbankmigrationen sind nur additiv |
 | Fehlerhafte Alt-App-Version | Vorherigen Commit auf `main` wiederherstellen (nur mit Freigabe) |
+
+## 6. Node-API betreiben
+
+Die API (`server/`) läuft ohne Build-Schritt direkt mit Node 22 (TypeScript-Typentfernung):
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning \
+     --import ./server/register.mjs server/src/main.ts
+```
+
+- Konfiguration nur über Umgebungsvariablen (`DATABASE_URL` als Rolle `app_api`, `PUBLIC_ORIGIN`,
+  optional `SMTP_*`); vollständige Liste, systemd-Unit, Caddy-Beispiel und Backup-Hinweise in
+  `server/README.md`.
+- Passwörter setzt der Betrieb mit `server/src/cli.ts set-password <email>` (Passwort über stdin).
+- Ohne SMTP werden E-Mails nur in der Entwicklung ins Log geschrieben; in Produktion nie.
+- Rate-Limits liegen im Prozessspeicher: **eine** API-Instanz betreiben (oder gemeinsamen Speicher ergänzen).
+- Tests: `npx vitest run --project db --no-file-parallelism tests/server`.

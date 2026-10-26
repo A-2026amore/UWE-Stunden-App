@@ -90,3 +90,71 @@ Ohne Anmeldung (`app_anon`): `public_tenant_branding(slug) → (slug, name, bran
 
 Ablauf je Anfrage: Cookie → `resolve_session` (als `app_auth`) → `user_id` →
 neue Transaktion als `app_user` mit `request.jwt.claims.sub = user_id`.
+
+## HTTP-Schnittstelle der Node-API (`server/`)
+
+Umsetzung: `server/src` (Start, Umgebungsvariablen und Betrieb: `server/README.md`),
+Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
+
+**Allgemein**
+- JSON, UTF-8. Fehler: `{"error": {"code": "...", "message": "<deutscher Text>"}}`.
+- Sitzung per Cookie `__Host-sid` (HTTPS) bzw. `sid` (lokal http): `HttpOnly; SameSite=Strict; Path=/`,
+  32 Byte Zufall, in `auth.sessions` nur als SHA-256-Hash. Ablauf 12 h, Leerlauf-Timeout 120 min.
+  Die Sitzung wird von der API selbst geprüft (Leerlauf-Prüfung; `auth.resolve_session` kennt keinen Leerlauf).
+- POST/PUT/PATCH/DELETE: Pflicht `Content-Type: application/json` (sonst 415) und `Origin` aus
+  `PUBLIC_ORIGIN` (sonst 403). Body-Limit 32 KB (Branding 1,2 MB).
+- Statuscodes zusätzlich zur Tabelle oben: 401 nicht angemeldet, 413 zu groß, 415 kein JSON,
+  429 Rate-Limit (mit `Retry-After`), 400 `break_rule` (Pausenregel), 409 `ambiguous`
+  (Eintrags-ID ohne Mitarbeiter nicht eindeutig).
+- Leere Treffer bei fremden Daten werden als **403** beantwortet (Vorprüfung mit denselben
+  `private.*`-Funktionen wie die RLS-Richtlinien).
+
+**Anmeldung**
+
+| Methode, Pfad | Body | Antwort |
+|---|---|---|
+| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · 401 einheitlicher Text · 403 Zugang inaktiv/Firma gesperrt · 429 |
+| `POST /api/auth/logout` | `{}` | 204, Cookie gelöscht, Sitzung widerrufen |
+| `GET /api/auth/session` | – | 200 `Session` oder `null` (Session enthält zusätzlich `memberships`) |
+| `POST /api/auth/password-reset` | `{email}` | immer 204 (keine Kontenaufzählung); Link `PUBLIC_ORIGIN + RESET_LINK_PATH#token=…` |
+| `POST /api/auth/password-reset/confirm` | `{token, password}` | 204 · 400 Link ungültig/Passwort zu kurz (min. 10 Zeichen) |
+| `POST /api/auth/invitation/accept` | `{token, password}` | 204 (keine automatische Anmeldung) |
+| `GET /api/public/tenants/:slug/branding` | – | Login-Seite (`app_anon`) |
+| `GET /api/health` | – | `{ok: true}` |
+
+**Fachliche Endpunkte** (alle als `app_user`)
+
+| Repository-Methode | Methode, Pfad |
+|---|---|
+| `getTenant` | `GET /api/tenants/:tenantId` |
+| `updateBranding` / `updateContact` / `updateSettings` | `PATCH /api/tenants/:tenantId/branding` · `/contact` · `/settings` (Teil-Objekte, zusammengeführt) |
+| Support-Freigabe (UI) | `GET`/`PUT /api/tenants/:tenantId/support-grant` (`{hours: 0–168, reason?}`, 0 = widerrufen) |
+| `listEmployees` / `inviteEmployee` | `GET`/`POST /api/tenants/:tenantId/employees` (mit E-Mail → Einladung per Mail) |
+| `updateEmployee` / `setEmployeeStatus` | `PATCH /api/employees/:id` · `POST /api/employees/:id/status` `{status, reason}` |
+| Einladung erneut senden | `POST /api/employees/:id/invitation` |
+| `listTimeEntries` | `GET /api/employees/:id/time-entries?month=YYYY-MM` |
+| `listTenantTimeEntries` | `GET /api/tenants/:tenantId/time-entries?from=YYYY-MM-DD&to=YYYY-MM-DD` (max. 400 Tage) |
+| `createTimeEntry` | `POST /api/employees/:id/time-entries` → 201 neu, **200 bei bereits vorhandener ID** (idempotent) |
+| `updateTimeEntry` | `PATCH /api/employees/:id/time-entries/:entryId` oder `PATCH /api/time-entries/:entryId` – `{patch, expectedVersion, reason?}` |
+| `deleteTimeEntry` | `DELETE` (gleiche Pfade) – `{expectedVersion, reason?}` (Soft-Delete) |
+| `listAllocations` / `setAllocation` | `GET /api/employees/:id/allocations` · `PUT /api/employees/:id/allocations/:month` `{minutes}` |
+| `reviewAllocation` | `POST /api/employees/:id/allocations/:month/review` `{decision, reason}` |
+| `listStatements` / `getStatement` | `GET /api/tenants/:tenantId/statements?month=` · `GET /api/employees/:id/statements/:month` |
+| `submitStatement` | `POST /api/employees/:id/statements/:month/submit` |
+| `approveStatement` / `returnStatement` | `POST /api/statements/:id/approve` · `POST /api/statements/:id/return` `{reason}` |
+| `listAudit` | `GET /api/tenants/:tenantId/audit?limit=` |
+| `listTenants` / `createTenant` | `GET`/`POST /api/platform/tenants` |
+| `setTenantStatus` / `setLicense` | `POST /api/platform/tenants/:id/status` · `PUT /api/platform/tenants/:id/license` |
+| Plattform-Audit (UI) | `GET /api/platform/audit?limit=` |
+
+**Fachregeln in der API**
+- Ändert/löscht jemand den Eintrag einer **anderen** Person (Leitung), läuft das als Korrektur über
+  `correct_time_entry` (Begründung ≥ 5 Zeichen Pflicht, Herkunft `correction`, Audit-Eintrag).
+  Eigene Einträge laufen über `update_time_entry`/`delete_time_entry` (Monatssperre gilt).
+- **Pausenregeln** (Schwellen, 15-Minuten-Abschnitte, Tagessumme ≤ max. Einsatzdauer) prüft die API
+  nach dem Schreiben in derselben Transaktion mit `platform/src/core/breaks.ts` und der
+  `breakPolicy` des Mandanten; bei Verstoß Rollback und 400 mit dem deutschen Text aus dem Core.
+  Schreibzugriffe je Mitarbeiter sind dafür per `pg_advisory_xact_lock` serialisiert.
+  Vor dem Einreichen eines Monats wird derselbe Check für alle Tage des Monats ausgeführt.
+- Logos/Bildmarken: nur PNG/JPEG/WebP (Data-URL ≤ 300 KB, Signatur geprüft), https-URL oder
+  relativer Pfad; **SVG wird abgelehnt** (XSS-Risiko). Die DB-Prüfung erlaubt SVG weiterhin.
