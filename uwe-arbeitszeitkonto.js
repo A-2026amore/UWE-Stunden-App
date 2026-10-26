@@ -1,195 +1,250 @@
-/* UWE Arbeitszeitkonto – private, employee-local test ledger.
-   Initial -100h once from Nov 2026. No automatic deduction, no wages paid,
-   no holiday zeroing, no central employee or payroll data stored here.
-   Official NRW summer holiday dates:
-   https://bass.schule.nrw/Stichwort/Ebene5?Ebene1=T&Ebene2=TE&Ebene3=Termine&Ebene4=Sommerferien+aller+Bundesl%C3%A4nder
+/* UWE Arbeitszeitkonto – TEST: Separate -100h pro NRW-Schuljahr.
+   Beginn: erster Schultag nach Sommerferien. Ende: letzter Schultag
+   vor den nächsten Sommerferien. Historische Jahreskonten bleiben bestehen.
+   NRW Ferienquelle: https://bass.schule.nrw/191.htm
 */
 (function(){
 "use strict";
-const VERSION=1, START_MONTH="2026-11", START_MINUTES=-6000, FIRST_DEADLINE="2027-07-19";
-const HOLIDAYS=Object.freeze({
-  2026:"2026-07-20",2027:"2027-07-19",2028:"2028-07-10",
-  2029:"2029-07-02",2030:"2030-06-24"
-});
-const KEY_PREFIX="uwe_arbeitszeitkonto_v1_";
-const FUTURE_KEY="uwe_nrw_sommerferien_v1";
+const VERSION=2,START_MONTH="2026-09",START_MINUTES=-6000,KEY_PREFIX="uwe_arbeitszeitkonto_v1_";
+const FUTURE_KEY="uwe_nrw_sommerferien_v2";
 const MONTH=/^(20\d{2})-(0[1-9]|1[0-2])$/;
-function monthOK(value){return typeof value==="string"&&MONTH.test(value)}
-function hours(minutes){return (Number(minutes)/60).toFixed(2).replace(".",",")}
+const OFFICIAL=Object.freeze({
+  2026:{start:"2026-07-20",end:"2026-09-01"},
+  2027:{start:"2027-07-19",end:"2027-08-31"},
+  2028:{start:"2028-07-10",end:"2028-08-22"},
+  2029:{start:"2029-07-02",end:"2029-08-14"},
+  2030:{start:"2030-06-24",end:"2030-08-06"}
+});
+const hasOwn=(obj,key)=>Object.prototype.hasOwnProperty.call(obj,key);
+function monthOK(v){return typeof v==="string"&&MONTH.test(v);}
+function checkId(v){if(typeof v!=="string"||!/^[A-Za-z0-9_-]{1,30}$/.test(v))throw Error("Personalnummer ungültig.");}
+function hours(minutes){return (Number(minutes)/60).toFixed(2).replace(".",",");}
 function parseHours(raw){
- const text=String(raw??"").trim().replace(",",".");
- if(!/^\d{1,5}(?:\.\d{1,2})?$/.test(text))throw Error("Bitte Stunden als Zahl eingeben, z. B. 20 oder 12,5.");
- const amount=Number(text);
- if(!Number.isFinite(amount)||amount<0||amount>10000)throw Error("Ungültige Stundenanzahl.");
- return Math.round(amount*60);
+ const v=String(raw??"").trim().replace(",",".");
+ if(!/^\d{1,5}(?:\.\d{1,2})?$/.test(v))throw Error("Stunden bitte als Zahl eingeben (z. B. 20 oder 12,5).");
+ const n=Number(v);
+ if(!Number.isFinite(n)||n<0||n>10000)throw Error("Ungültiger Stundenwert.");
+ return Math.round(n*60);
+}
+function iso(date){return date.toISOString().slice(0,10);}
+function addDays(value,count){
+ const d=new Date(value+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+count);return iso(d);
+}
+function isRealISO(value,year){
+ if(typeof value!=="string"||!/^20\d{2}-\d{2}-\d{2}$/.test(value))return false;
+ const [y,m,d]=value.split("-").map(Number);
+ const dt=new Date(Date.UTC(y,m-1,d));
+ return y===year&&dt.getUTCFullYear()===y&&dt.getUTCMonth()===m-1&&dt.getUTCDate()===d;
+}
+function formatDate(value){return /^20\d{2}-\d{2}-\d{2}$/.test(value)?value.slice(8,10)+"."+value.slice(5,7)+"."+value.slice(0,4):value;}
+function daysUntil(value,reference=new Date()){
+ const day=Date.UTC(reference.getFullYear(),reference.getMonth(),reference.getDate());
+ const target=Date.UTC(Number(value.slice(0,4)),Number(value.slice(5,7))-1,Number(value.slice(8,10)));
+ return Math.round((target-day)/86400000);
+}
+function cacheRead(store){
+ try{const o=JSON.parse(store.getItem(FUTURE_KEY)||"{}");return o&&typeof o==="object"&&!Array.isArray(o)?o:{};}
+ catch{return{};}
+}
+function holiday(year,store=localStorage){
+ const y=Number(year);
+ if(!Number.isInteger(y)||y<2026||y>2100)return null;
+ if(OFFICIAL[y])return{year:y,date:OFFICIAL[y].start,start:OFFICIAL[y].start,
+   end:OFFICIAL[y].end,source:"Offizieller NRW-Ferienkalender"};
+ const row=cacheRead(store)[String(y)];
+ if(row&&isRealISO(row.start,y)&&isRealISO(row.end,y)&&row.end>row.start&&
+    row.start.slice(5,7)>="05"&&row.start.slice(5,7)<="09")
+   return{year:y,date:row.start,start:row.start,end:row.end,source:"OpenHolidays Online-Ferienkalender"};
+ return null;
+}
+function lastSchoolday(summerStart){
+ let day=addDays(summerStart,-1);
+ for(let j=0;j<7;j++){
+  const dow=new Date(day+"T12:00:00Z").getUTCDay();
+  if(dow!==0&&dow!==6)return day;
+  day=addDays(day,-1);
+ }
+ return day;
+}
+function cycle(year,store=localStorage){
+ const y=Number(year),previous=holiday(y,store),next=holiday(y+1,store);
+ if(!previous||!next)return null;
+ const start=addDays(previous.end,1);
+ const end=lastSchoolday(next.start);
+ if(start>=next.start||end<start)return null;
+ return{year:y,id:String(y),label:String(y)+"/"+String(y+1).slice(2),
+   start,lastSchoolDay:end,summerStart:next.start,summerEnd:next.end,
+   afterSummerStart:addDays(next.end,1),source:next.source};
+}
+function schoolYearForDate(date,store=localStorage){
+ if(typeof date!=="string"||!/^20\d{2}-\d{2}-\d{2}$/.test(date))return null;
+ const y=Number(date.slice(0,4));
+ for(const candidate of [y-1,y]){
+  if(candidate<2026)continue;
+  const school=cycle(candidate,store);
+  if(school&&date>=school.start&&date<=school.lastSchoolDay)return school;
+ }
+ return null;
+}
+function calendarForMonth(month,store=localStorage){
+ if(!monthOK(month))throw Error("Bitte gültigen Monat wählen.");
+ const start=month+"-01",end=addDays(month+"-01",new Date(Number(month.slice(0,4)),Number(month.slice(5,7)),0).getDate()-1);
+ for(let d=start;d<=end;d=addDays(d,1)){
+  const found=schoolYearForDate(d,store);
+  if(found)return{...found,status:"active"};
+ }
+ const year=Number(month.slice(0,4));
+ for(const candidate of [year-1,year]){
+  const h=holiday(candidate,store);
+  if(h&&start<=h.end&&end>=h.start){
+   const prev=cycle(candidate-1,store),next=cycle(candidate,store);
+   return{status:"vacation",year:prev?.year??null,label:prev?.label||"Sommerferien",
+     previous:prev,next:next,summerStart:h.start,summerEnd:h.end,afterSummerStart:addDays(h.end,1)};
+  }
+ }
+ return{status:month<START_MONTH?"before":"unknown",year:null,label:"Termin offen"};
 }
 function gross(record){
- const start=String(record.start||""),end=String(record.end||"");
- if(!/^\d{2}:\d{2}$/.test(start)||!/^\d{2}:\d{2}$/.test(end))return NaN;
- const parts=value=>Number(value.slice(0,2))*60+Number(value.slice(3,5));
- let difference=parts(end)-parts(start);
- if(difference<0)difference+=1440;
- return difference-Number(record.pause||0);
+ if(!record)return NaN;
+ const a=String(record.start||""),b=String(record.end||"");
+ if(!/^\d{2}:\d{2}$/.test(a)||!/^\d{2}:\d{2}$/.test(b))return NaN;
+ const val=t=>Number(t.slice(0,2))*60+Number(t.slice(3,5));
+ let span=val(b)-val(a);if(span<0)span+=1440;
+ const pause=Number(record.pause||0);
+ return Number.isFinite(pause)?span-pause:NaN;
 }
-function worked(records,month){
- if(!monthOK(month))return 0;
- let sum=0;
+function worked(records,month){let total=0;
  for(const r of records||[]){
-  if(!r||typeof r.date!=="string"||r.date.slice(0,7)!==month)continue;
-  const m=gross(r);
-  if(!Number.isFinite(m)||m<0)throw Error("Ungültige Arbeitszeit. Bitte die Einträge prüfen.");
-  sum+=m;
+  if(!r?.date||r.date.slice(0,7)!==month)continue;
+  const m=gross(r);if(!Number.isFinite(m)||m<0)throw Error("Ungültige Monatsarbeitszeit.");
+  total+=m;
  }
- return sum;
+ return total;
 }
-function initial(eid){
- checkId(eid);
- return {version:VERSION,eid,openingMinutes:START_MINUTES,startMonth:START_MONTH,
-         initialDeadline:FIRST_DEADLINE,allocations:{}};
+function eligibleWorked(records,month,store=localStorage){
+ const info=calendarForMonth(month,store);if(info.status!=="active")return 0;
+ let total=0;
+ for(const r of records||[]){
+  if(!r?.date||r.date.slice(0,7)!==month)continue;
+  if(schoolYearForDate(r.date,store)?.year!==info.year)continue;
+  const minutes=gross(r);
+  if(!Number.isFinite(minutes)||minutes<0)throw Error("Ungültige Einsatzzeit.");
+  total+=minutes;
+ }
+ return total;
 }
-function checkId(eid){
- if(typeof eid!=="string"||!/^[A-Za-z0-9_-]{1,30}$/.test(eid))
-  throw Error("Personalnummer des Arbeitszeitkontos ist ungültig.");
-}
+function initial(eid){checkId(eid);return{version:VERSION,eid,openingMinutes:START_MINUTES,startMonth:START_MONTH,allocations:{}};}
 function validate(data,eid){
  checkId(eid);
- if(!data||data.version!==VERSION||data.eid!==eid||
-    data.openingMinutes!==START_MINUTES||data.startMonth!==START_MONTH||
-    data.initialDeadline!==FIRST_DEADLINE||
-    !data.allocations||Array.isArray(data.allocations)||typeof data.allocations!=="object")
-   throw Error("Die gespeicherten Kontodaten sind beschädigt oder gehören zu einem anderen Mitarbeiter. Bitte nicht löschen, sondern zunächst ein Backup sichern.");
+ if(!data||data.eid!==eid||![1,2].includes(data.version)||data.openingMinutes!==START_MINUTES||
+   !data.allocations||typeof data.allocations!=="object"||Array.isArray(data.allocations))
+   throw Error("Arbeitszeitkonto beschädigt oder einem anderen Mitarbeiter zugeordnet. Bitte Daten sichern.");
  const cleaned=initial(eid);
  for(const [month,amount] of Object.entries(data.allocations)){
-  if(!monthOK(month)||month<START_MONTH||
-     !Number.isSafeInteger(amount)||amount<0||amount>600000)
-   throw Error("Die gespeicherten Stundenübertragungen enthalten einen ungültigen Wert.");
+  if(!monthOK(month)||month<"2026-09"||!Number.isSafeInteger(amount)||amount<0||amount>600000)
+   throw Error("Ungültiger gespeicherter Arbeitszeitkontoeintrag.");
   if(amount>0)cleaned.allocations[month]=amount;
  }
  return cleaned;
 }
-function key(eid){checkId(eid);return KEY_PREFIX+eid}
+function key(eid){checkId(eid);return KEY_PREFIX+eid;}
 function load(eid,store=localStorage){
- const saved=store.getItem(key(eid));
- return saved===null?initial(eid):validate(JSON.parse(saved),eid);
+ const raw=store.getItem(key(eid));
+ return raw===null?initial(eid):validate(JSON.parse(raw),eid);
 }
 function persist(state,store=localStorage){
  const cleaned=validate(state,state.eid);
  store.setItem(key(state.eid),JSON.stringify(cleaned));
  return cleaned;
 }
-function allocation(state,month){
- if(!state||!monthOK(month)||month<START_MONTH)return 0;
- return state.allocations[month]||0;
-}
-function balanceAt(state,month){
- if(!monthOK(month))throw Error("Ungültiger Monat.");
- let sum=START_MINUTES;
- for(const [m,v] of Object.entries(state.allocations)){
-  if(m<=month)sum+=v;
+function allocation(state,month){return monthOK(month)?state.allocations[month]||0:0;}
+function balanceForCycle(state,year,store=localStorage,throughMonth=null){
+ let total=START_MINUTES;
+ for(const [month,minutes] of Object.entries(state.allocations)){
+  if(throughMonth&&month>throughMonth)continue;
+  const info=calendarForMonth(month,store);
+  if(info.status==="active"&&info.year===year)total+=minutes;
  }
- return sum;
+ return total;
 }
-function balanceAll(state){
- return START_MINUTES+Object.values(state.allocations).reduce((a,b)=>a+b,0);
-}
-function invalidAllocations(state,records,endMonth){
- const found=[];
- for(const [month,value] of Object.entries(state.allocations)){
+function invalidAllocations(state,records,endMonth=null,store=localStorage){
+ const problems=[];
+ for(const [month,minutes] of Object.entries(state.allocations)){
   if(endMonth&&month>endMonth)continue;
-  const available=worked(records,month);
-  if(value>available)found.push({month,allocated:value,worked:available});
+  const available=eligibleWorked(records,month,store);
+  if(minutes>available)problems.push({month,allocated:minutes,worked:available});
  }
- return found.sort((a,b)=>a.month.localeCompare(b.month));
+ return problems.sort((a,b)=>a.month.localeCompare(b.month));
 }
-function summary(state,records,month){
- if(!monthOK(month))throw Error("Bitte einen gültigen Monat wählen.");
- const total=worked(records,month),allocated=allocation(state,month);
- const errors=invalidAllocations(state,records,month);
- return {month,eligible:month>=START_MONTH,total,allocated,
-   available:Math.max(0,total-allocated),balance:balanceAt(state,month),
-   overallBalance:balanceAll(state),invalid:errors,
-   remainingToZero:Math.max(0,-balanceAt(state,month)),
-   progressPct:Math.max(0,Math.min(100,(100+(balanceAt(state,month)/60))/100*100))};
+function summary(state,records,month,store=localStorage){
+ if(!monthOK(month))throw Error("Bitte gültigen Monat wählen.");
+ const school=calendarForMonth(month,store);
+ const total=worked(records,month);
+ const eligible=school.status==="active"?eligibleWorked(records,month,store):0;
+ const allocated=allocation(state,month);
+ const year=school.status==="active"?school.year:school.previous?.year;
+ const balance=year!=null?balanceForCycle(state,year,store,month):START_MINUTES;
+ const overallBalance=year!=null?balanceForCycle(state,year,store):START_MINUTES;
+ return{month,schoolYear:school,eligible:school.status==="active",total,
+  eligibleWorked:eligible,allocated,available:Math.max(0,total-allocated),
+  balance,overallBalance,invalid:invalidAllocations(state,records,month,store),
+  remainingToZero:Math.max(0,-overallBalance),
+  progressPct:Math.max(0,Math.min(100,(overallBalance-START_MINUTES)/(-START_MINUTES)*100))};
 }
-function update(state,records,month,minutes){
- const clean=validate(state,state.eid);
- if(!monthOK(month)||month<START_MONTH)
-  throw Error("Das Test-Arbeitszeitkonto beginnt erst im November 2026.");
- if(!Number.isSafeInteger(minutes)||minutes<0)
-  throw Error("Bitte eine gültige Stundenanzahl eingeben.");
- const available=worked(records,month);
- if(minutes>available)throw Error("Du kannst höchstens "+hours(available)+" Stunden übertragen. Mehr Stunden wurden in diesem Monat nicht erfasst.");
- if(minutes===0)delete clean.allocations[month];
- else clean.allocations[month]=minutes;
- return clean;
+function update(state,records,month,minutes,store=localStorage){
+ const cleaned=validate(state,state.eid);
+ const school=calendarForMonth(month,store);
+ if(school.status!=="active")throw Error(school.status==="vacation"?
+  "In den Sommerferien ist das Schuljahreskonto geschlossen. Für das neue Schuljahr beginnt ein neuer Stand von –100 Stunden.":
+  "Für diesen Monat ist noch kein bestätigtes Schuljahr vorhanden. Bitte Ferienkalender online aktualisieren.");
+ if(!Number.isSafeInteger(minutes)||minutes<0)throw Error("Ungültige Stundenanzahl.");
+ const available=eligibleWorked(records,month,store);
+ if(minutes>available)throw Error("Du kannst höchstens "+hours(available)+" Stunden aus der Schulzeit dieses Monats übertragen.");
+ if(minutes)cleaned.allocations[month]=minutes;else delete cleaned.allocations[month];
+ return cleaned;
 }
-function formatDate(iso){return /^20\d{2}-\d{2}-\d{2}$/.test(iso)?iso.slice(8,10)+"."+iso.slice(5,7)+"."+iso.slice(0,4):iso}
-function daysUntil(iso,reference=new Date()){
- const day=Date.UTC(reference.getFullYear(),reference.getMonth(),reference.getDate());
- const then=Date.UTC(Number(iso.slice(0,4)),Number(iso.slice(5,7))-1,Number(iso.slice(8,10)));
- return Math.round((then-day)/86400000);
-}
-function isRealISO(iso,year){
- if(typeof iso!=="string"||!/^20\d{2}-\d{2}-\d{2}$/.test(iso))return false;
- const [y,m,d]=iso.split("-").map(Number);
- if(y!==year)return false;
- const candidate=new Date(Date.UTC(y,m-1,d));
- return candidate.getUTCFullYear()===y&&candidate.getUTCMonth()===m-1&&candidate.getUTCDate()===d&&m>=5&&m<=9;
-}
-function cachedYear(year,store=localStorage){
- try{
-  const cache=JSON.parse(store.getItem(FUTURE_KEY)||"{}");
-  const value=cache[String(year)];
-  return isRealISO(value,year)?value:null;
- }catch{return null;}
-}
-function holiday(year,store=localStorage){
- const y=Number(year);
- if(!Number.isInteger(y)||y<2026||y>2100)return null;
- if(HOLIDAYS[y])return {year:y,date:HOLIDAYS[y],source:"Amtliche NRW-Termine (KMK)"};
- const fromCache=cachedYear(y,store);
- return fromCache?{year:y,date:fromCache,source:"Online-Ferienkalender (zwischengespeichert)"}:null;
+function cyclesWithBalances(state,store=localStorage){
+ const years=new Set([2026]);
+ const now=new Date();
+ for(let y=2026;y<=now.getFullYear();y++)if(cycle(y,store))years.add(y);
+ for(const month of Object.keys(state.allocations)){
+  const info=calendarForMonth(month,store);
+  if(info.status==="active")years.add(info.year);
+ }
+ return [...years].sort((a,b)=>a-b).map(year=>({cycle:cycle(year,store),balance:balanceForCycle(state,year,store)})).filter(x=>x.cycle);
 }
 async function findHolidayOnline(year,store=localStorage){
- const known=holiday(year,store);
- if(known)return known;
+ const confirmed=holiday(year,store);
+ if(confirmed)return confirmed;
  const y=Number(year);
  if(!Number.isInteger(y)||y<2031||y>2100)return null;
- const api="https://openholidaysapi.org/SchoolHolidays?countryIsoCode=DE&subdivisionCode=DE-NW"+
+ const url="https://openholidaysapi.org/SchoolHolidays?countryIsoCode=DE&subdivisionCode=DE-NW"+
    "&validFrom="+y+"-01-01&validTo="+y+"-12-31&languageIsoCode=DE";
- let data;
- try{
-  const response=await fetch(api,{method:"GET",cache:"no-store",mode:"cors"});
-  if(!response.ok)throw Error("Ferien-API nicht erreichbar");
-  data=await response.json();
+ let list;
+ try{const response=await fetch(url,{method:"GET",cache:"no-store",mode:"cors"});
+  if(!response.ok)return null;list=await response.json();
  }catch{return null;}
- if(!Array.isArray(data))return null;
- let found=null;
- for(const row of data){
-  const names=Array.isArray(row.name)?row.name.map(x=>x&&x.text).join(" "):String(row.name||"");
-  const label=(names+" "+String(row.type||"")).toLowerCase();
-  if(!/sommer|summer/.test(label))continue;
-  if(isRealISO(row.startDate,y)&&(!found||row.startDate<found))found=row.startDate;
- }
- if(!found)return null;
- try{
-  const current=JSON.parse(store.getItem(FUTURE_KEY)||"{}");
-  current[String(y)]=found;
-  store.setItem(FUTURE_KEY,JSON.stringify(current));
- }catch{}
- return {year:y,date:found,source:"Online-Ferienkalender OpenHolidays"};
+ if(!Array.isArray(list))return null;
+ const matching=list.filter(x=>{
+  const name=Array.isArray(x.name)?x.name.map(t=>t?.text||"").join(" "):String(x.name||"");
+  return /sommer|summer/i.test(name)&&isRealISO(x.startDate,y)&&isRealISO(x.endDate,y)&&x.endDate>x.startDate;
+ }).sort((a,b)=>a.startDate.localeCompare(b.startDate));
+ if(!matching.length)return null;
+ const item=matching[0],data=cacheRead(store);
+ data[String(y)]={start:item.startDate,end:item.endDate};
+ try{store.setItem(FUTURE_KEY,JSON.stringify(data));}catch{}
+ return holiday(y,store);
 }
 function nextSummer(reference=new Date(),store=localStorage){
- const start=reference.getFullYear();
- for(let y=Math.max(start,2026);y<=Math.max(start,2026)+1;y++){
-  const item=holiday(y,store);
-  if(item&&daysUntil(item.date,reference)>=0)return item;
+ const now=iso(new Date(reference.getFullYear(),reference.getMonth(),reference.getDate()));
+ for(let y=Math.max(reference.getFullYear(),2026);y<=Math.max(reference.getFullYear(),2026)+2;y++){
+  const h=holiday(y,store);
+  if(h&&h.start>=now)return h;
  }
- return holiday(start+1,store);
+ return null;
 }
-window.UweWorkAccount={
- VERSION,START_MONTH,START_MINUTES,FIRST_DEADLINE,HOLIDAYS,initial,load,persist,validate,update,
- parseHours,hours,worked,allocation,balanceAt,balanceAll,summary,invalidAllocations,
- formatDate,daysUntil,holiday,nextSummer,findHolidayOnline
-};
+window.UweWorkAccount={VERSION,START_MONTH,START_MINUTES,OFFICIAL,initial,validate,load,persist,
+  parseHours,hours,worked,eligibleWorked,allocation,summary,update,invalidAllocations,
+  calendarForMonth,schoolYearForDate,cycle,balanceForCycle,cyclesWithBalances,
+  formatDate,daysUntil,holiday,nextSummer,findHolidayOnline};
 })();
