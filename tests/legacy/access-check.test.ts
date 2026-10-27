@@ -49,7 +49,7 @@ describe("UweAccessControl (revocation list check)", () => {
   it("falls back to the GitHub contents API on 404", async () => {
     const content = Buffer.from(JSON.stringify({ version: 1, revoked: ["E1001"] })).toString("base64");
     const { api, calls } = setup((url) =>
-      url.includes("api.github.com") ? { status: 200, body: { content } } : { status: 404, body: null },
+      new URL(url).hostname === "api.github.com" ? { status: 200, body: { content } } : { status: 404, body: null },
     );
     await expect(api.check("E1001")).rejects.toMatchObject({ code: "UWE_REVOKED" });
     expect(calls[1]).toMatch(/^https:\/\/api\.github\.com\/repos\/.+uwe-access-control\.json/);

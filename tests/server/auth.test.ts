@@ -173,6 +173,9 @@ describe("CSRF and security headers", () => {
     const bad = await fetch(`${t.url}/api/auth/login`, { method: "OPTIONS", headers: { Origin: "https://angreifer.example", "Access-Control-Request-Method": "POST" } });
     expect(bad.status).toBe(403);
     expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+    const opaque = await fetch(`${t.url}/api/auth/login`, { method: "OPTIONS", headers: { Origin: "null", "Access-Control-Request-Method": "POST" } });
+    expect(opaque.status).toBe(403);
+    expect(opaque.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("rejects oversized bodies with 413", async () => {

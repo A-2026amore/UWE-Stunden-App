@@ -183,7 +183,8 @@ function send(res: ServerResponse, status: number, body: unknown, headers: Recor
 }
 
 export function createRequestHandler(router: Router, o: HttpOptions) {
-  const allowed = new Set(o.allowedOrigins);
+  // The opaque origin "null" (sandboxed frames, file://) is never trusted.
+  const allowedOrigins = o.allowedOrigins.filter((a) => a !== "null");
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const started = Date.now();
     const requestId = randomUUID();
@@ -198,9 +199,11 @@ export function createRequestHandler(router: Router, o: HttpOptions) {
       const url = new URL(req.url ?? "/", "http://localhost");
       path = url.pathname;
       const origin = typeof req.headers.origin === "string" ? req.headers.origin : null;
-      const originAllowed = origin !== null && allowed.has(origin);
+      // Echo the configured value, never the request header itself.
+      const allowedOrigin = origin === null ? undefined : allowedOrigins.find((a) => a === origin);
+      const originAllowed = allowedOrigin !== undefined;
       if (originAllowed) {
-        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
         res.setHeader("Access-Control-Allow-Credentials", "true");
       }
       res.setHeader("Vary", "Origin");

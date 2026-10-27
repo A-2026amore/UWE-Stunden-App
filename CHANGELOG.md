@@ -10,6 +10,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Geheimnis-Scan, CodeQL, Dependabot; Pull-Request- und Issue-Vorlagen.
 - Geheimnis-Scan: `.gitleaks.toml` nimmt Testdateien (nur Testpasswörter/-schlüssel) und
   Speicherschlüssel-Namen der Alt-App (`uwe_…`) als Fehlalarme aus.
+- API: CORS-Antwort übernimmt nur noch den konfigurierten Origin-Wert, `null` wird nie akzeptiert (CodeQL).
 - Ist-Analyse, Architektur (eigener Server in Deutschland), Migrationsplan, Betriebshandbuch.
 - Fachlogik (`platform/src/core`): Pausenregeln, Arbeitszeitkonto (Schuljahr/Kalenderjahr,
   konfigurierbar), Migration, mehrseitiges PDF; Vergleichstests gegen die Alt-App.
