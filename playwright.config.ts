@@ -19,7 +19,7 @@ export default defineConfig({
     { command: "node scripts/serve-static.mjs . 4173", url: "http://127.0.0.1:4173/index.html", reuseExistingServer: !process.env.CI },
     // PW_PLATFORM=0 skips the platform build (e.g. when only legacy tests run).
     ...(process.env.PW_PLATFORM === "0" ? [] : [
-      { command: "npm run build && npm run preview -- --port 4174 --strictPort", url: "http://127.0.0.1:4174/", reuseExistingServer: !process.env.CI, timeout: 120000 },
+      { command: "npm run build && npm run preview -- --host 127.0.0.1 --port 4174 --strictPort", url: "http://127.0.0.1:4174/", reuseExistingServer: !process.env.CI, timeout: 180000 },
     ]),
   ],
 });
