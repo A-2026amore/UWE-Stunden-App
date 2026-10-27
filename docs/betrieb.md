@@ -123,6 +123,13 @@ update auth.sessions set revoked_at = now()
 
 Danach meldet sich die Person nur mit Passwort an; ist 2FA für sie Pflicht, sieht sie direkt die Neueinrichtung.
 
+## 6.2 Container-Betrieb (Docker Compose)
+
+Für den Server mit zentralem Caddy (Netz `proxy`) gibt es ein mehrstufiges `Dockerfile` und
+`deploy/docker-compose.yml` (App `stunden-${STAGE}-app` auf Port 3000 ohne veröffentlichte Ports, PostgreSQL 16 im
+internen Netz, Migrationsjob `migrate`). Anleitung, Variablen und Backup: [`deploy/README.md`](../deploy/README.md).
+Testumgebung: `stunden-test.appzentrale24.de`; Produktion (`stunden.appzentrale24.de`) erst nach Freigabe.
+
 ## 7. Plattform mit echtem Server (API-Modus)
 
 Die drei Oberflächen (Mitarbeiter-App, Chef-Portal, Super-Admin) gibt es in zwei Varianten aus demselben Code:

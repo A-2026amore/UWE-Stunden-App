@@ -1,0 +1,134 @@
+# Zeiterfassungsplattform – Container-Betrieb hinter dem zentralen Caddy (Netz "proxy").
+# Anleitung: deploy/README.md. Alle Werte kommen aus deploy/.env (Vorlage: .env.example).
+#
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env build
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d db
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm migrate
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d app
+#
+# Keine "ports:" – erreichbar nur über das externe Netz "proxy" (Caddy → stunden-<STAGE>-app:3000).
+name: stunden-${STAGE:?STAGE fehlt}
+
+x-app-image: &app-image
+  image: ${APP_IMAGE:-stunden-app}:${APP_IMAGE_TAG:-local}
+  build:
+    context: ..
+    dockerfile: Dockerfile
+    args:
+      VITE_DATA_MODE: api
+
+services:
+  db:
+    # PostgreSQL 16, Version und Digest gepinnt (Aktualisierung bewusst, nicht automatisch).
+    image: postgres:16.15-bookworm@sha256:d81f7b51697014367236d07ec58b54153fc28f828b72bf247fe5c7487520bcb0
+    container_name: stunden-${STAGE:?STAGE fehlt}-db
+    restart: unless-stopped
+    environment:
+      # Cluster-Administrator = Eigentümer der Datenbank und der Migrationen; vom zentralen Backup
+      # genutzt: pg_dumpall -U "$POSTGRES_USER" (lokaler Socket im Container).
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER fehlt}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}
+      POSTGRES_DB: ${POSTGRES_DB:-stunden}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --encoding=UTF8 --locale=C.UTF-8
+      TZ: Europe/Berlin
+      PGTZ: Europe/Berlin
+    labels:
+      de.appzentrale24.backup: postgres
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+
+  # Einmaliger Job (kein Dauerdienst): Migrationen db/migrations als Eigentümer einspielen,
+  # Laufzeitrolle app_api freischalten. Wiederholbar (bereits eingespielte Dateien werden übersprungen).
+  #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm migrate
+  migrate:
+    <<: *app-image
+    profiles: ["migrate"]
+    restart: "no"
+    command: ["node", "--experimental-strip-types", "--disable-warning=ExperimentalWarning", "--import", "./server/register.mjs", "server/src/migrate.ts"]
+    environment:
+      NODE_ENV: production
+      MIGRATION_DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER fehlt}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD fehlt}@db:5432/${POSTGRES_DB:-stunden}
+      APP_API_PASSWORD: ${APP_DB_PASSWORD:?APP_DB_PASSWORD fehlt}
+      # 1 = Demo-Mandanten aus db/seed.sql (nur Testumgebung; mit NODE_ENV=production verweigert der Job das).
+      MIGRATE_SEED: "0"
+    healthcheck:
+      disable: true
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - db
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  app:
+    <<: *app-image
+    container_name: stunden-${STAGE:?STAGE fehlt}-app
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production            # Secure-Cookies (__Host-sid), HSTS, keine E-Mails im Log
+      HOST: 0.0.0.0
+      PORT: "3000"
+      TZ: Europe/Berlin
+      # Laufzeitrolle app_api: NOINHERIT, ohne BYPASSRLS, ohne eigene Tabellenrechte.
+      DATABASE_URL: postgres://app_api:${APP_DB_PASSWORD:?APP_DB_PASSWORD fehlt}@db:5432/${POSTGRES_DB:-stunden}
+      PUBLIC_ORIGIN: https://${APP_HOSTNAME:?APP_HOSTNAME fehlt}
+      STATIC_DIR: /app/platform/dist
+      # X-Forwarded-For nur von der festen Adresse des Caddy im Netz "proxy" auswerten (nicht vom ganzen Netz).
+      TRUST_PROXY: "1"
+      TRUST_PROXY_CIDRS: ${TRUSTED_PROXY_IP:?TRUSTED_PROXY_IP fehlt}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY fehlt}
+      TOTP_ENCRYPTION_KEY_PREVIOUS: ${TOTP_ENCRYPTION_KEY_PREVIOUS:-}
+      TOTP_ISSUER: ${TOTP_ISSUER:-Stundenwerk}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_TLS: ${SMTP_TLS:-starttls}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - proxy
+      - db
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+
+networks:
+  # Gemeinsames Netz mit dem zentralen Caddy (wird außerhalb dieses Projekts angelegt).
+  proxy:
+    external: true
+  # Nur Datenbank, Migrationsjob und App; ohne Internetzugang.
+  db:
+    name: stunden-${STAGE:?STAGE fehlt}-db
+    internal: true
+
+volumes:
+  db-data:
+    name: stunden-${STAGE:?STAGE fehlt}-db-data

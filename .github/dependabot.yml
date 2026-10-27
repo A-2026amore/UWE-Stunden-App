@@ -14,3 +14,14 @@ updates:
     target-branch: develop
     schedule:
       interval: monthly
+  # Basis-Images (Dockerfile: node, deploy/docker-compose.yml: postgres) – Digest-Pins aktuell halten.
+  - package-ecosystem: docker
+    directory: /
+    target-branch: develop
+    schedule:
+      interval: weekly
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    target-branch: develop
+    schedule:
+      interval: weekly

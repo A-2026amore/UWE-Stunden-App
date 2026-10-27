@@ -443,6 +443,7 @@ export function createApp(deps: AppDeps) {
     allowedOrigins: config.publicOrigins,
     secure: config.secureCookies,
     trustProxy: config.trustProxy,
+    trustedProxies: config.trustedProxies,
     log,
   });
   const handler = config.staticDir ? withStaticFiles(apiHandler, { root: config.staticDir, secure: config.secureCookies, log }) : apiHandler;

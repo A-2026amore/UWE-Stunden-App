@@ -3,6 +3,7 @@
  * Secrets (database password, SMTP password, TOTP key) are never logged.
  */
 import { createHash } from "node:crypto";
+import { createProxyMatcher } from "./http.ts";
 
 export interface SmtpConfig {
   host: string;
@@ -57,6 +58,8 @@ export interface Config {
   secureCookies: boolean;
   /** Trust the X-Forwarded-For header of the local reverse proxy (Caddy). */
   trustProxy: boolean;
+  /** TRUST_PROXY_CIDRS: only peers from these networks may set X-Forwarded-For (empty = any peer). */
+  trustedProxies: string[];
   sessionTtlHours: number;
   sessionIdleMinutes: number;
   smtp: SmtpConfig | null;
@@ -128,6 +131,12 @@ function loadTwoFactor(env: NodeJS.ProcessEnv, production: boolean): TwoFactorCo
   return { keys, developmentKey, issuer };
 }
 
+function parseTrustedProxies(raw: string | undefined): string[] {
+  const list = (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  createProxyMatcher(list); // validates, throws with a German message
+  return list;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const production = env.NODE_ENV === "production";
   const databaseUrl = env.DATABASE_URL ?? "";
@@ -166,6 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicOrigins,
     secureCookies: production || publicOrigins[0]!.startsWith("https://"),
     trustProxy: env.TRUST_PROXY === "1",
+    trustedProxies: parseTrustedProxies(env.TRUST_PROXY_CIDRS),
     sessionTtlHours: int(env, "SESSION_TTL_HOURS", 12, 1, 24 * 30),
     sessionIdleMinutes: int(env, "SESSION_IDLE_MINUTES", 120, 5, 24 * 60),
     smtp,
