@@ -9,6 +9,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { BlockList, isIP } from "node:net";
 import { HttpError, toHttpError } from "./errors.ts";
 
 export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -154,11 +155,56 @@ export interface HttpOptions {
   allowedOrigins: string[];
   secure: boolean;
   trustProxy: boolean;
+  /** Networks (CIDR) whose peers may set X-Forwarded-For. Empty = every peer (only when TRUST_PROXY=1). */
+  trustedProxies?: readonly string[];
   log: (entry: Record<string, unknown>) => void;
 }
 
-export function clientIp(req: IncomingMessage, trustProxy: boolean): string {
-  if (trustProxy) {
+/** "::ffff:172.18.0.2" → "172.18.0.2"; other addresses unchanged. */
+function normalizeAddress(addr: string): string {
+  const m = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(addr);
+  return m ? m[1]! : addr;
+}
+
+/**
+ * Parses a list of networks ("172.18.0.0/16", "10.0.0.5", "fd00::/8") into a matcher
+ * for the socket peer address. Throws on invalid entries.
+ */
+export function createProxyMatcher(cidrs: readonly string[]): (addr: string | undefined) => boolean {
+  const list = new BlockList();
+  for (const raw of cidrs) {
+    const [ip, prefixRaw, extra] = raw.trim().split("/");
+    const family = isIP(ip ?? "");
+    const max = family === 4 ? 32 : 128;
+    const prefix = prefixRaw === undefined ? max : Number(prefixRaw);
+    if (!family || extra !== undefined || !Number.isInteger(prefix) || prefix < 0 || prefix > max || (prefixRaw !== undefined && !/^\d+$/.test(prefixRaw))) {
+      throw new Error(`TRUST_PROXY_CIDRS enthält kein gültiges Netz: ${raw}`);
+    }
+    list.addSubnet(ip!, prefix, family === 4 ? "ipv4" : "ipv6");
+  }
+  return (addr) => {
+    if (!addr) return false;
+    const a = normalizeAddress(addr);
+    const family = isIP(a);
+    if (!family) return false;
+    return list.check(a, family === 4 ? "ipv4" : "ipv6");
+  };
+}
+
+const matcherCache = new WeakMap<readonly string[], (addr: string | undefined) => boolean>();
+
+export function clientIp(req: IncomingMessage, trustProxy: boolean, trustedProxies: readonly string[] = []): string {
+  let trusted = trustProxy;
+  if (trusted && trustedProxies.length > 0) {
+    let match = matcherCache.get(trustedProxies);
+    if (!match) {
+      match = createProxyMatcher(trustedProxies);
+      matcherCache.set(trustedProxies, match);
+    }
+    // Only the reverse proxy's network may name the client; anyone else gets their socket address.
+    trusted = match(req.socket.remoteAddress);
+  }
+  if (trusted) {
     const xff = req.headers["x-forwarded-for"];
     const value = Array.isArray(xff) ? xff.join(",") : xff;
     // The local proxy appends the real client address as the last entry.
@@ -249,7 +295,7 @@ export function createRequestHandler(router: Router, o: HttpOptions) {
         params: matched.params,
         query: url.searchParams,
         body,
-        ip: clientIp(req, o.trustProxy),
+        ip: clientIp(req, o.trustProxy, o.trustedProxies),
         cookies: parseCookies(req.headers.cookie),
         requestId,
       });

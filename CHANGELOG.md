@@ -5,6 +5,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Container-Betrieb: mehrstufiges `Dockerfile` (Node 22, Lockfile, Nicht-root, API liefert die gebauten
+  Oberflächen aus), `deploy/docker-compose.yml` mit PostgreSQL 16 im internen Netz, externem Netz `proxy`,
+  Backup-Label und Healthchecks, `deploy/.env.example`, `deploy/README.md`. Migrationsjob
+  `server/src/migrate.ts` (Versionstabelle `ops.schema_migrations`, Prüfsummen, Passwort für `app_api`).
+  `pg` ist jetzt Laufzeitabhängigkeit. CI baut und startet das Image (kein Push).
+- API: `TRUST_PROXY_CIDRS` – `X-Forwarded-For` nur von Absendern aus den angegebenen Netzen.
 - Entwicklungswerkzeuge: Vite, TypeScript, Preact, Vitest, Playwright, ESLint.
 - GitHub Actions: Lint, Typecheck, Unit-, Datenbank- und Browsertests, Build-Artefakt,
   Geheimnis-Scan, CodeQL, Dependabot; Pull-Request- und Issue-Vorlagen.

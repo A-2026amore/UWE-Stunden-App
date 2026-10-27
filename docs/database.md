@@ -22,7 +22,11 @@ for f in db/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed.sql   # nur Demo/Staging, nie Produktion
 ```
 
-Ein Migrationswerkzeug (z. B. Versionstabelle) ist noch nicht festgelegt – offene Entscheidung.
+Für den Container-Betrieb gibt es den Migrationsjob `server/src/migrate.ts` (`deploy/README.md`): Er spielt
+nur noch nicht eingespielte Dateien ein (je Datei eine Transaktion), vermerkt Name und SHA-256 in
+`ops.schema_migrations` (Schema `ops` nur für den Eigentümer), bricht bei nachträglich veränderten Dateien ab und
+setzt optional das Passwort von `app_api` (`APP_API_PASSWORD`). Demo-Daten nur mit `MIGRATE_SEED=1`, nie mit
+`NODE_ENV=production`.
 
 ## ER-Überblick
 

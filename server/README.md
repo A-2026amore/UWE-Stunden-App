@@ -26,6 +26,7 @@ Browser ──HTTPS──▶ Caddy ──▶ Node-API (127.0.0.1:3000) ──▶
 | `src/static.ts` | Optional: Auslieferung von `platform/dist` (`STATIC_DIR`) mit eigener CSP |
 | `src/mailer.ts` | E-Mail (minimaler SMTP-Client; ohne SMTP: Ausgabe ins Log nur in Entwicklung) |
 | `src/cli.ts` | Betriebsbefehl `set-password` |
+| `src/migrate.ts` | Migrationsjob: `db/migrations` als Eigentümer einspielen (Versionstabelle `ops.schema_migrations` mit Prüfsumme), Passwort für `app_api` setzen (`deploy/README.md`) |
 | `register.mjs`, `resolve-ts.mjs` | Lädt TypeScript direkt (Node-Typ-Entfernung) inkl. `platform/src/core` |
 
 Es gibt **keinen Build-Schritt**: Node ≥ 22.6 führt die `.ts`-Dateien direkt aus
@@ -63,6 +64,7 @@ Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **
 | `NODE_ENV` | – | – | `production` aktiviert Secure-Cookies, HSTS und verbietet Log-Ausgabe von E-Mails. |
 | `HOST` / `PORT` | – | `127.0.0.1` / `3000` | Nur lokal lauschen; nach außen geht es über Caddy. |
 | `TRUST_PROXY` | – | aus | `1` = Client-IP aus `X-Forwarded-For` (letzter Eintrag) – nur hinter dem eigenen Proxy setzen. |
+| `TRUST_PROXY_CIDRS` | – | leer | Netze (CIDR oder einzelne IPs, kommagetrennt), aus denen `X-Forwarded-For` ausgewertet wird, z. B. das Docker-Netz des Proxys. Leer = jeder Absender (bisheriges Verhalten). Ungültige Einträge verhindern den Start. |
 | `SESSION_TTL_HOURS` | – | `12` | Absolute Sitzungsdauer. |
 | `SESSION_IDLE_MINUTES` | – | `120` | Sitzung endet nach so langer Inaktivität. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | – | – | Mailversand. `SMTP_TLS`: `implicit` (465), `starttls` (587, Standard), `none` (nur lokal/Test, in Produktion verboten). |
@@ -120,7 +122,7 @@ PostgreSQL 16 lauscht nur auf `127.0.0.1`, Domain `zeit.example.de` (Platzhalter
 
 ```bash
 sudo adduser --system --group --home /srv/uwe-zeit uwe-api
-cd /srv/uwe-zeit && sudo -u uwe-api npm ci   # pg steht derzeit unter devDependencies → nicht --omit=dev
+cd /srv/uwe-zeit && sudo -u uwe-api npm ci   # Build-Werkzeuge nötig; zur Laufzeit reicht `npm ci --omit=dev` (nur pg)
 sudo -u uwe-api env VITE_DATA_MODE=api npm run build   # Frontend (API-Modus) nach platform/dist
 ```
 

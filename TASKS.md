@@ -33,6 +33,8 @@ Legende: [x] erledigt · [~] in Arbeit · [ ] offen · [!] wartet auf Entscheidu
 - [x] Tests der Alt-App (Unit + Browser)
 - [ ] Echte Geräte: iPhone Safari/PWA, Android Chrome/PWA (Checkliste `docs/testplan.md`)
 - [!] Staging-Adresse: separater kostenloser Hosting-Dienst oder zweites Repository
+- [~] Container-Testumgebung `stunden-test.appzentrale24.de` (Dockerfile, `deploy/`); Image-Bau nur in der CI geprüft,
+  Inbetriebnahme auf dem Server wartet auf Freigabe
 - [x] Pull Request `develop` → `main` zur Abnahme angelegt (#1, Entwurf, kein Merge ohne Freigabe); CI grün bis auf
   4 CodeQL-Fehlalarme zur Demo-Datenbank (Schließen durch Repository-Inhaber)
 - [!] Pull Request #2: Version 28 der Alt-App (Speicherschutz) – wartet auf Freigabe
