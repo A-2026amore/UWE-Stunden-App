@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { AccessDeniedError, ConflictError } from "./repository";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccessDeniedError, ConflictError, TwoFactorRequiredError } from "./repository";
+import { base32Decode, hotp, timeStep } from "../security/totp";
 import { DEMO_PASSWORD, DEMO_TENANT_IDS, createDemoRepository, demoMonths, memoryStorage } from "./demo";
 
 const NOW = new Date("2026-10-26T10:00:00");
@@ -172,5 +173,78 @@ describe("demo repository – statements, work account, platform", () => {
     await ctx.repo.setTenantStatus(DEMO_TENANT_IDS.pflege, "suspended", "Zahlungsklärung (Demo)");
     const user = createDemoRepository(ctx.storage, { now: NOW, sessionKey: "u" });
     await expect(user.signIn("mia@muster-pflege.example", DEMO_PASSWORD)).rejects.toThrow(/gesperrt/);
+  });
+});
+
+describe("demo repository – two-factor authentication", () => {
+  // Fixed clock in the middle of a 30-second step: no step change during a test.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-26T10:00:15Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const codeAt = (secret: string, offsetSteps = 0) => hotp(base32Decode(secret), timeStep(Date.now()) + offsetSteps);
+
+  it("enrols with a real TOTP code, then signs in in two steps (no replay, recovery codes once)", async () => {
+    const { repo, storage } = await as("anna@demo-kt.example");
+    expect(await repo.getTwoFactorStatus()).toMatchObject({ enabled: false, required: false });
+    const setup = await repo.startTwoFactorSetup();
+    expect(setup.otpauthUri).toContain(`secret=${setup.secret}`);
+    await expect(repo.confirmTwoFactorSetup(codeAt(setup.secret, 3))).rejects.toThrow("Der Code stimmt nicht");
+    const { recoveryCodes } = await repo.confirmTwoFactorSetup(codeAt(setup.secret));
+    expect(recoveryCodes).toHaveLength(10);
+    expect(await repo.getTwoFactorStatus()).toMatchObject({ enabled: true, recoveryCodesRemaining: 10 });
+
+    await repo.signOut();
+    await expect(repo.signIn("anna@demo-kt.example", DEMO_PASSWORD)).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    expect(await repo.currentSession()).toBeNull();
+    // The code used for the setup is already consumed (replay protection); the demo helper offers the next one.
+    await expect(repo.verifyTwoFactor({ code: codeAt(setup.secret) })).rejects.toThrow("Der Code ist ungültig");
+    const next = await repo.demoTwoFactorCode();
+    expect(next).toBe(codeAt(setup.secret, 1));
+    const s = await repo.verifyTwoFactor({ code: next! });
+    expect(s.email).toBe("anna@demo-kt.example");
+
+    await repo.signOut();
+    await expect(repo.signIn("anna@demo-kt.example", DEMO_PASSWORD)).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    const viaRecovery = await repo.verifyTwoFactor({ recoveryCode: recoveryCodes[0]!.toLowerCase() });
+    expect(viaRecovery.recoveryCodesRemaining).toBe(9);
+    await repo.signOut();
+    await expect(repo.signIn("anna@demo-kt.example", DEMO_PASSWORD)).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    await expect(repo.verifyTwoFactor({ recoveryCode: recoveryCodes[0]! })).rejects.toThrow("bereits verwendet");
+    await repo.verifyTwoFactor({ recoveryCode: recoveryCodes[1]! });
+
+    // Disable needs password + code.
+    await expect(repo.disableTwoFactor("falsch", { recoveryCode: recoveryCodes[2]! })).rejects.toThrow("Passwort oder Code ist falsch.");
+    expect(await repo.disableTwoFactor(DEMO_PASSWORD, { recoveryCode: recoveryCodes[3]! })).toEqual({ setupRequired: false });
+    await repo.signOut();
+    expect((await repo.signIn("anna@demo-kt.example", DEMO_PASSWORD)).email).toBe("anna@demo-kt.example");
+    expect(storage.getItem("stundenwerk_demo_session_2fa_pending")).toBeNull();
+  });
+
+  it("owner requirement: only with own 2FA; managers then see only the setup", async () => {
+    const owner = await as("chef@demo-kt.example");
+    await expect(owner.repo.setTwoFactorRequirement(DEMO_TENANT_IDS.kt, true)).rejects.toThrow("zuerst für dein eigenes Konto");
+    const setup = await owner.repo.startTwoFactorSetup();
+    await owner.repo.confirmTwoFactorSetup(codeAt(setup.secret));
+    const t = await owner.repo.setTwoFactorRequirement(DEMO_TENANT_IDS.kt, true);
+    expect(t.requireTwoFactorForManagers).toBe(true);
+
+    const manager = createDemoRepository(owner.storage, { now: NOW, sessionKey: "dispo" });
+    const s = await manager.signIn("dispo@demo-kt.example", DEMO_PASSWORD);
+    expect(s.twoFactorSetupRequired).toBe(true);
+    await expect(manager.listEmployees(DEMO_TENANT_IDS.kt)).rejects.toThrow("vorgeschrieben");
+    expect(await manager.getTwoFactorStatus()).toMatchObject({ required: true, requiredBy: "tenant" });
+    const ms = await manager.startTwoFactorSetup();
+    await manager.confirmTwoFactorSetup(codeAt(ms.secret));
+    expect((await manager.currentSession())?.twoFactorSetupRequired).toBeUndefined();
+    expect((await manager.listEmployees(DEMO_TENANT_IDS.kt)).length).toBeGreaterThan(3);
+
+    // Employees are not affected.
+    const anna = createDemoRepository(owner.storage, { now: NOW, sessionKey: "anna" });
+    expect((await anna.signIn("anna@demo-kt.example", DEMO_PASSWORD)).twoFactorSetupRequired).toBeUndefined();
+    await expect(anna.setTwoFactorRequirement(DEMO_TENANT_IDS.kt, false)).rejects.toBeInstanceOf(AccessDeniedError);
   });
 });

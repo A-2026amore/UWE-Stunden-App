@@ -5,6 +5,7 @@ import { Button, DialogProvider, Sidebar, ToastProvider, applyBranding, type Nav
 import { getRepository, onAuthFailure } from "../shared/repo";
 import { useRoute } from "../shared/router";
 import { LoginScreen, ProductMark, TenantLogo } from "../shared/ui";
+import { TwoFactorGate } from "../shared/twoFactor";
 import { ROLE_LABEL } from "../shared/format";
 import { errorText } from "../shared/hooks";
 import { Ctx, type ChefCtx } from "./context";
@@ -49,9 +50,13 @@ export function ChefApp() {
       setSession(problem ? null : s);
     }, (e: unknown) => { setNotice(errorText(e)); setSession(null); });
   }, []);
-  useEffect(() => onAuthFailure((f) => { setNotice(f.message); setError(null); setData(null); setSession(null); }), []);
+  useEffect(() => onAuthFailure((f) => {
+    // Mandatory 2FA switched on meanwhile: the session stays, only the setup is reachable.
+    if (f.kind === "two_factor_setup") { setData(null); repo.currentSession().then(setSession, () => setSession(null)); return; }
+    setNotice(f.message); setError(null); setData(null); setSession(null);
+  }), []);
   useEffect(() => {
-    if (!session?.tenantId) { setData(null); applyBranding(null); return; }
+    if (!session?.tenantId || session.twoFactorSetupRequired) { setData(null); applyBranding(null); return; }
     Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId)])
       .then(([tenant, list]) => {
         const me = list.find((e) => e.id === session.employeeId);
@@ -72,6 +77,9 @@ export function ChefApp() {
         onSignedIn={(s) => { setNotice(null); setError(null); setSession(s); location.hash = "#/"; }}
       />
     );
+  }
+  if (session.twoFactorSetupRequired) {
+    return <TwoFactorGate repo={repo} session={session} onDone={setSession} onSignOut={async () => { await repo.signOut(); setSession(null); }} />;
   }
   if (error) {
     return <div class="auth"><div class="auth-card card stack"><h1>Fehler</h1><p>{error}</p><Button onClick={async () => { await repo.signOut(); setError(null); setSession(null); }}>Zur Anmeldung</Button></div></div>;

@@ -280,6 +280,25 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  // Owner: managers and owners of the tenant must use two-factor authentication.
+  // Switching it on requires the owner's own 2FA first (otherwise the owner
+  // would immediately be sent to the setup).
+  router.add("PUT", "/api/tenants/:tenantId/two-factor-policy", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const b = v.object(ctx.body, ["requireTwoFactorForManagers"]);
+    if (typeof b.requireTwoFactorForManagers !== "boolean") throw badRequest("requireTwoFactorForManagers muss true oder false sein.");
+    const required = b.requireTwoFactorForManagers;
+    return app.asUser(ctx, async (q, s) => {
+      await check(q, "private.is_owner($1)", [id], "Die Zwei-Faktor-Pflicht kann nur der Inhaber ändern.");
+      if (required && !s.twoFactorEnrolled) {
+        throw new HttpError(409, "invalid_state", "Bitte richte zuerst für dein eigenes Konto die Zwei-Faktor-Anmeldung ein.");
+      }
+      const r = await one(q, "update public.tenants set require_two_factor_for_managers = $2 where id = $1 returning *", [id, required]);
+      if (!r) throw forbidden("Die Zwei-Faktor-Pflicht kann nur der Inhaber ändern.");
+      return json(200, toTenant(r));
+    });
+  });
+
   // Support access (owner grants; manager and platform staff can see it).
   router.add("GET", "/api/tenants/:tenantId/support-grant", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");

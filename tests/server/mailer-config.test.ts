@@ -80,7 +80,7 @@ describe("configuration", () => {
     expect(() => loadConfig({ DATABASE_URL: "postgres://x", NODE_ENV: "production" })).toThrow(/PUBLIC_ORIGIN/);
     expect(() => loadConfig({ DATABASE_URL: "postgres://x", NODE_ENV: "production", PUBLIC_ORIGIN: "http://zeit.example" })).toThrow(/https/);
     expect(() => loadConfig({ DATABASE_URL: "postgres://x", NODE_ENV: "production", PUBLIC_ORIGIN: "https://zeit.example", SMTP_HOST: "mail", SMTP_TLS: "none", SMTP_FROM: "a@b.example" })).toThrow(/SMTP_TLS/);
-    const prod = loadConfig({ DATABASE_URL: "postgres://x", NODE_ENV: "production", PUBLIC_ORIGIN: "https://zeit.example/" });
+    const prod = loadConfig({ DATABASE_URL: "postgres://x", NODE_ENV: "production", PUBLIC_ORIGIN: "https://zeit.example/", TOTP_ENCRYPTION_KEY: "a".repeat(64) });
     expect(prod).toMatchObject({ secureCookies: true, publicOrigins: ["https://zeit.example"], smtp: null, sessionTtlHours: 12, sessionIdleMinutes: 120 });
   });
 

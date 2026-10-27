@@ -255,3 +255,24 @@ Nicht abgedeckt: echter SMTP-Versand (nur Entwicklungs-Log), Betrieb hinter Cadd
 `__Host-sid`, HSTS) – nur ohne TLS auf `127.0.0.1` getestet; WebKit/iPhone; Vite-Entwicklungs-Proxy
 (`VITE_DEV_API_PROXY`) nicht ausgeführt.
 
+## 10. Zwei-Faktor-Anmeldung (TOTP)
+
+Stand 27.10.2026, lokal ausgeführt (nur Chromium).
+
+| Datei | Abgedeckt |
+|---|---|
+| `platform/src/security/totp.test.ts` (33) | Base32 (RFC-4648-Vektoren, Kleinbuchstaben/Leerzeichen, ungültige Zeichen), SHA-1/HMAC-SHA-1 (FIPS-180/RFC-2202-Vektoren), HOTP (RFC 4226 Anhang D), TOTP (RFC 6238 Anhang B, SHA-1, 8 Stellen), Toleranzfenster ±1, Code-Normalisierung, Wiederherstellungscodes (Format, Alphabet), `otpauth://`-URI |
+| `platform/src/security/qrcode.test.ts` (12) | QR-Encoder: Rücklesen der Matrix mit eigenem Decoder inkl. Reed-Solomon-Prüfung für alle Fehlerkorrekturstufen und mehrere Versionen, Formatbits, Ausrichtungsmuster, feste Prüfsumme einer Matrix (zusätzlich einmalig mit OpenCV dekodiert, nicht Teil der automatischen Tests) |
+| `platform/src/data/demo.test.ts` (2 neue) | Demo-Repository: Einrichtung mit echtem TOTP-Code, zweistufige Anmeldung, kein Replay, Wiederherstellungscode nur einmal; Mandanten-Pflicht nur mit eigener 2FA, Vorgesetzte sehen danach nur die Einrichtung |
+| `platform/src/data/api.test.ts` (1 neuer) | Client: `twoFactorRequired` → `TwoFactorRequiredError`, Verify, 403 `two_factor_setup_required` |
+| `tests/db/two-factor.test.ts` (9) | `app_user`/`app_anon` ohne Zugriff auf die drei Tabellen und Funktionen; RLS aktiv; nur Chiffrat-Format; Challenge ≤ 10 min; Codes nur als Hash; `last_used_step` nicht rückwärts; Pflicht (Plattform immer, Leitung nur bei aktiver Mandanten-Pflicht, nicht bei deaktiviertem Mitarbeiter/gesperrtem Mandanten); nur Inhaber ändert die Einstellung; Audit-Ereignisse je Mandant, für Plattformkonten ohne Mandant |
+| `tests/server/two-factor.test.ts` (19) | Einrichtung (URI, verschlüsselte Speicherung, AAD = Benutzer, falscher/richtiger Code, 10 Codes, andere Sitzungen beendet, Audit); Anmeldung: Passwort-Schritt ohne Sitzung, HttpOnly-Cookie 5 min, falsches Passwort wie unbekanntes Konto, Challenge einmalig, max. 5 Versuche, Replay und Codes außerhalb ±1 abgelehnt; Wiederherstellungscodes einmalig, Neuerzeugung ungültig macht alte; Deaktivieren nur mit Passwort + Code; Plattformkonten nur Einrichtung erreichbar; Mandanten-Pflicht; Rate-Limit mit 429/`Retry-After`; Schlüssel-Parsing, Produktion ohne Schlüssel bricht ab, Rotation mit Neuverschlüsselung |
+| `tests/e2e/platform/two-factor.spec.ts` (1 × 2 Projekte) | Demo-Build: Einrichtung in den Einstellungen mit Code aus dem angezeigten Geheimnis, Anmeldung mit „Demo: aktuellen Code einsetzen“, Anmeldung mit Wiederherstellungscode |
+| `tests/e2e/fullstack/two-factor.fullstack.ts` (3) | Echte API + PostgreSQL: Mitarbeiterin richtet 2FA ein (QR, Geheimnis, falscher Code, Download `wiederherstellungscodes.txt`), DB enthält nur Chiffrat/Hashes, neuer Browser: Passwort → kein Zugriff → falscher Code → richtiger Code; Wiederherstellungscode einmal gültig, zweites Mal abgelehnt; Audit; Support-Konto sieht nur die Pflicht-Einrichtung (auch nach Neuladen, API 403) bis zur Einrichtung; Inhaberin kann die Pflicht erst nach eigener Einrichtung einschalten |
+
+Ergebnis: `npm run test:unit` 284/284, `npm run test:db` 209/209, Playwright Demo + Alt-App (desktop-chromium,
+mobile-android) 122/122, Full-Stack desktop-chromium 18/18 und mobile-android 18/18.
+
+Nicht abgedeckt: echte Authenticator-Apps auf echten Geräten (nur berechnete Codes; QR-Code einmalig mit OpenCV
+dekodiert), WebKit/iPhone, Betrieb mehrerer API-Instanzen (Rate-Limits im Prozessspeicher), Zurücksetzen durch den
+Betrieb per SQL (nur dokumentiert, nicht automatisch getestet).

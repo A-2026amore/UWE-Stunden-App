@@ -1,14 +1,15 @@
 import { useState } from "preact/hooks";
 import { Alert, Badge, Button, Card, Checkbox, Icon, LinkButton, PRODUCT_FULL_NAME, useDialogs, useToast } from "../../../design";
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
-import { IS_DEMO } from "../../shared/repo";
+import { IS_DEMO, getRepository } from "../../shared/repo";
+import { TwoFactorCard } from "../../shared/twoFactor";
 import { errorText } from "../../shared/hooks";
 import { useEmployee } from "../context";
 import { isOfflineSimulated, setOfflineSimulated } from "../syncRepo";
 import { conflictText, pendingText } from "../SyncStatus";
 
 export function SettingsPage() {
-  const { me, tenant, signOut, repo, syncStatus, openConflicts } = useEmployee();
+  const { me, tenant, signOut, repo, syncStatus, openConflicts, session } = useEmployee();
   const dialogs = useDialogs();
   const toast = useToast();
   const [offlineSim, setOfflineSim] = useState(isOfflineSimulated());
@@ -56,6 +57,8 @@ export function SettingsPage() {
         </dl>
         <p class="muted small" style={{ marginTop: "var(--space-3)" }}>Änderungen an deinen Stammdaten nimmt dein Arbeitgeber vor.</p>
       </Card>
+
+      <TwoFactorCard repo={getRepository("app")} account={session.email} />
 
       <Card title={`Kontakt zu ${tenant.name}`}>
         <div class="stack-sm">

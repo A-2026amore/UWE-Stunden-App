@@ -4,8 +4,9 @@
  * what the browser does with credentials: "include".
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createApiRepository, ApiError } from "../../platform/src/data/api.ts";
-import { AccessDeniedError, ConflictError } from "../../platform/src/data/repository.ts";
+import { createApiRepository, ApiError, TwoFactorSetupRequiredError } from "../../platform/src/data/api.ts";
+import { AccessDeniedError, ConflictError, TwoFactorRequiredError } from "../../platform/src/data/repository.ts";
+import { base32Decode, hotp, timeStep } from "../../platform/src/security/totp.ts";
 import { EMAILS, IDS, ORIGIN, PASSWORD, startTestServer, type TestServer } from "./support/server.ts";
 
 let t: TestServer;
@@ -16,18 +17,20 @@ afterAll(async () => {
   await t?.close();
 });
 
+/** Minimal cookie jar (session cookie and the pending 2FA sign-in cookie). */
 function browserLikeFetch(): typeof fetch {
-  let cookie: string | null = null;
+  const jar = new Map<string, string>();
   return async (input, init = {}) => {
     const headers = new Headers(init.headers);
     headers.set("Origin", ORIGIN);
-    if (cookie) headers.set("Cookie", cookie);
+    if (jar.size) headers.set("Cookie", [...jar].map(([k, v]) => `${k}=${v}`).join("; "));
     expect(init.credentials).toBe("include");
     const res = await fetch(input, { ...init, headers });
-    const set = res.headers.get("set-cookie");
-    if (set) {
+    for (const set of res.headers.getSetCookie()) {
       const pair = set.split(";")[0]!;
-      cookie = /Max-Age=0/.test(set) ? null : pair;
+      const i = pair.indexOf("=");
+      if (/Max-Age=0/.test(set)) jar.delete(pair.slice(0, i));
+      else jar.set(pair.slice(0, i), pair.slice(i + 1));
     }
     return res;
   };
@@ -87,8 +90,28 @@ describe("createApiRepository against the real API", () => {
     expect((await chef.listAudit(IDS.tenantA, 5)).length).toBeLessThanOrEqual(5);
     await expect(chef.returnStatement(stmts[0]!.id, "")).rejects.toBeInstanceOf(ApiError);
 
-    const admin = createApiRepository(t.url, { fetch: browserLikeFetch() });
-    await admin.signIn(EMAILS.superAdmin, PASSWORD);
+    // Platform staff must set up 2FA first: until then only the setup is reachable.
+    const failures: string[] = [];
+    const admin = createApiRepository(t.url, { fetch: browserLikeFetch(), onAuthFailure: (f) => failures.push(f.kind) });
+    const first = await admin.signIn(EMAILS.superAdmin, PASSWORD);
+    expect(first).toMatchObject({ platformRole: "super_admin", twoFactorSetupRequired: true });
+    await expect(admin.listTenants()).rejects.toBeInstanceOf(TwoFactorSetupRequiredError);
+    expect(failures).toEqual(["two_factor_setup"]);
+    expect(await admin.getTwoFactorStatus()).toMatchObject({ enabled: false, required: true, requiredBy: "platform" });
+    const setup = await admin.startTwoFactorSetup();
+    expect(setup.otpauthUri).toContain(`secret=${setup.secret}`);
+    const { recoveryCodes } = await admin.confirmTwoFactorSetup(hotp(base32Decode(setup.secret), timeStep(t.now())));
+    expect(recoveryCodes).toHaveLength(10);
+    t.secrets.set(EMAILS.superAdmin, setup.secret);
+    expect((await admin.currentSession())?.twoFactorSetupRequired).toBeUndefined();
+
+    // Next sign-in: password → TwoFactorRequiredError → verifyTwoFactor.
+    await admin.signOut();
+    await expect(admin.signIn(EMAILS.superAdmin, PASSWORD)).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    expect(await admin.currentSession()).toBeNull();
+    await expect(admin.verifyTwoFactor({ code: "000000" === (await t.twoFactorCode(EMAILS.superAdmin)) ? "111111" : "000000" })).rejects.toMatchObject({ status: 401, code: "invalid_code" });
+    const s = await admin.verifyTwoFactor({ code: await t.twoFactorCode(EMAILS.superAdmin) });
+    expect(s).toMatchObject({ platformRole: "super_admin" });
     const list = await admin.listTenants();
     expect(list.map((o) => o.tenant.slug).sort()).toEqual(["demo-krankentransporte", "muster-pflegedienst"]);
     const lic = await admin.setLicense(IDS.tenantB, "standard", { maxEmployees: 60 });

@@ -89,6 +89,14 @@ Ohne Anmeldung (`app_anon`): `public_tenant_branding(slug) → (slug, name, bran
 | `auth.invitation_needs_existing_login(token) → boolean` | Einladung gehört zu einer E-Mail mit bestehendem Konto (seit 0008) |
 | `auth.accept_invitation(token, password_hash) → user_id` | neues Konto: Hash Pflicht; bestehendes Konto: Hash muss `NULL` sein (sonst `PT409`), Konto wird ohne Passwortänderung verknüpft; aktiviert Mitarbeiter |
 
+| `auth.two_factor_requirement(user_id) → 'platform' \| 'tenant' \| null` | Pflicht zur Zwei-Faktor-Anmeldung: Plattformkonto bzw. Inhaber/Vorgesetzte eines aktiven Mandanten mit `require_two_factor_for_managers` (seit 0009) |
+| `auth.two_factor_state(user_id) → (enrolled, required_by)` | je Anfrage zusammen mit `resolve_session` (seit 0009) |
+
+Tabellen der Zwei-Faktor-Anmeldung (nur `app_auth`, seit 0009): `auth.totp_factors` (verschlüsseltes Geheimnis,
+`enrolled_at`, `last_used_step`), `auth.totp_recovery_codes` (Hashes, `used_at`), `auth.two_factor_challenges`
+(ausstehender zweiter Anmeldeschritt). Ver-/Entschlüsselung, Code-Prüfung und Hashing macht die API
+(`server/src/twoFactor.ts`); Details in `docs/security.md` Abschnitt 4a.
+
 Ablauf je Anfrage: Cookie → `resolve_session` (als `app_auth`) → `user_id` →
 neue Transaktion als `app_user` mit `request.jwt.claims.sub = user_id`.
 
@@ -118,13 +126,37 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 
 | Methode, Pfad | Body | Antwort |
 |---|---|---|
-| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · 401 einheitlicher Text · 403 Zugang inaktiv bzw. `tenant_suspended` · 429 |
-| `POST /api/auth/logout` | `{}` | 204, Cookie gelöscht, Sitzung widerrufen |
+| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · mit eingerichteter 2FA stattdessen 200 `{twoFactorRequired: true}` + Cookie `__Host-tfa` (keine Sitzung) · 401 einheitlicher Text · 403 Zugang inaktiv bzw. `tenant_suspended` · 429 |
+| `POST /api/auth/logout` | `{}` | 204, Cookies (Sitzung, ausstehender 2FA-Schritt) gelöscht, Sitzung widerrufen |
 | `GET /api/auth/session` | – | 200 `Session` oder `null` (Session enthält zusätzlich `memberships`) |
 | `POST /api/auth/password-reset` | `{email}` | immer 204 (keine Kontenaufzählung); Link `PUBLIC_ORIGIN + RESET_LINK_PATH#token=…` |
 | `POST /api/auth/password-reset/confirm` | `{token, password}` | 204 · 400 Link ungültig/Passwort zu kurz (min. 10 Zeichen) |
 | `POST /api/auth/invitation/accept` | `{token, password?}` | 200 `{existingAccount, message}`, keine automatische Anmeldung. Erst `invitation_needs_existing_login`: bestehendes Konto → Verknüpfung **ohne** Passwort (ein mitgesendetes Passwort wird nicht verwendet), `message` bittet um Anmeldung mit dem bisherigen Passwort; neues Konto → `password` Pflicht (min. 10 Zeichen). `PT409` → 409 `existing_account` |
 | `GET /api/public/tenants/:slug/branding` | – | Login-Seite (`app_anon`) |
+
+**Zwei-Faktor-Anmeldung (TOTP)**
+
+Ablauf mit eingerichteter 2FA: `POST /api/auth/login` (Passwort) → Cookie `__Host-tfa` (lokal http: `tfa`;
+`HttpOnly; SameSite=Strict; Path=/; Max-Age=300`) → `POST /api/auth/2fa/verify` → Sitzungs-Cookie.
+Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerzeichen erlaubt) oder
+`{recoveryCode: "ABCD-EFGH-JKMN-PQRS"}` (Groß-/Kleinschreibung und Bindestriche egal).
+
+| Methode, Pfad | Body | Antwort |
+|---|---|---|
+| `POST /api/auth/2fa/verify` | `proof` | 200 `Session` (+ `recoveryCodesRemaining`, wenn ein Wiederherstellungscode benutzt wurde), Cookie `__Host-tfa` gelöscht · 401 `two_factor_expired` (kein/abgelaufener/verbrauchter Schritt, nach 5 Fehlversuchen) · 401 `invalid_code` · 429 |
+| `GET /api/auth/2fa` | – | `{enabled, enrolledAt, pending, required, requiredBy: 'platform'\|'tenant'\|null, recoveryCodesRemaining}` |
+| `POST /api/auth/2fa/setup` | `{}` | 200 `{secret, otpauthUri, issuer, account}` (neues Geheimnis, 1 h gültig bis zur Bestätigung) · 409 bereits eingerichtet |
+| `POST /api/auth/2fa/setup/confirm` | `{code}` | 200 `{recoveryCodes: string[10]}` (nur dieses eine Mal sichtbar); beendet alle anderen Sitzungen des Kontos · 400 `invalid_code` · 409 keine Einrichtung begonnen/abgelaufen · 429 |
+| `POST /api/auth/2fa/disable` | `{password, …proof}` | 200 `{setupRequired}` (`true`: Pflichtkonto, danach nur Neueinrichtung möglich) · 400 `invalid_code` „Passwort oder Code ist falsch.“ · 409 nicht eingerichtet · 429 |
+| `POST /api/auth/2fa/recovery-codes` | `{password, …proof}` | 200 `{recoveryCodes}` (alte Codes ungültig) · 400 · 409 · 429 |
+| `PUT /api/tenants/:tenantId/two-factor-policy` | `{requireTwoFactorForManagers: boolean}` | 200 `Tenant` · 403 nicht Inhaber · 409 Inhaber hat selbst keine 2FA (nur beim Einschalten) |
+
+- Ist 2FA für das Konto Pflicht, aber nicht eingerichtet (Plattformkonten immer, Inhaber/Vorgesetzte bei
+  Mandanten-Pflicht), enthält `Session` (Login, `GET /api/auth/session`) `twoFactorSetupRequired: true`, und
+  alle fachlichen Endpunkte antworten 403 `two_factor_setup_required`. Erreichbar bleiben `/api/auth/2fa*`,
+  `/api/auth/session` und `/api/auth/logout`.
+- `Tenant` enthält `requireTwoFactorForManagers`.
+- Falsche Codes zählen je Konto (`RATE_LIMIT_2FA_PER_ACCOUNT`) und je IP (`RATE_LIMIT_2FA_PER_IP`).
 | `GET /api/health` | – | `{ok: true}` |
 
 **Fachliche Endpunkte** (alle als `app_user`)

@@ -10,7 +10,7 @@ import type pg from "pg";
 import type { Session } from "../../platform/src/data/repository.ts";
 import type { TenantRole } from "../../platform/src/core/types.ts";
 import {
-  createPasswordReset, createSession, getDummyHash, getLogin, ONE_TIME_TOKEN_RE, passwordProblem,
+  createPasswordReset, createSession, getDummyHash, getLogin, ONE_TIME_TOKEN_RE, passwordProblem, needsTwoFactorSetup,
   resolveSession, revokeSession, verifyPassword, acceptInvitation, invitationNeedsExistingLogin, resetPassword, PASSWORD_MAX, type SessionRecord,
 } from "./auth.ts";
 import type { Config } from "./config.ts";
@@ -21,6 +21,8 @@ import type { Mail, Mailer } from "./mailer.ts";
 import { RateLimiter } from "./rateLimit.ts";
 import { registerDomainRoutes } from "./routes.ts";
 import { withStaticFiles } from "./static.ts";
+import { CHALLENGE_MINUTES, createTwoFactorService, parseProof, type Proof } from "./twoFactor.ts";
+import { normalizeTotpCode } from "../../platform/src/security/totp.ts";
 import * as v from "./validate.ts";
 
 export interface AppDeps {
@@ -28,6 +30,8 @@ export interface AppDeps {
   pool: pg.Pool;
   mailer: Mailer;
   log?: (entry: Record<string, unknown>) => void;
+  /** Clock for TOTP codes (tests); defaults to Date.now. */
+  now?: () => number;
 }
 
 export interface Membership {
@@ -41,6 +45,8 @@ export interface Membership {
 
 /** Session as in repository.ts, plus all memberships (for a later tenant switch). */
 export type ApiSession = Session & { memberships: Membership[] };
+
+const SETUP_REQUIRED_MESSAGE = "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richte sie zuerst ein.";
 
 /** Helpers handed to the domain routes. */
 export interface AppContext {
@@ -103,7 +109,12 @@ export function createApp(deps: AppDeps) {
     resetKey: new RateLimiter(rl.resetPerKey, rl.windowMs),
     resetIp: new RateLimiter(rl.loginPerIp, rl.windowMs),
     tokenIp: new RateLimiter(rl.tokenPerIp, rl.windowMs),
+    twoFactorKey: new RateLimiter(rl.twoFactorPerAccount, rl.windowMs),
+    twoFactorIp: new RateLimiter(rl.twoFactorPerIp, rl.windowMs),
   };
+  const twoFactor = createTwoFactorService(pool, config.twoFactor, deps.now);
+  // Pending sign-in after a correct password (HttpOnly, 5 minutes, only the hash is stored).
+  const challengeCookieName = config.secureCookies ? "__Host-tfa" : "tfa";
 
   const tooMany = (seconds: number, what: string) =>
     new HttpError(429, "rate_limited", `Zu viele ${what}. Bitte in ${Math.max(1, Math.ceil(seconds / 60))} Minuten erneut versuchen.`, {
@@ -113,6 +124,9 @@ export function createApp(deps: AppDeps) {
   const sessionCookie = (token: string, maxAgeSeconds: number) =>
     serializeCookie(cookieName, token, { secure: config.secureCookies, maxAgeSeconds });
   const clearCookie = () => serializeCookie(cookieName, "", { secure: config.secureCookies, maxAgeSeconds: 0 });
+  const challengeCookie = (token: string) =>
+    serializeCookie(challengeCookieName, token, { secure: config.secureCookies, maxAgeSeconds: CHALLENGE_MINUTES * 60 });
+  const clearChallengeCookie = () => serializeCookie(challengeCookieName, "", { secure: config.secureCookies, maxAgeSeconds: 0 });
 
   async function requireSession(ctx: RequestContext): Promise<SessionRecord> {
     const token = ctx.cookies[cookieName];
@@ -128,6 +142,8 @@ export function createApp(deps: AppDeps) {
     mailDelivery: config.smtp ? "email" : config.production ? "none" : "log",
     async asUser(ctx, fn) {
       const rec = await requireSession(ctx);
+      // Mandatory 2FA not set up yet: only /api/auth/2fa/* (and logout/session) are reachable.
+      if (needsTwoFactorSetup(rec)) throw new HttpError(403, "two_factor_setup_required", SETUP_REQUIRED_MESSAGE);
       return withTx(pool, "app_user", rec.userId, async (q) => {
         // An existing session stops working as soon as the tenant is suspended
         // (RLS would only answer with empty results / generic 403).
@@ -189,20 +205,149 @@ export function createApp(deps: AppDeps) {
 
     const { session, blocked } = await withTx(pool, "app_user", login.userId, (q) => buildSession(q, login.userId, email));
     if (blocked) throw new HttpError(403, blocked.code, blocked.message);
-    const ua = typeof ctx.req.headers["user-agent"] === "string" ? ctx.req.headers["user-agent"] : null;
-    const { token, expiresAt } = await createSession(pool, login.userId, config.sessionTtlHours, ua);
+    const ua = userAgent(ctx);
+    // 2FA set up → no session yet, only a pending challenge (second step: POST /api/auth/2fa/verify).
+    // The decision and the session/challenge insert happen under a lock on the user row.
+    const begun = await twoFactor.beginLogin(login.userId, config.sessionTtlHours, ua);
+    if (begun.kind === "challenge") {
+      log({ level: "info", msg: "login password ok, second factor pending", requestId: ctx.requestId, userId: login.userId });
+      return {
+        status: 200,
+        body: { twoFactorRequired: true },
+        headers: { "Set-Cookie": [challengeCookie(begun.token), clearCookie()] },
+      };
+    }
     log({ level: "info", msg: "login", requestId: ctx.requestId, userId: login.userId });
+    const body: ApiSession = begun.requiredBy ? { ...session, twoFactorSetupRequired: true } : session;
     return {
       status: 200,
-      body: session,
-      headers: { "Set-Cookie": sessionCookie(token, (expiresAt.getTime() - Date.now()) / 1000) },
+      body,
+      headers: { "Set-Cookie": sessionCookie(begun.token, (begun.expiresAt.getTime() - Date.now()) / 1000) },
     };
+  });
+
+  // ---------------------------------------------------------------- two-factor authentication
+  // Second step of the sign-in: {code} (authenticator app) or {recoveryCode}.
+  router.add("POST", "/api/auth/2fa/verify", async (ctx): Promise<Reply> => {
+    const ipWait = limiters.twoFactorIp.blockedFor(ctx.ip);
+    if (ipWait > 0) throw tooMany(ipWait, "Code-Eingaben");
+    limiters.twoFactorIp.hit(ctx.ip);
+    const b = v.object(ctx.body, ["code", "recoveryCode"]);
+    const expired = () => new HttpError(401, "two_factor_expired",
+      "Die Anmeldung ist abgelaufen. Bitte melde dich erneut mit E-Mail-Adresse und Passwort an.", { "Set-Cookie": clearChallengeCookie() });
+    const token = ctx.cookies[challengeCookieName];
+    const challenge = token ? await twoFactor.takeChallenge(token) : null;
+    if (!challenge) throw expired();
+    const wait = limiters.twoFactorKey.blockedFor(challenge.userId);
+    if (wait > 0) throw tooMany(wait, "falsche Codes");
+    const proof = parseProof(b);
+    const result = proof ? await twoFactor.verify(challenge.userId, proof) : { ok: false };
+    if (!result.ok) {
+      limiters.twoFactorKey.hit(challenge.userId);
+      log({ level: "info", msg: "second factor rejected", requestId: ctx.requestId, userId: challenge.userId });
+      throw new HttpError(401, "invalid_code", proof?.kind === "recovery"
+        ? "Der Wiederherstellungscode ist ungültig oder wurde bereits verwendet."
+        : "Der Code ist ungültig oder abgelaufen. Bitte den aktuellen Code aus der Authenticator-App eingeben.");
+    }
+    if (!(await twoFactor.completeChallenge(challenge.challengeId))) throw expired();
+    limiters.twoFactorKey.reset(challenge.userId);
+    const { session, blocked } = await withTx(pool, "app_user", challenge.userId, (q) => buildSession(q, challenge.userId, challenge.email));
+    if (blocked) throw new HttpError(403, blocked.code, blocked.message);
+    const { token: sessionToken, expiresAt } = await createSession(pool, challenge.userId, config.sessionTtlHours, userAgent(ctx));
+    log({ level: "info", msg: "login", requestId: ctx.requestId, userId: challenge.userId, secondFactor: proof!.kind });
+    const body = result.recoveryCodesRemaining !== undefined ? { ...session, recoveryCodesRemaining: result.recoveryCodesRemaining } : session;
+    return {
+      status: 200,
+      body,
+      headers: { "Set-Cookie": [sessionCookie(sessionToken, (expiresAt.getTime() - Date.now()) / 1000), clearChallengeCookie()] },
+    };
+  });
+
+  router.add("GET", "/api/auth/2fa", async (ctx) => {
+    const rec = await requireSession(ctx);
+    const st = await twoFactor.status(rec.userId);
+    return {
+      status: 200,
+      body: {
+        enabled: st.enabled, enrolledAt: st.enrolledAt, pending: st.pending,
+        required: st.required, requiredBy: st.requiredBy, recoveryCodesRemaining: st.recoveryCodesRemaining,
+      },
+    };
+  });
+
+  // Starts (or restarts) the setup: new secret, returned once for the QR code / manual entry.
+  router.add("POST", "/api/auth/2fa/setup", async (ctx) => {
+    v.object(ctx.body, []);
+    const rec = await requireSession(ctx);
+    const r = await twoFactor.startSetup(rec.userId, rec.email);
+    if (r === "enrolled") throw new HttpError(409, "invalid_state", "Die Zwei-Faktor-Anmeldung ist bereits eingerichtet.");
+    return { status: 200, body: r };
+  });
+
+  // Confirms the setup with the first code; returns the recovery codes exactly once.
+  router.add("POST", "/api/auth/2fa/setup/confirm", async (ctx) => {
+    const b = v.object(ctx.body, ["code"]);
+    const rec = await requireSession(ctx);
+    checkTwoFactorLimit(ctx, rec.userId);
+    const code = normalizeTotpCode(b.code);
+    const r = code ? await twoFactor.confirmSetup(rec.userId, code, rec.sessionId) : "invalid";
+    if (r === "no_setup") throw new HttpError(409, "invalid_state", "Bitte die Einrichtung neu starten.");
+    if (r === "invalid") {
+      limiters.twoFactorKey.hit(rec.userId);
+      throw new HttpError(400, "invalid_code", "Der Code stimmt nicht. Bitte prüfe die Uhrzeit des Smartphones und gib den aktuellen Code ein.");
+    }
+    limiters.twoFactorKey.reset(rec.userId);
+    log({ level: "info", msg: "two-factor enabled", requestId: ctx.requestId, userId: rec.userId });
+    return { status: 200, body: { recoveryCodes: r.recoveryCodes } };
+  });
+
+  /** Password + second factor of the signed-in user (disable, new recovery codes). */
+  async function reauthenticate(ctx: RequestContext, rec: SessionRecord, body: Record<string, unknown>): Promise<Proof> {
+    checkTwoFactorLimit(ctx, rec.userId);
+    const password = body.password;
+    const proof = parseProof({ code: body.code, recoveryCode: body.recoveryCode });
+    const login = typeof password === "string" && password.length <= PASSWORD_MAX ? await getLogin(pool, rec.email) : null;
+    const passwordOk = login && login.userId === rec.userId ? await verifyPassword(password as string, login.passwordHash) : false;
+    const codeOk = passwordOk && proof ? (await twoFactor.verify(rec.userId, proof)).ok : false;
+    if (!passwordOk || !codeOk) {
+      limiters.twoFactorKey.hit(rec.userId);
+      throw new HttpError(400, "invalid_code", "Passwort oder Code ist falsch.");
+    }
+    limiters.twoFactorKey.reset(rec.userId);
+    return proof!;
+  }
+
+  function checkTwoFactorLimit(ctx: RequestContext, userId: string): void {
+    const wait = Math.max(limiters.twoFactorIp.blockedFor(ctx.ip), limiters.twoFactorKey.blockedFor(userId));
+    if (wait > 0) throw tooMany(wait, "falsche Codes");
+    limiters.twoFactorIp.hit(ctx.ip);
+  }
+
+  // Disabling needs password + code (or recovery code). If 2FA is mandatory for the
+  // account, the session afterwards only reaches the setup again (device change).
+  router.add("POST", "/api/auth/2fa/disable", async (ctx) => {
+    const b = v.object(ctx.body, ["password", "code", "recoveryCode"]);
+    const rec = await requireSession(ctx);
+    if (!rec.twoFactorEnrolled) throw new HttpError(409, "invalid_state", "Die Zwei-Faktor-Anmeldung ist nicht eingerichtet.");
+    await reauthenticate(ctx, rec, b);
+    await twoFactor.disable(rec.userId);
+    log({ level: "info", msg: "two-factor disabled", requestId: ctx.requestId, userId: rec.userId });
+    return { status: 200, body: { setupRequired: rec.twoFactorRequiredBy !== null } };
+  });
+
+  router.add("POST", "/api/auth/2fa/recovery-codes", async (ctx) => {
+    const b = v.object(ctx.body, ["password", "code", "recoveryCode"]);
+    const rec = await requireSession(ctx);
+    if (!rec.twoFactorEnrolled) throw new HttpError(409, "invalid_state", "Die Zwei-Faktor-Anmeldung ist nicht eingerichtet.");
+    await reauthenticate(ctx, rec, b);
+    const recoveryCodes = await twoFactor.regenerateRecoveryCodes(rec.userId);
+    return { status: 200, body: { recoveryCodes } };
   });
 
   router.add("POST", "/api/auth/logout", async (ctx) => {
     const token = ctx.cookies[cookieName];
     if (token) await revokeSession(pool, token);
-    return { status: 204, headers: { "Set-Cookie": clearCookie() } };
+    return { status: 204, headers: { "Set-Cookie": [clearCookie(), clearChallengeCookie()] } };
   });
 
   router.add("GET", "/api/auth/session", async (ctx): Promise<Reply> => {
@@ -210,7 +355,8 @@ export function createApp(deps: AppDeps) {
     const rec = token ? await resolveSession(pool, token, config.sessionIdleMinutes) : null;
     if (!rec) return { status: 200, body: null, headers: token ? { "Set-Cookie": clearCookie() } : undefined };
     const { session, blocked } = await withTx(pool, "app_user", rec.userId, (q) => buildSession(q, rec.userId, rec.email));
-    return { status: 200, body: blocked ? null : session };
+    if (blocked) return { status: 200, body: null };
+    return { status: 200, body: needsTwoFactorSetup(rec) ? { ...session, twoFactorSetupRequired: true } : session };
   });
 
   // Always 204 for well-formed input – known and unknown addresses look the same.
@@ -232,6 +378,10 @@ export function createApp(deps: AppDeps) {
     }
     return { status: 204 };
   });
+
+  function userAgent(ctx: RequestContext): string | null {
+    return typeof ctx.req.headers["user-agent"] === "string" ? ctx.req.headers["user-agent"] : null;
+  }
 
   function tokenBody(ctx: RequestContext): { token: string; password: unknown } {
     const wait = limiters.tokenIp.blockedFor(ctx.ip);
@@ -296,5 +446,5 @@ export function createApp(deps: AppDeps) {
     log,
   });
   const handler = config.staticDir ? withStaticFiles(apiHandler, { root: config.staticDir, secure: config.secureCookies, log }) : apiHandler;
-  return { handler, limiters, cookieName };
+  return { handler, limiters, cookieName, challengeCookieName, twoFactor };
 }

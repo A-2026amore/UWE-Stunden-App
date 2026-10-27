@@ -86,6 +86,8 @@ export interface Tenant {
   settings: TenantSettings;
   /** Demo / anonymised test tenant – never contains real personal data. */
   isDemo: boolean;
+  /** Owner setting: managers and owners must use two-factor authentication (missing = false). */
+  requireTwoFactorForManagers?: boolean;
 }
 
 // ---------------------------------------------------------------- licences

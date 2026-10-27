@@ -4,7 +4,8 @@ import type { Session } from "../../data/repository";
 import { BottomNav, DialogProvider, ToastProvider, applyBranding, type NavItem } from "../../design";
 import type { SyncStatus } from "../../data/sync";
 import { useRoute } from "../shared/router";
-import { onAuthFailure } from "../shared/repo";
+import { getRepository, onAuthFailure } from "../shared/repo";
+import { TwoFactorGate } from "../shared/twoFactor";
 import { LoginScreen, TenantLogo, Watermark } from "../shared/ui";
 import { currentMonth } from "../shared/format";
 import { errorText } from "../shared/hooks";
@@ -48,13 +49,15 @@ export function EmployeeApp() {
     repo.currentSession().then((s) => {
       const problem = s ? checkArea(s) : null;
       if (problem) { setNotice(problem); setSession(null); return; }
-      setSession(s); setSyncStatus(repo.syncStatus()); if (s?.employeeId) repo.flush().catch(() => undefined);
+      setSession(s); setSyncStatus(repo.syncStatus()); if (s?.employeeId && !s.twoFactorSetupRequired) repo.flush().catch(() => undefined);
     }, (e: unknown) => { setNotice(errorText(e)); setSession(null); });
   }, []);
 
   // API: expired session (401) or suspended company → back to the login with an explanation.
   // Unsent changes stay in the outbox of this device and are sent after the next sign-in.
   useEffect(() => onAuthFailure((f) => {
+    // Mandatory 2FA (managers/owners): keep the session, show only the setup.
+    if (f.kind === "two_factor_setup") { setData(null); repo.currentSession().then(setSession, () => setSession(null)); return; }
     setNotice(f.message); setError(null); setData(null); setSession(null);
   }), []);
 
@@ -69,7 +72,7 @@ export function EmployeeApp() {
   }, []);
 
   useEffect(() => {
-    if (!session?.tenantId || !session.employeeId) { setData(null); applyBranding(null); return; }
+    if (!session?.tenantId || !session.employeeId || session.twoFactorSetupRequired) { setData(null); applyBranding(null); return; }
     Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId)])
       .then(([tenant, list]) => {
         const me = list.find((e) => e.id === session.employeeId);
@@ -100,10 +103,18 @@ export function EmployeeApp() {
           // The login form signs in on the area repository; let the sync layer pick up the new session first.
           await repo.currentSession().catch(() => null);
           setSyncStatus(repo.syncStatus());
-          repo.flush().catch(() => undefined);
+          if (!s.twoFactorSetupRequired) repo.flush().catch(() => undefined);
           setError(null); setSession(s); location.hash = "#/";
         }}
       />
+    );
+  }
+
+  if (session.twoFactorSetupRequired) {
+    return (
+      <TwoFactorGate repo={getRepository("app")} session={session}
+        onDone={async () => { const s = await repo.currentSession().catch(() => null); setSession(s); if (s) repo.flush().catch(() => undefined); }}
+        onSignOut={async () => { await repo.signOut(); setSession(null); }} />
     );
   }
 

@@ -67,6 +67,15 @@ export interface SessionRecord {
   userId: string;
   email: string;
   expiresAt: Date;
+  /** Since 0009: TOTP factor confirmed. */
+  twoFactorEnrolled: boolean;
+  /** Since 0009: "platform" (platform staff) or "tenant" (owner requires it for managers); null = optional. */
+  twoFactorRequiredBy: "platform" | "tenant" | null;
+}
+
+/** Signed in, but 2FA is mandatory and not set up yet: only the 2FA setup is reachable. */
+export function needsTwoFactorSetup(rec: Pick<SessionRecord, "twoFactorEnrolled" | "twoFactorRequiredBy">): boolean {
+  return rec.twoFactorRequiredBy !== null && !rec.twoFactorEnrolled;
 }
 
 export async function createSession(
@@ -93,18 +102,24 @@ export async function createSession(
 /**
  * Valid session for a cookie token, or null. auth.resolve_session (0008)
  * checks expiry, disabled accounts and the idle timeout (revokes idle
- * sessions) and refreshes last_seen_at.
+ * sessions) and refreshes last_seen_at. auth.two_factor_state (0009) adds
+ * whether 2FA is set up and whether it is mandatory for this account.
  */
 export async function resolveSession(pool: pg.Pool, token: string, idleMinutes: number): Promise<SessionRecord | null> {
   if (!SESSION_TOKEN_RE.test(token)) return null;
   return withTx(pool, "app_auth", null, async (q) => {
-    const r = await q.query<{ session_id: string; user_id: string; expires_at: Date; email: string }>(
-      `select s.session_id, s.user_id, s.expires_at, u.email
-         from auth.resolve_session($1, $2) s join auth.users u on u.id = s.user_id`,
+    const r = await q.query<{ session_id: string; user_id: string; expires_at: Date; email: string; enrolled: boolean; required_by: SessionRecord["twoFactorRequiredBy"] }>(
+      `select s.session_id, s.user_id, s.expires_at, u.email, st.enrolled, st.required_by
+         from auth.resolve_session($1, $2) s
+         join auth.users u on u.id = s.user_id
+         cross join lateral auth.two_factor_state(s.user_id) st`,
       [token, idleMinutes],
     );
     const s = r.rows[0];
-    return s ? { sessionId: s.session_id, userId: s.user_id, email: s.email, expiresAt: s.expires_at } : null;
+    return s ? {
+      sessionId: s.session_id, userId: s.user_id, email: s.email, expiresAt: s.expires_at,
+      twoFactorEnrolled: Boolean(s.enrolled), twoFactorRequiredBy: s.required_by ?? null,
+    } : null;
   });
 }
 

@@ -1,7 +1,8 @@
 /**
  * Server configuration, read exclusively from environment variables.
- * Secrets (database password, SMTP password) are never logged.
+ * Secrets (database password, SMTP password, TOTP key) are never logged.
  */
+import { createHash } from "node:crypto";
 
 export interface SmtpConfig {
   host: string;
@@ -25,6 +26,25 @@ export interface RateLimitConfig {
   resetPerKey: number;
   /** Password-reset / invitation token submissions per IP within the window. */
   tokenPerIp: number;
+  /** Wrong two-factor codes per account within the window (sign-in, setup, disable). */
+  twoFactorPerAccount: number;
+  /** Two-factor code submissions per IP within the window. */
+  twoFactorPerIp: number;
+}
+
+export interface TotpKey {
+  /** First 8 hex chars of SHA-256 over the key – stored with every ciphertext. */
+  id: string;
+  key: Buffer;
+}
+
+export interface TwoFactorConfig {
+  /** keys[0] encrypts; all keys decrypt (rotation: TOTP_ENCRYPTION_KEY_PREVIOUS). */
+  keys: TotpKey[];
+  /** True when no key was configured outside production (fixed development key). */
+  developmentKey: boolean;
+  /** Name shown in the authenticator app. */
+  issuer: string;
 }
 
 export interface Config {
@@ -46,6 +66,7 @@ export interface Config {
   rateLimit: RateLimitConfig;
   /** Built frontend (platform/dist) served by the API itself; null = API only (e.g. Caddy serves the files). */
   staticDir: string | null;
+  twoFactor: TwoFactorConfig;
 }
 
 function int(env: NodeJS.ProcessEnv, name: string, def: number, min: number, max: number): number {
@@ -67,6 +88,44 @@ function parseOrigin(value: string): string {
   }
   if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("PUBLIC_ORIGIN muss mit http:// oder https:// beginnen.");
   return u.origin;
+}
+
+/** 32-byte key as base64 (44 characters) or hex (64 characters). */
+export function parseTotpKey(raw: string, name: string): TotpKey {
+  const v = raw.trim();
+  let key: Buffer | null = null;
+  if (/^[0-9a-fA-F]{64}$/.test(v)) key = Buffer.from(v, "hex");
+  else if (/^[A-Za-z0-9+/_-]{43}=?$/.test(v)) key = Buffer.from(v.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  if (!key || key.length !== 32) {
+    throw new Error(`${name} muss ein 32-Byte-Schlüssel sein (64 Hex-Zeichen oder Base64), z. B. erzeugt mit: openssl rand -base64 32`);
+  }
+  return { id: totpKeyId(key), key };
+}
+
+export function totpKeyId(key: Buffer): string {
+  return createHash("sha256").update("stundenwerk-totp-key-id:").update(key).digest("hex").slice(0, 8);
+}
+
+/** Fixed key for local development and tests only – never accepted in production. */
+const DEVELOPMENT_TOTP_KEY = createHash("sha256").update("stundenwerk-entwicklung-totp-schluessel-NICHT-PRODUKTIV").digest();
+
+function loadTwoFactor(env: NodeJS.ProcessEnv, production: boolean): TwoFactorConfig {
+  const raw = env.TOTP_ENCRYPTION_KEY ?? "";
+  let keys: TotpKey[];
+  let developmentKey = false;
+  if (raw) keys = [parseTotpKey(raw, "TOTP_ENCRYPTION_KEY")];
+  else if (production) throw new Error("TOTP_ENCRYPTION_KEY fehlt (32 Byte, z. B. openssl rand -base64 32). Ohne Schlüssel ist keine Zwei-Faktor-Anmeldung möglich.");
+  else {
+    keys = [{ id: totpKeyId(DEVELOPMENT_TOTP_KEY), key: DEVELOPMENT_TOTP_KEY }];
+    developmentKey = true;
+  }
+  for (const part of (env.TOTP_ENCRYPTION_KEY_PREVIOUS ?? "").split(",").map((x) => x.trim()).filter(Boolean)) {
+    const k = parseTotpKey(part, "TOTP_ENCRYPTION_KEY_PREVIOUS");
+    if (!keys.some((x) => x.id === k.id)) keys.push(k);
+  }
+  const issuer = (env.TOTP_ISSUER ?? "Stundenwerk").trim();
+  if (!/^[^:]{1,40}$/.test(issuer)) throw new Error("TOTP_ISSUER: 1–40 Zeichen, ohne Doppelpunkt.");
+  return { keys, developmentKey, issuer };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -119,6 +178,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       loginPerIp: int(env, "RATE_LIMIT_LOGIN_PER_IP", 100, 1, 100000),
       resetPerKey: int(env, "RATE_LIMIT_RESET_PER_ACCOUNT", 3, 1, 1000),
       tokenPerIp: int(env, "RATE_LIMIT_TOKEN_PER_IP", 20, 1, 100000),
+      twoFactorPerAccount: int(env, "RATE_LIMIT_2FA_PER_ACCOUNT", 5, 1, 1000),
+      twoFactorPerIp: int(env, "RATE_LIMIT_2FA_PER_IP", 50, 1, 100000),
     },
+    twoFactor: loadTwoFactor(env, production),
   };
 }

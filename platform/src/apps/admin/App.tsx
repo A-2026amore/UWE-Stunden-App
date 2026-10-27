@@ -8,6 +8,7 @@ import {
 import { API_BASE, IS_DEMO, getRepository, onAuthFailure } from "../shared/repo";
 import { useRoute } from "../shared/router";
 import { LoginScreen, ProductMark } from "../shared/ui";
+import { TwoFactorCard, TwoFactorGate } from "../shared/twoFactor";
 import { PLAN_LABEL, dateTimeDE, formatDateDE } from "../shared/format";
 import { errorText, useAsync } from "../shared/hooks";
 import { ACTION_LABEL } from "../shared/audit";
@@ -22,6 +23,7 @@ const NAV: NavItem[] = [
   { href: "#/support", label: "Supportzugriff", icon: "shield", match: "/support" },
   { href: "#/system", label: "Systemstatus", icon: "server", match: "/system" },
   { href: "#/protokoll", label: "Plattform-Protokoll", icon: "log", match: "/protokoll" },
+  { href: "#/konto", label: "Mein Konto", icon: "user", match: "/konto" },
 ];
 
 const PLANS: Array<{ plan: LicensePlan; text: string; employees: string }> = [
@@ -55,7 +57,10 @@ export function AdminApp() {
       setSession(problem ? null : s);
     }, (e: unknown) => { setNotice(errorText(e)); setSession(null); });
   }, []);
-  useEffect(() => onAuthFailure((f) => { setNotice(f.message); setSession(null); }), []);
+  useEffect(() => onAuthFailure((f) => {
+    if (f.kind === "two_factor_setup") { repo.currentSession().then(setSession, () => setSession(null)); return; }
+    setNotice(f.message); setSession(null);
+  }), []);
 
   if (session === undefined) return <p class="sr-only" role="status">Wird geladen …</p>;
   if (!session) {
@@ -66,6 +71,7 @@ export function AdminApp() {
     );
   }
   const signOut = async () => { await repo.signOut(); setSession(null); };
+  if (session.twoFactorSetupRequired) return <TwoFactorGate repo={repo} session={session} onDone={setSession} onSignOut={signOut} />;
   const readOnly = session.platformRole !== "super_admin";
 
   let page;
@@ -74,6 +80,7 @@ export function AdminApp() {
   else if (route.path === "/support") page = <SupportPage />;
   else if (route.path === "/system") page = <SystemPage />;
   else if (route.path === "/protokoll") page = <PlatformAudit />;
+  else if (route.path === "/konto") page = <AccountPage session={session} />;
   else page = <TenantsPage readOnly={readOnly} />;
 
   return (
@@ -92,6 +99,23 @@ export function AdminApp() {
         </div>
       </DialogProvider>
     </ToastProvider>
+  );
+}
+
+// ------------------------------------------------------------------ own account
+
+function AccountPage({ session }: { session: Session }) {
+  return (
+    <div class="stack">
+      <h1 class="page-title">Mein Konto</h1>
+      <Card title="Anmeldung">
+        <dl class="kv">
+          <dt>E-Mail</dt><dd>{session.email}</dd>
+          <dt>Rolle</dt><dd>{session.platformRole === "super_admin" ? "Super-Admin" : "Support (nur lesen)"}</dd>
+        </dl>
+      </Card>
+      <TwoFactorCard repo={repo} account={session.email} />
+    </div>
   );
 }
 

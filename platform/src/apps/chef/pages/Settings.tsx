@@ -6,6 +6,7 @@ import { errorText, useAsync } from "../../shared/hooks";
 import { dateTimeDE, signedHours } from "../../shared/format";
 import { isUweBrand } from "../../shared/statement";
 import { useChef } from "../context";
+import { TwoFactorCard } from "../../shared/twoFactor";
 
 const STATES = [
   ["BW", "Baden-Württemberg"], ["BY", "Bayern"], ["BE", "Berlin"], ["BB", "Brandenburg"], ["HB", "Bremen"], ["HH", "Hamburg"],
@@ -14,7 +15,7 @@ const STATES = [
 ];
 
 export function SettingsPage() {
-  const { repo, tenant, me, setTenant } = useChef();
+  const { repo, tenant, me, setTenant, session } = useChef();
   const toast = useToast();
   const dialogs = useDialogs();
   const bp = tenant.settings.breakPolicy;
@@ -24,6 +25,25 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const grant = useAsync(() => repo.getSupportGrant(tenant.id), [tenant.id]);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [policyBusy, setPolicyBusy] = useState(false);
+
+  const setPolicy = async (required: boolean) => {
+    setPolicyError(null);
+    const ok = await dialogs.confirm(required
+      ? { title: "Zwei-Faktor-Anmeldung vorschreiben?", message: "Alle Inhaber und Vorgesetzten müssen sich danach zusätzlich mit einem Code aus einer Authenticator-App anmelden. Wer sie noch nicht eingerichtet hat, sieht bei der nächsten Aktion nur noch die Einrichtung. Mitarbeitende sind nicht betroffen.", confirmLabel: "Vorschreiben" }
+      : { title: "Pflicht aufheben?", message: "Inhaber und Vorgesetzte können die Zwei-Faktor-Anmeldung danach selbst ein- oder ausschalten. Bereits eingerichtete Zugänge bleiben aktiv.", confirmLabel: "Pflicht aufheben" });
+    if (!ok) return;
+    setPolicyBusy(true);
+    try {
+      setTenant(await repo.setTwoFactorRequirement(tenant.id, required));
+      toast(required ? "Zwei-Faktor-Anmeldung für Leitungskräfte vorgeschrieben." : "Pflicht zur Zwei-Faktor-Anmeldung aufgehoben.");
+    } catch (err) {
+      setPolicyError(errorText(err));
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
 
   useEffect(() => { setWa(tenant.settings.workAccount); }, [tenant]);
 
@@ -103,6 +123,25 @@ export function SettingsPage() {
           {error && <Alert tone="danger" live>{error}</Alert>}
           <div><Button type="submit" busy={busy} icon="check">Einstellungen speichern</Button></div>
         </form>
+      </Card>
+
+      <TwoFactorCard repo={repo} account={session.email} />
+
+      <Card title="Zwei-Faktor-Pflicht für Leitungskräfte">
+        <div class="stack">
+          <p class="muted small mb-0">Wenn aktiviert, müssen sich alle Inhaber und Vorgesetzten von {tenant.name} mit Passwort <strong>und</strong> Code aus einer Authenticator-App anmelden. Mitarbeitende können die Zwei-Faktor-Anmeldung freiwillig nutzen.</p>
+          {tenant.requireTwoFactorForManagers
+            ? <Alert tone="success"><p>Vorgeschrieben für Inhaber und Vorgesetzte.</p></Alert>
+            : <Alert tone="info"><p>Nicht vorgeschrieben (freiwillig).</p></Alert>}
+          {policyError && <Alert tone="danger" live>{policyError}</Alert>}
+          {me.role === "owner" ? (
+            <div class="btn-row">
+              {tenant.requireTwoFactorForManagers
+                ? <Button variant="secondary" busy={policyBusy} onClick={() => setPolicy(false)}>Pflicht aufheben</Button>
+                : <Button icon="shield" busy={policyBusy} onClick={() => setPolicy(true)}>Für Leitungskräfte vorschreiben</Button>}
+            </div>
+          ) : <p class="muted small mb-0">Nur der Inhaber kann diese Einstellung ändern.</p>}
+        </div>
       </Card>
 
       <Card title="Supportzugriff">

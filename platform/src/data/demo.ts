@@ -12,6 +12,14 @@
  *   (12 h maximum, overlaps, statutory breaks).
  *
  * All demo passwords are "demo". Never put real personal data in here.
+ *
+ * Two-factor authentication works like on the server (real TOTP, RFC 6238,
+ * usable with any authenticator app; replay protection; single-use recovery
+ * codes). Demo deviations: the secret and the recovery codes are kept in
+ * plain text in this browser's storage, and the mandatory 2FA for platform
+ * accounts is NOT enforced (the demo admin stays usable without a phone).
+ * The owner's requirement for managers is enforced. `demoTwoFactorCode()`
+ * shows the current code without an app (docs/security.md, "Demo").
  */
 import type {
   AuditEvent, Branding, CompanyContact, Employee, ISODate, ISOMonth, License, LicensePlan, MonthAllocation,
@@ -21,9 +29,13 @@ import { activeShifts, addDays, findOverlapAcrossDays, isRealDate, isValidEntry,
 import { UWE_BREAK_POLICY, evaluateDay, issueForDay } from "../core/breaks";
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
-  AccessDeniedError, ConflictError,
-  type NewTimeEntry, type Repository, type Session, type TenantOverview,
+  AccessDeniedError, ConflictError, TwoFactorRequiredError,
+  type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
+import {
+  base32Decode, base32Encode, generateRecoveryCode, matchTotpStep, normalizeRecoveryCode, normalizeTotpCode, otpauthUri,
+  hotp, RECOVERY_CODE_COUNT, timeStep, TOTP_SECRET_BYTES,
+} from "../security/totp";
 
 // ------------------------------------------------------------------ public constants
 
@@ -90,6 +102,16 @@ export interface SupportGrant {
   grantedBy: UUID;
 }
 
+/** Demo only: plain-text secret and recovery codes in browser storage (the server encrypts/hashes). */
+interface DemoTwoFactor {
+  userId: UUID;
+  secret: string;
+  createdAt: string;
+  enrolledAt: string | null;
+  lastUsedStep: number | null;
+  recoveryCodes: Array<{ code: string; usedAt: string | null }>;
+}
+
 interface DemoDb {
   schema: 1;
   seededAt: string;
@@ -102,10 +124,17 @@ interface DemoDb {
   statements: MonthlyStatement[];
   audit: AuditEvent[];
   supportGrants: SupportGrant[];
+  /** Added with two-factor authentication; missing in older stored demo databases. */
+  twoFactor?: DemoTwoFactor[];
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository {
+export interface DemoRepository extends Repository, TwoFactorApi {
+  /**
+   * Demo only: current 6-digit code of the account that is signing in
+   * (second step) or signed in – so 2FA can be tried without an app.
+   */
+  demoTwoFactorCode(): Promise<string | null>;
   /** Discards all changes and re-seeds the demo data. */
   resetDemoData(): void;
   /** Platform-level audit (tenant / licence changes) – super_admin / support only. */
@@ -426,19 +455,72 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     return clone(fn(db, sessionFrom(db)));
   }
 
+  // ---- two-factor helpers
+  const pendingKey = `${sessionKey}_2fa_pending`;
+  const factorOf = (db: DemoDb, userId: UUID) => (db.twoFactor ?? []).find((f) => f.userId === userId) ?? null;
+  const enrolled = (db: DemoDb, userId: UUID) => !!factorOf(db, userId)?.enrolledAt;
+  /** Demo: only the owner's requirement for managers is enforced (not the platform rule). */
+  function twoFactorRequiredBy(db: DemoDb, acc: Account): "tenant" | null {
+    if (!acc.tenantId || !acc.employeeId) return null;
+    const emp = db.employees.find((e) => e.id === acc.employeeId);
+    const tenant = db.tenants.find((t) => t.id === acc.tenantId);
+    return emp && tenant && emp.status === "active" && (emp.role === "manager" || emp.role === "owner")
+      && tenant.status === "active" && tenant.requireTwoFactorForManagers ? "tenant" : null;
+  }
+  function randomBytes(n: number): Uint8Array {
+    const b = new Uint8Array(n);
+    const c = globalThis.crypto as Crypto | undefined;
+    if (c?.getRandomValues) c.getRandomValues(b); else for (let i = 0; i < n; i++) b[i] = Math.floor(Math.random() * 256);
+    return b;
+  }
+  function newRecoveryCodes(): DemoTwoFactor["recoveryCodes"] {
+    const list: DemoTwoFactor["recoveryCodes"] = [];
+    while (list.length < RECOVERY_CODE_COUNT) {
+      const code = generateRecoveryCode(randomBytes);
+      if (!list.some((x) => x.code === code)) list.push({ code, usedAt: null });
+    }
+    return list;
+  }
+  /** Checks (and consumes) a code or recovery code. */
+  function checkProof(db: DemoDb, userId: UUID, proof: TwoFactorProof): { ok: boolean; remaining?: number; kind: "code" | "recovery" } {
+    const f = factorOf(db, userId);
+    if (!f?.enrolledAt) return { ok: false, kind: "code" };
+    if ("code" in proof) {
+      const code = normalizeTotpCode(proof.code);
+      const step = code ? matchTotpStep(base32Decode(f.secret), code, Date.now()) : null;
+      if (step === null || step <= (f.lastUsedStep ?? -1)) return { ok: false, kind: "code" };
+      f.lastUsedStep = step;
+      return { ok: true, kind: "code" };
+    }
+    const n = normalizeRecoveryCode(proof.recoveryCode);
+    const hit = n ? f.recoveryCodes.find((r) => !r.usedAt && r.code.replace(/-/g, "") === n) : undefined;
+    if (!hit) return { ok: false, kind: "recovery" };
+    hit.usedAt = new Date().toISOString();
+    return { ok: true, kind: "recovery", remaining: f.recoveryCodes.filter((r) => !r.usedAt).length };
+  }
+  function auditTwoFactor(db: DemoDb, acc: Account, action: string, after: unknown) {
+    addAudit(db, accountSession(db, acc), { tenantId: acc.tenantId, action, entity: "user", entityId: acc.userId, before: null, after, reason: null });
+  }
+
   function accountSession(db: DemoDb, acc: Account): Session {
     const emp = acc.employeeId ? db.employees.find((e) => e.id === acc.employeeId) : null;
-    return {
+    const s: Session = {
       userId: acc.userId, email: acc.email, tenantId: acc.tenantId, employeeId: acc.employeeId,
       role: emp?.role ?? null, platformRole: acc.platformRole,
     };
+    if (twoFactorRequiredBy(db, acc) && !enrolled(db, acc.userId)) s.twoFactorSetupRequired = true;
+    return s;
   }
 
-  function sessionFrom(db: DemoDb): Session {
+  /** allowSetup: the 2FA functions stay reachable while a mandatory setup is pending. */
+  function sessionFrom(db: DemoDb, allowSetup = false): Session {
     const userId = storage.getItem(sessionKey);
     const acc = userId ? db.accounts.find((a) => a.userId === userId) : null;
     if (!acc) throw new AccessDeniedError("Bitte melde dich an.");
     const s = accountSession(db, acc);
+    if (s.twoFactorSetupRequired && !allowSetup) {
+      throw new AccessDeniedError("Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richte sie zuerst ein.");
+    }
     if (s.tenantId) {
       const tenant = db.tenants.find((t) => t.id === s.tenantId);
       const emp = db.employees.find((e) => e.id === s.employeeId);
@@ -548,15 +630,131 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           save(db);
         }
       }
+      if (enrolled(db, acc.userId)) {
+        storage.removeItem(sessionKey);
+        storage.setItem(pendingKey, JSON.stringify({ userId: acc.userId, expiresAt: Date.now() + 5 * 60_000, attempts: 0 }));
+        throw new TwoFactorRequiredError();
+      }
       storage.setItem(sessionKey, acc.userId);
       return accountSession(db, acc);
     },
+    async verifyTwoFactor(proof) {
+      let pending: { userId: string; expiresAt: number; attempts: number } | null = null;
+      try { pending = JSON.parse(storage.getItem(pendingKey) ?? "null"); } catch { pending = null; }
+      if (!pending || pending.expiresAt < Date.now() || pending.attempts >= 5) {
+        storage.removeItem(pendingKey);
+        throw new AccessDeniedError("Die Anmeldung ist abgelaufen. Bitte melde dich erneut mit E-Mail-Adresse und Passwort an.");
+      }
+      pending.attempts++;
+      storage.setItem(pendingKey, JSON.stringify(pending));
+      const db = load();
+      const acc = db.accounts.find((a) => a.userId === pending!.userId);
+      if (!acc) throw new AccessDeniedError("Bitte melde dich an.");
+      const r = checkProof(db, acc.userId, proof);
+      if (!r.ok) {
+        throw new Error(r.kind === "recovery"
+          ? "Der Wiederherstellungscode ist ungültig oder wurde bereits verwendet."
+          : "Der Code ist ungültig oder abgelaufen. Bitte den aktuellen Code aus der Authenticator-App eingeben.");
+      }
+      if (r.kind === "recovery") auditTwoFactor(db, acc, "two_factor.recovery_code_used", { remaining: r.remaining });
+      save(db);
+      storage.removeItem(pendingKey);
+      storage.setItem(sessionKey, acc.userId);
+      const s = accountSession(db, acc);
+      return r.remaining !== undefined ? { ...s, recoveryCodesRemaining: r.remaining } : s;
+    },
+    async demoTwoFactorCode() {
+      const db = load();
+      let userId = storage.getItem(sessionKey);
+      try { userId = (JSON.parse(storage.getItem(pendingKey) ?? "null") as { userId?: string } | null)?.userId ?? userId; } catch { /* ignore */ }
+      const f = userId ? factorOf(db, userId) : null;
+      if (!f) return null;
+      // The next code that is not yet used (replay protection), within the ±1 step window.
+      const now = timeStep(Date.now());
+      const step = Math.max(now, (f.lastUsedStep ?? -1) + 1);
+      return step <= now + 1 ? hotp(base32Decode(f.secret), step) : null;
+    },
+    async getTwoFactorStatus() {
+      const db = load();
+      const s = sessionFrom(db, true);
+      const acc = db.accounts.find((a) => a.userId === s.userId)!;
+      const f = factorOf(db, s.userId);
+      const requiredBy = twoFactorRequiredBy(db, acc);
+      return {
+        enabled: !!f?.enrolledAt, enrolledAt: f?.enrolledAt ?? null, pending: !!f && !f.enrolledAt,
+        required: requiredBy !== null, requiredBy, recoveryCodesRemaining: f?.enrolledAt ? f.recoveryCodes.filter((r) => !r.usedAt).length : 0,
+      };
+    },
+    async startTwoFactorSetup() {
+      const db = load();
+      const s = sessionFrom(db, true);
+      db.twoFactor ??= [];
+      const existing = factorOf(db, s.userId);
+      if (existing?.enrolledAt) throw new Error("Die Zwei-Faktor-Anmeldung ist bereits eingerichtet.");
+      const secret = base32Encode(randomBytes(TOTP_SECRET_BYTES));
+      db.twoFactor = db.twoFactor.filter((f) => f.userId !== s.userId);
+      db.twoFactor.push({ userId: s.userId, secret, createdAt: new Date().toISOString(), enrolledAt: null, lastUsedStep: null, recoveryCodes: [] });
+      save(db);
+      const issuer = "Stundenwerk Demo";
+      return { secret, otpauthUri: otpauthUri({ issuer, account: s.email, secret }), issuer, account: s.email };
+    },
+    async confirmTwoFactorSetup(code) {
+      const db = load();
+      const s = sessionFrom(db, true);
+      const f = factorOf(db, s.userId);
+      if (!f || f.enrolledAt) throw new Error("Bitte die Einrichtung neu starten.");
+      const c = normalizeTotpCode(code);
+      const step = c ? matchTotpStep(base32Decode(f.secret), c, Date.now()) : null;
+      if (step === null) throw new Error("Der Code stimmt nicht. Bitte prüfe die Uhrzeit des Smartphones und gib den aktuellen Code ein.");
+      f.enrolledAt = new Date().toISOString();
+      f.lastUsedStep = step;
+      f.recoveryCodes = newRecoveryCodes();
+      auditTwoFactor(db, db.accounts.find((a) => a.userId === s.userId)!, "two_factor.enabled", { enrolledAt: f.enrolledAt });
+      save(db);
+      return { recoveryCodes: f.recoveryCodes.map((r) => r.code) };
+    },
+    async disableTwoFactor(password, proof) {
+      const db = load();
+      const s = sessionFrom(db, true);
+      const acc = db.accounts.find((a) => a.userId === s.userId)!;
+      if (!enrolled(db, s.userId)) throw new Error("Die Zwei-Faktor-Anmeldung ist nicht eingerichtet.");
+      if (acc.password !== password || !checkProof(db, s.userId, proof).ok) throw new Error("Passwort oder Code ist falsch.");
+      db.twoFactor = (db.twoFactor ?? []).filter((f) => f.userId !== s.userId);
+      auditTwoFactor(db, acc, "two_factor.disabled", null);
+      save(db);
+      return { setupRequired: twoFactorRequiredBy(db, acc) !== null };
+    },
+    async regenerateRecoveryCodes(password, proof) {
+      const db = load();
+      const s = sessionFrom(db, true);
+      const acc = db.accounts.find((a) => a.userId === s.userId)!;
+      const f = factorOf(db, s.userId);
+      if (!f?.enrolledAt) throw new Error("Die Zwei-Faktor-Anmeldung ist nicht eingerichtet.");
+      if (acc.password !== password || !checkProof(db, s.userId, proof).ok) throw new Error("Passwort oder Code ist falsch.");
+      f.recoveryCodes = newRecoveryCodes();
+      auditTwoFactor(db, acc, "two_factor.recovery_codes_created", { count: f.recoveryCodes.length });
+      save(db);
+      return { recoveryCodes: f.recoveryCodes.map((r) => r.code) };
+    },
+    async setTwoFactorRequirement(tenantId, required) {
+      return tx((db, s) => {
+        assertManager(s, tenantId);
+        if (s.role !== "owner") throw new AccessDeniedError("Die Zwei-Faktor-Pflicht kann nur der Inhaber ändern.");
+        if (required && !enrolled(db, s.userId)) throw new Error("Bitte richte zuerst für dein eigenes Konto die Zwei-Faktor-Anmeldung ein.");
+        const t = tenantById(db, tenantId);
+        const before = { requireTwoFactorForManagers: !!t.requireTwoFactorForManagers };
+        t.requireTwoFactorForManagers = required;
+        addAudit(db, s, { tenantId, action: "tenant.two_factor_policy_updated", entity: "tenant", entityId: tenantId, before, after: { requireTwoFactorForManagers: required }, reason: null });
+        return t;
+      });
+    },
     async signOut() {
       storage.removeItem(sessionKey);
+      storage.removeItem(pendingKey);
     },
     async currentSession() {
       try {
-        return sessionFrom(load());
+        return sessionFrom(load(), true);
       } catch {
         return null;
       }

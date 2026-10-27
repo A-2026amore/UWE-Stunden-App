@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, SessionExpiredError, TenantSuspendedError, createApiRepository, type AuthFailure } from "./api";
+import { ApiError, SessionExpiredError, TenantSuspendedError, TwoFactorSetupRequiredError, createApiRepository, type AuthFailure } from "./api";
 import { isNetworkError } from "./sync";
-import { AccessDeniedError, ConflictError } from "./repository";
+import { AccessDeniedError, ConflictError, TwoFactorRequiredError } from "./repository";
 
 interface Call { url: string; init: RequestInit }
 
@@ -102,5 +102,33 @@ describe("createApiRepository (fetch mocked)", () => {
     const emp = await repo.inviteEmployee("t", { displayName: "X", personnelNumber: "1", email: "x@y.example", role: "employee" });
     expect(emp.invitation).toEqual({ expiresAt: "2026-11-01T10:00:00.000Z", delivery: "email" });
     expect(await repo.resendInvitation("e-1")).toEqual({ expiresAt: "2026-11-02T10:00:00.000Z", delivery: "none" });
+  });
+
+  it("two-factor: password step → TwoFactorRequiredError, verify without auth-failure callback, setup-required mapping", async () => {
+    const failures: AuthFailure[] = [];
+    const session = { userId: "u", email: "a@b.example", tenantId: null, employeeId: null, role: null, platformRole: "support" };
+    const f = fakeFetch([
+      { status: 200, body: { twoFactorRequired: true } },
+      { status: 401, body: err("invalid_code", "Der Code ist ungültig oder abgelaufen.") },
+      { status: 200, body: session },
+      { status: 403, body: err("two_factor_setup_required", "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben.") },
+      { status: 200, body: { recoveryCodes: ["AAAA-BBBB-CCCC-DDDD"] } },
+      { status: 200, body: { setupRequired: true } },
+    ]);
+    const repo = createApiRepository("", { fetch: f.fn, onAuthFailure: (x) => failures.push(x) });
+    await expect(repo.signIn("a@b.example", "pw")).rejects.toBeInstanceOf(TwoFactorRequiredError);
+    await expect(repo.verifyTwoFactor({ code: "000000" })).rejects.toMatchObject({ status: 401, code: "invalid_code" });
+    expect(failures).toEqual([]); // a wrong code is no expired session
+    expect(await repo.verifyTwoFactor({ recoveryCode: "AAAA-BBBB-CCCC-DDDD" })).toEqual(session);
+    await expect(repo.listTenants()).rejects.toBeInstanceOf(TwoFactorSetupRequiredError);
+    expect(failures.map((x) => x.kind)).toEqual(["two_factor_setup"]);
+    expect(await repo.confirmTwoFactorSetup("123456")).toEqual({ recoveryCodes: ["AAAA-BBBB-CCCC-DDDD"] });
+    expect(await repo.disableTwoFactor("pw", { code: "123456" })).toEqual({ setupRequired: true });
+    expect(f.calls.map((c) => `${c.init.method} ${c.url}`)).toEqual([
+      "POST /api/auth/login", "POST /api/auth/2fa/verify", "POST /api/auth/2fa/verify", "GET /api/platform/tenants",
+      "POST /api/auth/2fa/setup/confirm", "POST /api/auth/2fa/disable",
+    ]);
+    expect(f.calls[2]!.init.body).toBe(JSON.stringify({ recoveryCode: "AAAA-BBBB-CCCC-DDDD" }));
+    expect(f.calls[5]!.init.body).toBe(JSON.stringify({ password: "pw", code: "123456" }));
   });
 });

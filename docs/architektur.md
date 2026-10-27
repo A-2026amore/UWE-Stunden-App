@@ -18,7 +18,7 @@ UWE – Krankentransporte GmbH ist der erste Mandant, nicht das Produkt.
                                                                      │ HTTPS, Sitzungs-Cookie
                                                    ┌─────────────────▼─────────────────┐
                                                    │ Eigener Server in Deutschland      │
-                                                   │  • Node-API (Anmeldung, 2FA später)│
+                                                   │  • Node-API (Anmeldung inkl. 2FA)  │
                                                    │  • PostgreSQL 16 + Row Level Sec.  │
                                                    │  • Logos als Datenbank-/Dateispeicher│
                                                    │  • Backups (verschlüsselt, extern) │
@@ -64,7 +64,8 @@ entschieden. Folgen:
   `set local role` und `set local request.jwt.claims` (Benutzer-ID), damit die RLS-Richtlinien
   greifen. Die API selbst hat keine Rechte, RLS zu umgehen.
 - **Anmeldung:** E-Mail + Passwort (Hash mit scrypt), Sitzungen als HttpOnly-Cookie, Tokens nur
-  gehasht gespeichert, „Passwort vergessen“ per E-Mail-Link, Zwei-Faktor (TOTP) als nächste Stufe.
+  gehasht gespeichert, „Passwort vergessen“ per E-Mail-Link, optionale Zwei-Faktor-Anmeldung (TOTP; Pflicht für Plattformkonten,
+  per Mandant für Leitungskräfte), siehe `docs/security.md` Abschnitt 4a.
 - **Betrieb:** Updates, Backups, Firewall und Monitoring liegen bei uns (siehe `docs/betrieb.md`).
 - **Kosten:** ca. 5–10 €/Monat Server + ggf. Backup-Speicher; Vertrag schließt der Auftraggeber.
 

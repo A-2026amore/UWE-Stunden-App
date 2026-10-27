@@ -5,6 +5,11 @@
  * exactly as in production (node + type stripping), serving the api-mode build
  * via STATIC_DIR. Mails are captured from the development mailer's log output
  * (no SMTP configured → "DEV-E-Mail" lines with recipient, subject and text).
+ *
+ * Two-factor authentication: the API gets a fixed test key (TOTP_ENCRYPTION_KEY);
+ * signIn() completes the second step itself – it decrypts the stored secret
+ * with that key and computes the next unused code (RFC 6238), or runs the
+ * mandatory setup through the UI for platform accounts.
  */
 import { test as base, expect, type Page } from "@playwright/test";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
@@ -19,7 +24,14 @@ const ROOT = resolve(process.cwd());
 const g = globalThis as { __dirname?: string };
 g.__dirname ??= resolve(ROOT, "tests/db/support");
 const harness = await import("../../../db/support/harness.ts");
+const totp = await import("../../../../platform/src/security/totp.ts");
+const tf = await import("../../../../server/src/twoFactor.ts");
+const serverConfig = await import("../../../../server/src/config.ts");
 export const IDS = harness.IDS;
+
+/** Test-only key (32 bytes, base64) – never used anywhere else. */
+export const TOTP_TEST_KEY = "ZnVsbHN0YWNrLW51ci10ZXN0LXRvdHAtc2NobHVlc3M=";
+const twoFactorConfig = serverConfig.loadConfig({ DATABASE_URL: "postgres://unused", TOTP_ENCRYPTION_KEY: TOTP_TEST_KEY }).twoFactor;
 
 export const PASSWORD = "Fullstack-Test-Passwort-1";
 
@@ -31,6 +43,7 @@ export const USERS = {
   ownerB: "inhaberin@muster-pflegedienst.example",
   empB: "pflege1@muster-pflegedienst.example",
   superAdmin: "superadmin@plattform.example",
+  support: "support@plattform.example",
 } as const;
 
 export interface CapturedMail { to: string; subject: string; text: string }
@@ -85,7 +98,7 @@ export const test = base.extend<{ cspGuard: void }, { stack: Stack }>({
     const mails: CapturedMail[] = [];
     const child: ChildProcess = spawn(process.execPath, [...NODE_ARGS, "server/src/main.ts"], {
       cwd: ROOT,
-      env: { PATH: process.env.PATH, DATABASE_URL: databaseUrl, PORT: String(port), PUBLIC_ORIGIN: url, STATIC_DIR: dist },
+      env: { PATH: process.env.PATH, DATABASE_URL: databaseUrl, PORT: String(port), PUBLIC_ORIGIN: url, STATIC_DIR: dist, TOTP_ENCRYPTION_KEY: TOTP_TEST_KEY },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let buffer = "";
@@ -122,7 +135,9 @@ export const test = base.extend<{ cspGuard: void }, { stack: Stack }>({
       return { ...found!, link };
     };
 
+    currentDb = db.admin;
     await use({ url, db: db.admin, mails, mailTo, output });
+    currentDb = null;
 
     if (child.exitCode === null) {
       const exited = new Promise((r) => child.once("exit", r));
@@ -145,13 +160,91 @@ export const test = base.extend<{ cspGuard: void }, { stack: Stack }>({
 
 export { expect };
 
+// ------------------------------------------------------------------ two-factor helpers
+
+let currentDb: pg.Client | null = null;
+
+export const CODE_LABEL = "Bestätigungscode aus der Authenticator-App";
+
+interface FactorRow { user_id: string; secret_ciphertext: string | null; enrolled: boolean; last_used_step: string | null; required_by: string | null }
+
+async function factorOf(email: string): Promise<FactorRow> {
+  if (!currentDb) throw new Error("stack fixture not active");
+  const r = await currentDb.query<FactorRow>(
+    `select u.id as user_id, f.secret_ciphertext, f.enrolled_at is not null as enrolled, f.last_used_step,
+            auth.two_factor_requirement(u.id) as required_by
+       from auth.users u left join auth.totp_factors f on f.user_id = u.id where u.email = $1`, [email]);
+  if (!r.rows[0]) throw new Error(`unknown user ${email}`);
+  return r.rows[0];
+}
+
+/** TOTP code for a base32 secret at a step offset from now. */
+export function codeFor(secret: string, offsetSteps = 0): string {
+  return totp.hotp(totp.base32Decode(secret), totp.timeStep(Date.now()) + offsetSteps, 6, tf.nodeHmacSha1);
+}
+
+/**
+ * Next code the server accepts for an enrolled account: decrypts the stored
+ * secret with the test key, skips steps that were already used (replay
+ * protection) and waits for the next 30-second step if necessary.
+ */
+export async function nextCode(email: string): Promise<string> {
+  for (let i = 0; i < 40; i++) {
+    const f = await factorOf(email);
+    if (!f.enrolled || !f.secret_ciphertext) throw new Error(`${email} has no 2FA`);
+    const { secret } = tf.decryptSecret(twoFactorConfig, f.user_id, f.secret_ciphertext);
+    const now = totp.timeStep(Date.now());
+    const step = Math.max(now, f.last_used_step === null ? 0 : Number(f.last_used_step) + 1);
+    if (step <= now + 1) return totp.hotp(secret, step, 6, tf.nodeHmacSha1);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error("no unused TOTP step");
+}
+
+/** Setup form (settings card or mandatory screen): reads the secret, confirms with a code, acknowledges the recovery codes. */
+export async function completeTwoFactorSetup(page: Page): Promise<{ secret: string; recoveryCodes: string[] }> {
+  const secretBox = page.getByTestId("totp-secret");
+  await expect(secretBox).toBeVisible();
+  const secret = (await secretBox.innerText()).replace(/\s/g, "");
+  await page.getByLabel(CODE_LABEL).fill(codeFor(secret));
+  await page.getByRole("button", { name: "Bestätigen und aktivieren" }).click();
+  const list = page.getByRole("list", { name: "Wiederherstellungscodes" });
+  await expect(list.getByRole("listitem")).toHaveCount(10);
+  const recoveryCodes = (await list.getByRole("listitem").allInnerTexts()).map((x) => x.trim());
+  await page.getByLabel("Ich habe die Wiederherstellungscodes sicher gespeichert.").check();
+  await page.getByRole("button", { name: "Fertig" }).click();
+  return { secret, recoveryCodes };
+}
+
 // ------------------------------------------------------------------ UI helpers
 
+/**
+ * Signs in through the login form. Accounts with 2FA get the code step filled
+ * automatically; accounts that must set up 2FA (platform staff, managers of a
+ * tenant that requires it) are enrolled through the setup screen.
+ */
 export async function signIn(page: Page, path: "/app/" | "/chef/" | "/admin/", email: string, password = PASSWORD): Promise<void> {
+  const before = currentDb ? await factorOf(email).catch(() => null) : null;
   await page.goto(path);
   await page.getByLabel("E-Mail-Adresse").fill(email);
   await page.getByLabel("Passwort", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Anmelden", exact: true }).click();
+  if (!before) return;
+  const failed = page.getByRole("alert").filter({ hasText: "E-Mail-Adresse oder Passwort ist falsch." });
+  if (before.enrolled) {
+    const field = page.getByLabel(CODE_LABEL);
+    await expect(field.or(failed)).toBeVisible();
+    if (await failed.isVisible()) return;
+    await field.fill(await nextCode(email));
+    await page.getByRole("button", { name: "Bestätigen", exact: true }).click();
+    await expect(field).toHaveCount(0);
+  } else if (before.required_by) {
+    const gate = page.getByRole("heading", { level: 1, name: "Zwei-Faktor-Anmeldung einrichten" });
+    await expect(gate.or(failed)).toBeVisible();
+    if (await failed.isVisible()) return;
+    await completeTwoFactorSetup(page);
+    await expect(gate).toHaveCount(0);
+  }
 }
 
 /** Hash navigation inside the loaded app (no reload). */

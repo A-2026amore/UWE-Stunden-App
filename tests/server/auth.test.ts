@@ -57,7 +57,7 @@ describe("login, session, logout", () => {
   it("platform operators get platformRole and no tenant", async () => {
     const r = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.superAdmin, password: PASSWORD } });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ platformRole: "super_admin", tenantId: null, employeeId: null, role: null });
+    expect(r.body).toMatchObject({ platformRole: "super_admin", tenantId: null, employeeId: null, role: null, twoFactorSetupRequired: true });
   });
 
   it("wrong password and unknown e-mail give the same generic 401", async () => {

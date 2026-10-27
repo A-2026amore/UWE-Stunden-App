@@ -2,13 +2,14 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { Branding } from "../../core/types";
-import type { Session } from "../../data/repository";
+import { TwoFactorRequiredError, type Session } from "../../data/repository";
 import { DEMO_LOGINS, DEMO_PASSWORD } from "../../data/demo";
 import {
   Alert, Button, Card, InputField, PRODUCT_NAME, PRODUCT_NAME_NOTE, resolveAsset,
 } from "../../design";
 import { IS_DEMO, getRepository, type AppArea } from "./repo";
 import { errorText } from "./hooks";
+import { RecoveryCodeUsedNotice, TwoFactorLoginStep } from "./twoFactor";
 
 export function ProductMark({ compact }: { compact?: boolean }) {
   return (
@@ -58,7 +59,16 @@ export function LoginScreen({ area, title, subtitle, onSignedIn, check, notice, 
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"login" | "reset" | "resetSent">("login");
+  const [mode, setMode] = useState<"login" | "code" | "recoveryUsed" | "reset" | "resetSent">("login");
+  const [signedIn, setSignedIn] = useState<Session | null>(null);
+
+  /** Area check, then either straight in or – after a recovery code – a notice first. */
+  const finish = async (s: Session) => {
+    const problem = check(s);
+    if (problem) { await repo.signOut(); setMode("login"); setError(problem); return; }
+    if (s.recoveryCodesRemaining !== undefined) { setSignedIn(s); setMode("recoveryUsed"); return; }
+    onSignedIn(s);
+  };
 
   const submit = async (e: Event) => {
     e.preventDefault();
@@ -66,11 +76,9 @@ export function LoginScreen({ area, title, subtitle, onSignedIn, check, notice, 
     if (!email.trim() || !password) { setError("Bitte E-Mail-Adresse und Passwort eingeben."); return; }
     setBusy(true);
     try {
-      const s = await repo.signIn(email, password);
-      const problem = check(s);
-      if (problem) { await repo.signOut(); setError(problem); return; }
-      onSignedIn(s);
+      await finish(await repo.signIn(email, password));
     } catch (err) {
+      if (err instanceof TwoFactorRequiredError) { setPassword(""); setMode("code"); return; }
       setError(errorText(err));
     } finally {
       setBusy(false);
@@ -107,6 +115,13 @@ export function LoginScreen({ area, title, subtitle, onSignedIn, check, notice, 
               <Button type="submit" block busy={busy}>Anmelden</Button>
               <Button variant="ghost" onClick={() => { setMode("reset"); setError(null); }}>Passwort vergessen?</Button>
             </form>
+          )}
+          {mode === "code" && (
+            <TwoFactorLoginStep repo={repo} area={area} onVerified={(s) => void finish(s)}
+              onCancel={() => { void repo.signOut().catch(() => undefined); setMode("login"); setError(null); }} />
+          )}
+          {mode === "recoveryUsed" && signedIn && (
+            <RecoveryCodeUsedNotice remaining={signedIn.recoveryCodesRemaining ?? 0} onContinue={() => onSignedIn(signedIn)} />
           )}
           {mode === "reset" && (
             <form class="stack" onSubmit={reset} noValidate>

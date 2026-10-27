@@ -9,7 +9,8 @@ export type ErrorCode =
   | "invalid" | "unauthenticated" | "forbidden" | "not_found" | "method_not_allowed"
   | "version_conflict" | "overlap" | "duplicate" | "invalid_state" | "ambiguous"
   | "locked" | "payload_too_large" | "unsupported_media_type" | "rate_limited"
-  | "break_rule" | "existing_account" | "tenant_suspended" | "internal";
+  | "break_rule" | "existing_account" | "tenant_suspended" | "internal"
+  | "invalid_code" | "two_factor_expired" | "two_factor_setup_required";
 
 export class HttpError extends Error {
   readonly status: number;

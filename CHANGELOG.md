@@ -21,7 +21,15 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Produktionsmodus (`npm run build:api`): Apps arbeiten gegen die eigene API; Seiten „Passwort neu setzen“
   und „Einladung annehmen“; Service Worker nur für die Mitarbeiter-App (Offline-Start); Gesamttests mit
   echter Datenbank.
-- Tests: 231 Unit-, 175 Datenbank-/API- und 120 Browsertests (Chromium Desktop, Android-Emulation).
+- Zwei-Faktor-Anmeldung (TOTP nach RFC 6238, Authenticator-App): freiwillig für alle Konten, Pflicht für
+  Plattformkonten (`super_admin`, `support`) und – wenn der Inhaber es einschaltet – für Inhaber und Vorgesetzte
+  eines Mandanten. Anmeldung in zwei Schritten, Einrichtung mit QR-Code (eigener Encoder) in den Einstellungen
+  aller drei Bereiche, 10 Wiederherstellungscodes (Anzeige und Textdatei), Deaktivieren nur mit Passwort und Code.
+  Geheimnis AES-256-GCM-verschlüsselt (`TOTP_ENCRYPTION_KEY`, Rotation über `TOTP_ENCRYPTION_KEY_PREVIOUS`),
+  Replay-Schutz, Rate-Limits, Audit-Einträge. Migration `0009_two_factor.sql` (nur additiv).
+  Demo: Geheimnis im Browser, Schaltfläche „Demo: aktuellen Code einsetzen“.
+- Tests: 284 Unit-, 209 Datenbank-/API-, 122 Browsertests (Demo-Build und Alt-App, Chromium Desktop und
+  Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Bekannte Fehler der Alt-App (dokumentiert, nicht geändert)
 - Überschneidung über Mitternacht wird nicht erkannt.

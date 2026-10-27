@@ -86,7 +86,75 @@ API-Endpunkte bzw. `pgaudit` auf dem Server.
   Fällen gleich antworten (keine Kontenaufzählung).
 - `auth.*` ist nur für `app_auth` und SECURITY-DEFINER-Funktionen zugänglich, nie für `app_user`.
 - Offen/zu ergänzen in der API: Rate-Limiting/Sperre bei Fehlversuchen, HttpOnly-/Secure-/SameSite-Cookies,
-  CSRF-Schutz, Zwei-Faktor (TOTP) als nächste Stufe.
+  CSRF-Schutz. Zwei-Faktor-Anmeldung (TOTP): umgesetzt, siehe Abschnitt 4a.
+
+## 4a. Zwei-Faktor-Anmeldung (TOTP)
+
+**Verfahren:** TOTP nach RFC 6238 (HMAC-SHA-1, 6 Ziffern, 30 Sekunden, Toleranz ±1 Zeitschritt),
+kompatibel mit üblichen Authenticator-Apps. Umsetzung ohne Fremdbibliothek: `platform/src/security/totp.ts`
+(Base32, HOTP/TOTP, Wiederherstellungscodes; geprüft gegen die Testvektoren aus RFC 4648, RFC 4226 und
+RFC 6238), QR-Code-Erzeugung `platform/src/security/qrcode.ts` (Byte-Modus, alle Versionen und Fehlerkorrekturstufen;
+die Unit-Tests lesen die Matrix zurück und prüfen die Reed-Solomon-Daten). Der Server rechnet mit Node `crypto` (`createHmac`).
+
+**Wer muss?**
+
+| Konto | Zwei-Faktor |
+|---|---|
+| `super_admin`, `support` (Plattform) | **immer Pflicht**. Anmeldung mit Passwort ist möglich, danach ist nur die Einrichtung erreichbar (alle anderen Endpunkte: 403 `two_factor_setup_required`). |
+| Inhaber, Vorgesetzte | Pflicht, wenn der Inhaber im Chef-Portal „Zwei-Faktor-Pflicht für Leitungskräfte“ einschaltet (`tenants.require_two_factor_for_managers`); gilt nur für aktive Mitgliedschaften in aktiven Mandanten |
+| alle anderen | freiwillig (Einstellungen → „Zwei-Faktor-Anmeldung“) |
+
+Die Mandanten-Einstellung darf nur der Inhaber ändern (Trigger `tenants_two_factor_guard`, auch nicht die
+Plattformverwaltung); die API verlangt, dass der Inhaber vorher für sich selbst 2FA eingerichtet hat (sonst 409),
+damit er sich nicht aussperrt.
+
+**Speicherung (Migration `0009_two_factor.sql`):**
+- `auth.totp_factors`: Geheimnis **nur verschlüsselt** (AES-256-GCM, Schlüssel `TOTP_ENCRYPTION_KEY` aus der
+  Umgebung der API, nie in der DB). Format `v1.<Schlüssel-ID>.<IV>.<Tag>.<Chiffrat>`; zusätzliche authentifizierte
+  Daten `totp:<user_id>` – ein Chiffrat lässt sich nicht auf ein anderes Konto kopieren. Ein CHECK lehnt alles ab,
+  was nicht so aussieht (z. B. ein Klartext-Geheimnis).
+- `last_used_step`: zuletzt akzeptierter Zeitschritt. Ein Code wird nur angenommen, wenn sein Schritt **größer** ist
+  (kein zweites Mal derselbe Code, auch nicht innerhalb der 90 s Toleranz). Die Zeile wird bei der Prüfung mit
+  `FOR UPDATE` gesperrt; ein Trigger verhindert, dass der Wert zurückgesetzt wird.
+- `auth.totp_recovery_codes`: 10 Wiederherstellungscodes (16 Zeichen aus 30 eindeutigen Zeichen ≈ 78 Bit,
+  `XXXX-XXXX-XXXX-XXXX`), gespeichert nur als SHA-256 über `<user_id>:<code>`, jeder Code einmal verwendbar.
+  Neue Codes ersetzen alle alten.
+- `auth.two_factor_challenges`: ausstehende Anmeldungen (siehe unten), nur Token-Hash.
+- Alle drei Tabellen: RLS aktiv, Zugriff nur `app_auth` (und `app_service` für Wartung); `app_user`/`app_anon`
+  haben keinerlei Rechte.
+- Audit-Log (`entity = 'user'`, je Mandant der Person; Plattformkonten ohne Mandant): `two_factor.enabled`,
+  `two_factor.disabled`, `two_factor.recovery_codes_created`, `two_factor.recovery_code_used` (mit Restanzahl).
+  Inhaber/Vorgesetzte sehen die Einträge ihres Mandanten.
+
+**Anmeldung in zwei Schritten:**
+1. `POST /api/auth/login` mit richtigem Passwort und eingerichteter 2FA → **noch keine Sitzung**, nur ein
+   HttpOnly-Cookie `__Host-tfa` (lokal `tfa`, `SameSite=Strict`, 5 Minuten). Das Token wird nur als Hash gespeichert.
+2. `POST /api/auth/2fa/verify` mit Code oder Wiederherstellungscode → Sitzung. Pro ausstehender Anmeldung
+   höchstens 5 Versuche, danach neu mit Passwort anmelden; der zweite Schritt ist nur einmal verwendbar.
+
+**Schutzmaßnahmen:**
+- Rate-Limits: falsche Codes je Konto (`RATE_LIMIT_2FA_PER_ACCOUNT`, Standard 5 je Zeitfenster) und je IP
+  (`RATE_LIMIT_2FA_PER_IP`, Standard 50); Antwort 429 mit `Retry-After`.
+- Keine Kontenaufzählung: Falsches Passwort ergibt dieselbe Antwort wie bisher, egal ob 2FA eingerichtet ist;
+  der zweite Schritt wird nur nach richtigem Passwort angeboten.
+- Vergleiche in konstanter Zeit (`timingSafeEqual`), alle Kandidaten des Toleranzfensters werden berechnet.
+- Aktivieren beendet alle **anderen** Sitzungen des Kontos. Deaktivieren und neue Wiederherstellungscodes
+  verlangen Passwort **und** Code.
+- Das Geheimnis wird nur einmal bei der Einrichtung angezeigt (QR-Code und Text); die Wiederherstellungscodes
+  nur einmal nach der Bestätigung (Anzeige und Download als `wiederherstellungscodes.txt`).
+
+**Schlüssel und Rotation:** siehe `docs/betrieb.md` Abschnitt 6.1. Ohne den Schlüssel sind die gespeicherten
+Geheimnisse wertlos – er muss **getrennt von den Datenbank-Backups** gesichert werden.
+
+**Demo-Modus (nur Browser, keine echten Daten):** Die Demo-Datenbank im Browser speichert Geheimnis und
+Wiederherstellungscodes im Klartext im `localStorage` und schreibt die Plattform-Pflicht für `super_admin`/`support`
+**nicht** vor (die Mandanten-Pflicht schon). Zum Ausprobieren ohne Smartphone zeigt der Bestätigungsschritt der
+Demo die Schaltfläche „Demo: aktuellen Code einsetzen“ (intern `demoTwoFactorCode()`); alternativ das angezeigte
+Geheimnis in eine Authenticator-App eintragen oder z. B. `oathtool --totp -b <GEHEIMNIS>` verwenden.
+
+**Offen:** Zurücksetzen bei verlorenem Smartphone **und** verlorenen Wiederherstellungscodes nur durch den Betrieb
+(`docs/betrieb.md` Abschnitt 6.1), noch keine Oberfläche dafür; „Gerät merken“ gibt es nicht; die Einrichtung
+selbst verlangt (bei bestehender Sitzung) kein erneutes Passwort.
 
 ## 5. Integrität und Nachvollziehbarkeit
 

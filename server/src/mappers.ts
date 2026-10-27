@@ -58,6 +58,7 @@ export function toTenant(r: Row): Tenant {
     contact: r.contact as Tenant["contact"],
     settings: r.settings as Tenant["settings"],
     isDemo: Boolean(r.is_demo),
+    requireTwoFactorForManagers: Boolean(r.require_two_factor_for_managers),
   };
 }
 

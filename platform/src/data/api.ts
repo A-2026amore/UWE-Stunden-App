@@ -4,6 +4,10 @@
  * (`credentials: "include"`).
  *
  * Error mapping:
+ *  - signIn answered with {twoFactorRequired: true} → TwoFactorRequiredError
+ *    (continue with verifyTwoFactor; the pending sign-in is an HttpOnly cookie)
+ *  - 403 with code "two_factor_setup_required" → TwoFactorSetupRequiredError
+ *    (an AccessDeniedError; mandatory 2FA not set up yet)
  *  - 401 outside of signIn → SessionExpiredError (an AccessDeniedError)
  *  - 403 with code "tenant_suspended" → TenantSuspendedError (an AccessDeniedError)
  *  - other 403 → AccessDeniedError
@@ -23,8 +27,9 @@ import type {
   MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID,
 } from "../core/types";
 import {
-  AccessDeniedError, ConflictError,
-  type NewTimeEntry, type Repository, type Session, type TenantOverview,
+  AccessDeniedError, ConflictError, TwoFactorRequiredError,
+  type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type TwoFactorSetup, type TwoFactorStatus,
 } from "./repository";
 
 export class ApiError extends Error {
@@ -58,7 +63,15 @@ export class TenantSuspendedError extends AccessDeniedError {
   }
 }
 
-export type AuthFailure = { kind: "expired" | "suspended"; message: string };
+/** 403 two_factor_setup_required: the account must set up two-factor authentication first. */
+export class TwoFactorSetupRequiredError extends AccessDeniedError {
+  constructor(message = "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richte sie zuerst ein.") {
+    super(message);
+    this.name = "TwoFactorSetupRequiredError";
+  }
+}
+
+export type AuthFailure = { kind: "expired" | "suspended" | "two_factor_setup"; message: string };
 
 /** Returned by inviteEmployee / resendInvitation when an invitation was created. */
 export interface InvitationInfo {
@@ -82,7 +95,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository {
+export interface ApiRepository extends Repository, TwoFactorApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -146,6 +159,11 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
       options.onAuthFailure?.({ kind: "expired", message: e.message });
       throw e;
     }
+    if (res.status === 403 && code === "two_factor_setup_required") {
+      const e = new TwoFactorSetupRequiredError(err?.message);
+      options.onAuthFailure?.({ kind: "two_factor_setup", message: e.message });
+      throw e;
+    }
     if (res.status === 403 && code === "tenant_suspended") {
       const e = new TenantSuspendedError(err?.message);
       if (!opts.signIn) options.onAuthFailure?.({ kind: "suspended", message: e.message });
@@ -168,7 +186,30 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
   return {
     // ---- authentication
     async signIn(email, password) {
-      return request<Session>("POST", "/api/auth/login", { email, password }, { signIn: true });
+      const r = await request<Session | { twoFactorRequired: true }>("POST", "/api/auth/login", { email, password }, { signIn: true });
+      if (r && "twoFactorRequired" in r && r.twoFactorRequired) throw new TwoFactorRequiredError();
+      return r as Session;
+    },
+    verifyTwoFactor(proof: TwoFactorProof) {
+      return request<Session>("POST", "/api/auth/2fa/verify", proof, { signIn: true });
+    },
+    getTwoFactorStatus() {
+      return request<TwoFactorStatus>("GET", "/api/auth/2fa");
+    },
+    startTwoFactorSetup() {
+      return request<TwoFactorSetup>("POST", "/api/auth/2fa/setup", {});
+    },
+    confirmTwoFactorSetup(code) {
+      return request<{ recoveryCodes: string[] }>("POST", "/api/auth/2fa/setup/confirm", { code });
+    },
+    disableTwoFactor(password, proof: TwoFactorProof) {
+      return request<{ setupRequired: boolean }>("POST", "/api/auth/2fa/disable", { password, ...proof });
+    },
+    regenerateRecoveryCodes(password, proof: TwoFactorProof) {
+      return request<{ recoveryCodes: string[] }>("POST", "/api/auth/2fa/recovery-codes", { password, ...proof });
+    },
+    setTwoFactorRequirement(tenantId, required) {
+      return request<Tenant>("PUT", `/api/tenants/${enc(tenantId)}/two-factor-policy`, { requireTwoFactorForManagers: required });
     },
     async signOut() {
       entryOwner.clear();

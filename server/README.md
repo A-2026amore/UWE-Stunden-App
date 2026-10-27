@@ -22,6 +22,7 @@ Browser ──HTTPS──▶ Caddy ──▶ Node-API (127.0.0.1:3000) ──▶
 | `src/app.ts` | Anmeldung, Sitzungen, Passwort-Reset, Einladungen, Rate-Limits |
 | `src/routes.ts` | Fach-Endpunkte für alle Repository-Methoden, Pausenprüfung mit `platform/src/core` |
 | `src/auth.ts` | scrypt-Passwörter, Sitzungs-Token (nur SHA-256-Hash in der DB) |
+| `src/twoFactor.ts` | Zwei-Faktor-Anmeldung (TOTP): Verschlüsselung des Geheimnisses, Code-Prüfung mit Replay-Schutz, Wiederherstellungscodes, zweiter Anmeldeschritt |
 | `src/static.ts` | Optional: Auslieferung von `platform/dist` (`STATIC_DIR`) mit eigener CSP |
 | `src/mailer.ts` | E-Mail (minimaler SMTP-Client; ohne SMTP: Ausgabe ins Log nur in Entwicklung) |
 | `src/cli.ts` | Betriebsbefehl `set-password` |
@@ -72,6 +73,10 @@ Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **
 | `RATE_LIMIT_LOGIN_PER_IP` | – | `100` | Anmeldeversuche je IP. |
 | `RATE_LIMIT_RESET_PER_ACCOUNT` | – | `3` | Reset-Anfragen je IP + E-Mail. |
 | `RATE_LIMIT_TOKEN_PER_IP` | – | `20` | Einlösen von Reset-/Einladungs-Links je IP. |
+| `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Zwei-Faktor-Codes je Konto bzw. IP. |
+| `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel | 32 Byte (Base64 oder 64 Hex), verschlüsselt die TOTP-Geheimnisse. Erzeugen: `openssl rand -base64 32`. Getrennt von DB-Backups sichern; Rotation: `docs/betrieb.md` Abschnitt 6.1. |
+| `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel (kommagetrennt), nur zum Entschlüsseln während einer Rotation. |
+| `TOTP_ISSUER` | – | `Stundenwerk` | Anzeigename in der Authenticator-App. |
 
 Ein `SESSION_SECRET` wird nicht benötigt: Sitzungs-Token sind 32 zufällige Bytes, die Datenbank
 speichert nur ihren SHA-256-Hash.

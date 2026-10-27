@@ -55,6 +55,7 @@ Datenbanktests starten automatisch einen temporären lokalen PostgreSQL-16-Serve
 |---|---|
 | Mitarbeiter-Handy verloren (Alt-App) | Backup-Datei des Mitarbeiters in der Alt-App wiederherstellen |
 | Mitarbeiter-Handy verloren (Plattform) | Anmeldung auf neuem Gerät, Daten kommen vom Server; nicht synchronisierte Offline-Einträge des alten Geräts sind verloren |
+| Handy mit Authenticator-App verloren | Anmeldung mit einem Wiederherstellungscode, dann in den Einstellungen 2FA neu einrichten; ohne Codes: Zurücksetzen durch den Betrieb (Abschnitt 6.1) |
 | Versehentlich gelöschter Eintrag | Soft Delete: Chef/Betreiber stellt aus `time_entry_revisions` wieder her (mit Begründung, protokolliert) |
 | Datenbankfehler | Wiederherstellung aus Tages-Backup bzw. Point-in-Time-Recovery (WAL-Archiv); danach Geräte synchronisieren lassen, Offline-Einträge werden idempotent nachgeladen |
 | Fehlerhafte Plattform-Version | Vorherige Version des Builds erneut ausliefern; Datenbankmigrationen sind nur additiv |
@@ -76,6 +77,51 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 - Ohne SMTP werden E-Mails nur in der Entwicklung ins Log geschrieben; in Produktion nie.
 - Rate-Limits liegen im Prozessspeicher: **eine** API-Instanz betreiben (oder gemeinsamen Speicher ergänzen).
 - Tests: `npx vitest run --project db --no-file-parallelism tests/server`.
+
+### 6.1 Zwei-Faktor-Anmeldung: Schlüssel, Rotation, Notfall
+
+| Variable | Pflicht | Standard | Bedeutung |
+|---|---|---|---|
+| `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel (nur ohne `NODE_ENV=production`) | 32 Byte, Base64 oder 64 Hex-Zeichen. Verschlüsselt die TOTP-Geheimnisse (AES-256-GCM). Ohne Schlüssel startet die API in Produktion nicht. |
+| `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel, kommagetrennt – nur zum Entschlüsseln während einer Rotation. |
+| `TOTP_ISSUER` | – | `Stundenwerk` | Name in der Authenticator-App (1–40 Zeichen, kein Doppelpunkt). |
+| `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Codes je Konto bzw. IP im Zeitfenster `RATE_LIMIT_WINDOW_MINUTES`. |
+
+**Schlüssel erzeugen** (einmalig, nur in `/etc/uwe-zeit/api.env`, Rechte 600, nie ins Repository):
+
+```bash
+openssl rand -base64 32
+```
+
+**Sichern:** Der Schlüssel gehört **nicht** in dasselbe Backup wie die Datenbank (sonst schützt die
+Verschlüsselung nicht), aber er muss gesichert sein – z. B. im Passwort-Manager des Auftraggebers.
+Geht er verloren, können sich alle Konten mit 2FA nur noch mit Wiederherstellungscodes anmelden und
+müssen die Zwei-Faktor-Anmeldung danach neu einrichten.
+
+**Rotation** (z. B. jährlich oder bei Verdacht auf Offenlegung):
+1. Neuen Schlüssel erzeugen. In `api.env`: `TOTP_ENCRYPTION_KEY=<neu>`,
+   `TOTP_ENCRYPTION_KEY_PREVIOUS=<alt>`. Dienst neu starten.
+2. Neue Einrichtungen nutzen sofort den neuen Schlüssel; bestehende Geheimnisse werden bei der nächsten
+   erfolgreichen Code-Eingabe automatisch neu verschlüsselt.
+3. Fortschritt prüfen (Schlüssel-ID = zweiter Teil des Chiffrats):
+   `select split_part(secret_ciphertext, '.', 2) as key_id, count(*) from auth.totp_factors group by 1;`
+4. Wenn keine Zeile mehr die alte ID trägt (oder nach einer festgelegten Frist), `TOTP_ENCRYPTION_KEY_PREVIOUS`
+   entfernen und neu starten. Konten, deren Geheimnis dann noch mit dem alten Schlüssel verschlüsselt ist,
+   können sich nur mit einem Wiederherstellungscode anmelden bzw. müssen vom Betrieb zurückgesetzt werden (unten).
+   Bei Offenlegung des alten Schlüssels: Betroffene Konten zurücksetzen und neu einrichten lassen.
+
+**Smartphone und Wiederherstellungscodes verloren** (Identität vorher außerhalb der App prüfen, z. B. persönlich
+oder Rückruf über die bekannte Nummer; eine Oberfläche dafür gibt es noch nicht). Wartung als Datenbank-Administrator:
+
+```sql
+-- löscht Geheimnis und Wiederherstellungscodes (Kaskade); Audit-Eintrag two_factor.disabled entsteht automatisch
+delete from auth.totp_factors where user_id = (select id from auth.users where email = 'person@firma.example');
+-- vorsichtshalber alle Sitzungen beenden
+update auth.sessions set revoked_at = now()
+ where user_id = (select id from auth.users where email = 'person@firma.example') and revoked_at is null;
+```
+
+Danach meldet sich die Person nur mit Passwort an; ist 2FA für sie Pflicht, sieht sie direkt die Neueinrichtung.
 
 ## 7. Plattform mit echtem Server (API-Modus)
 
@@ -165,9 +211,11 @@ Möglich (siehe `server/README.md`, Caddy-Beispiel ohne `STATIC_DIR`). Dann müs
 
 1. Migrationen einspielen (ohne `db/seed.sql`), `app_api`-Passwort setzen (`server/README.md`).
 2. `VITE_DATA_MODE=api npm run build`.
-3. `api.env`: `NODE_ENV=production`, `DATABASE_URL`, `PUBLIC_ORIGIN=https://…`, `TRUST_PROXY=1`, `STATIC_DIR`, `SMTP_*`.
+3. `api.env`: `NODE_ENV=production`, `DATABASE_URL`, `PUBLIC_ORIGIN=https://…`, `TRUST_PROXY=1`, `STATIC_DIR`, `SMTP_*`,
+   `TOTP_ENCRYPTION_KEY` (Abschnitt 6.1, getrennt sichern).
 4. Dienst neu starten, `curl -fsS https://zeit.example.de/api/health` → `{"ok":true}`.
-5. Ersten Super-Admin anlegen, Passwort mit `server/src/cli.ts set-password` setzen, im Admin-Portal anmelden.
+5. Ersten Super-Admin anlegen, Passwort mit `server/src/cli.ts set-password` setzen, im Admin-Portal anmelden und
+   die (für Plattformkonten vorgeschriebene) Zwei-Faktor-Anmeldung einrichten; Wiederherstellungscodes sicher ablegen.
 6. Testmandant anlegen, Einladung an eine eigene Test-Adresse schicken, Link öffnen, Passwort setzen, anmelden.
 
 Entwicklung mit Hot Reload gegen eine lokale API (Standard-`PUBLIC_ORIGIN` der API ist `http://localhost:5173`):

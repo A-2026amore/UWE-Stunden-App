@@ -11,7 +11,7 @@
 import type { AuditEvent, UUID } from "../../core/types";
 import { createApiRepository, type ApiRepository, type AuthFailure, type SupportGrantInfo } from "../../data/api";
 import { createDemoRepository, memoryStorage, type DemoRepository, type KeyValueStorage } from "../../data/demo";
-import type { Repository } from "../../data/repository";
+import type { Repository, TwoFactorApi } from "../../data/repository";
 
 export type AppArea = "app" | "chef" | "admin";
 export type DataMode = "demo" | "api";
@@ -22,8 +22,8 @@ export const IS_DEMO = DATA_MODE === "demo";
 /** API base URL without trailing slash ("" = same origin). */
 export const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/+$/, "");
 
-/** What the three apps use: the repository contract plus support-grant and platform-audit helpers (demo and API). */
-export interface AreaRepository extends Repository {
+/** What the three apps use: the repository contract plus 2FA, support-grant and platform-audit helpers (demo and API). */
+export interface AreaRepository extends Repository, TwoFactorApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number): Promise<SupportGrantInfo | null>;
@@ -80,4 +80,9 @@ export function getApiRepository(): ApiRepository {
 /** Repository of an app area (demo: own demo login per area; api: shared API client). */
 export function getRepository(area: AppArea): AreaRepository {
   return DATA_MODE === "api" ? getApiRepository() : getDemoRepository(area);
+}
+
+/** Demo build only: the current 2FA code of the account signing in (no authenticator app needed). */
+export async function demoTwoFactorCode(area: AppArea): Promise<string | null> {
+  return IS_DEMO ? getDemoRepository(area).demoTwoFactorCode() : null;
 }

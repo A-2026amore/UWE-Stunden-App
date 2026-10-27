@@ -42,6 +42,63 @@ export interface Session {
   role: TenantRole | null;
   /** Set for platform operators. */
   platformRole: "super_admin" | "support" | null;
+  /**
+   * Two-factor authentication is mandatory for this account (platform staff,
+   * or managers/owners of a tenant that requires it) but not set up yet: the
+   * apps show only the setup until it is done.
+   */
+  twoFactorSetupRequired?: boolean;
+  /** Set after a sign-in with a recovery code: unused codes left. */
+  recoveryCodesRemaining?: number;
+}
+
+/**
+ * Thrown by signIn when the password was correct and the account uses
+ * two-factor authentication: continue with verifyTwoFactor (code from the
+ * authenticator app or a recovery code).
+ */
+export class TwoFactorRequiredError extends Error {
+  constructor(message = "Bitte gib den Bestätigungscode aus der Authenticator-App ein.") {
+    super(message);
+    this.name = "TwoFactorRequiredError";
+  }
+}
+
+export type TwoFactorProof = { code: string } | { recoveryCode: string };
+
+export interface TwoFactorStatus {
+  enabled: boolean;
+  enrolledAt: string | null;
+  /** A setup was started but not confirmed. */
+  pending: boolean;
+  /** Mandatory for this account – disabling is possible only to set it up again. */
+  required: boolean;
+  requiredBy: "platform" | "tenant" | null;
+  recoveryCodesRemaining: number;
+}
+
+export interface TwoFactorSetup {
+  /** Base32 secret for manual entry (shown once). */
+  secret: string;
+  /** otpauth://totp/… for the QR code. */
+  otpauthUri: string;
+  issuer: string;
+  account: string;
+}
+
+/** Two-factor functions of the signed-in user (demo and API). */
+export interface TwoFactorApi {
+  /** Second sign-in step after TwoFactorRequiredError. */
+  verifyTwoFactor(proof: TwoFactorProof): Promise<Session>;
+  getTwoFactorStatus(): Promise<TwoFactorStatus>;
+  startTwoFactorSetup(): Promise<TwoFactorSetup>;
+  /** Confirms with the first code; returns the 10 recovery codes (only now). */
+  confirmTwoFactorSetup(code: string): Promise<{ recoveryCodes: string[] }>;
+  /** Requires password + code (or recovery code). */
+  disableTwoFactor(password: string, proof: TwoFactorProof): Promise<{ setupRequired: boolean }>;
+  regenerateRecoveryCodes(password: string, proof: TwoFactorProof): Promise<{ recoveryCodes: string[] }>;
+  /** Owner only: require 2FA for managers and owners of the tenant. */
+  setTwoFactorRequirement(tenantId: UUID, required: boolean): Promise<Tenant>;
 }
 
 export interface NewTimeEntry {
@@ -65,6 +122,7 @@ export interface TenantOverview {
 
 export interface Repository {
   // ---- authentication
+  /** Throws TwoFactorRequiredError when the account uses two-factor authentication. */
   signIn(email: string, password: string): Promise<Session>;
   signOut(): Promise<void>;
   currentSession(): Promise<Session | null>;
