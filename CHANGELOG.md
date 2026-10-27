@@ -8,6 +8,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Entwicklungswerkzeuge: Vite, TypeScript, Preact, Vitest, Playwright, ESLint.
 - GitHub Actions: Lint, Typecheck, Unit-, Datenbank- und Browsertests, Build-Artefakt,
   Geheimnis-Scan, CodeQL, Dependabot; Pull-Request- und Issue-Vorlagen.
+- Geheimnis-Scan: `.gitleaks.toml` nimmt Testdateien (nur Testpasswörter/-schlüssel) und
+  Speicherschlüssel-Namen der Alt-App (`uwe_…`) als Fehlalarme aus.
 - Ist-Analyse, Architektur (eigener Server in Deutschland), Migrationsplan, Betriebshandbuch.
 - Fachlogik (`platform/src/core`): Pausenregeln, Arbeitszeitkonto (Schuljahr/Kalenderjahr,
   konfigurierbar), Migration, mehrseitiges PDF; Vergleichstests gegen die Alt-App.
