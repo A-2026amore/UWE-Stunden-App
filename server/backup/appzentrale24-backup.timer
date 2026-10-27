@@ -1,0 +1,10 @@
+[Unit]
+Description=AppZentrale24 Sicherung täglich 02:15 Uhr
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

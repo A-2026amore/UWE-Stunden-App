@@ -1,0 +1,6 @@
+# Monitoring (Uptime Kuma) - nur für Administratoren
+status.appzentrale24.de {
+	import sicher
+	import intern
+	reverse_proxy uptime-kuma:3001
+}

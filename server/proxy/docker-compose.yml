@@ -1,0 +1,24 @@
+# Reverse Proxy für alle Anwendungen auf appzentrale24.de
+# Caddy holt und erneuert die HTTPS-Zertifikate (Let's Encrypt) automatisch.
+# Nur dieser Container öffnet Ports nach außen; alle Anwendungen hängen am Netz "proxy"
+# und veröffentlichen selbst KEINE Ports (Docker würde sonst die Firewall umgehen).
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - ./site:/srv/site:ro
+      - ./data:/data
+      - ./config:/config
+    networks: [proxy]
+
+networks:
+  proxy:
+    external: true

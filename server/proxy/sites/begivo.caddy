@@ -1,0 +1,8 @@
+# BEGIVO - Pilot Aachen. Bis zur ausdrücklichen Freigabe passwortgeschützt.
+begivo.appzentrale24.de {
+	import sicher
+	import intern
+	respond "BEGIVO - in Vorbereitung" 503
+	# Nach dem Deployment ersetzen durch:
+	# reverse_proxy begivo-app:8000
+}

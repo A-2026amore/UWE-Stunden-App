@@ -1,0 +1,11 @@
+# KI-Telefonie - Dashboard und API unter derselben Domain (Cookies/CSRF).
+telefon.appzentrale24.de {
+	import sicher
+	import intern
+	respond "Telefonie - in Vorbereitung" 503
+	# Nach dem Deployment ersetzen durch:
+	# handle /api/* { reverse_proxy telefonie-api:4000 }
+	# handle { root * /srv/telefonie-web ; try_files {path} /index.html ; file_server }
+	# Die Twilio-Webhooks (/api/telephony/*) müssen dann OHNE Passwortschutz erreichbar sein;
+	# die API prüft dort die Twilio-Signatur.
+}
