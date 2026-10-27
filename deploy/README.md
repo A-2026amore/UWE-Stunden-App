@@ -50,7 +50,8 @@ git clone --branch develop https://github.com/A-2026amore/UWE-Stunden-App /srv/s
 cd /srv/stunden-test
 cp deploy/.env.example deploy/.env && chmod 600 deploy/.env
 # deploy/.env ausfüllen: Passwörter mit `openssl rand -hex 32`, TOTP-Schlüssel mit `openssl rand -base64 32`,
-# PROXY_SUBNET mit: docker network inspect proxy -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}'
+# TRUSTED_PROXY_IP = feste Adresse des Caddy im Netz proxy (Server-Konvention: 172.30.0.2), prüfen mit:
+#   docker inspect -f '{{(index .NetworkSettings.Networks "proxy").IPAddress}}' <caddy-container>
 
 C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"
 $C config --quiet            # Prüft, dass alle Pflichtwerte gesetzt sind
@@ -71,7 +72,8 @@ stunden-test.appzentrale24.de {
 ```
 
 Caddy setzt `X-Forwarded-For` selbst (ohne `trusted_proxies` wird ein vom Client mitgeschickter Wert ersetzt).
-Die App wertet den Header nur aus, wenn die Verbindung aus `PROXY_SUBNET` kommt (`TRUST_PROXY_CIDRS`); andere
+Die App wertet den Header nur aus, wenn die Verbindung von `TRUSTED_PROXY_IP` (Caddy, 172.30.0.2) kommt
+(`TRUST_PROXY_CIDRS`); andere
 Container können so keine fremde Client-IP vortäuschen (Rate-Limits).
 
 Erster Super-Admin (Konsole, danach Passwort über die CLI setzen, Eingabe über stdin):
@@ -111,7 +113,7 @@ eingespielt wurde; sonst Wiederherstellung aus dem Backup.
 | `STAGE` | ja | `test` oder `prod` – bildet alle Namen (`stunden-${STAGE}-app` …). |
 | `APP_HOSTNAME` | ja | Öffentlicher Hostname; ergibt `PUBLIC_ORIGIN=https://…` (CSRF-Prüfung, Links in E-Mails). |
 | `APP_IMAGE`, `APP_IMAGE_TAG` | – | Image-Name (Standard `stunden-app:local`). |
-| `PROXY_SUBNET` | ja | Subnetz(e) des Netzes `proxy`, kommagetrennt (CIDR) → `TRUST_PROXY_CIDRS`. |
+| `TRUSTED_PROXY_IP` | ja | Feste Adresse des Caddy im Netz `proxy` (172.30.0.2; Netz 172.30.0.0/24) → `TRUST_PROXY_CIDRS`. Nur diese Adresse darf `X-Forwarded-For` setzen. Ändert sich die Caddy-Adresse, hier anpassen – sonst sehen Rate-Limits alle Anfragen als eine IP. |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | ja / ja / – | Administrator/Eigentümer, Datenbank (Standard `stunden`). |
 | `APP_DB_PASSWORD` | ja | Passwort von `app_api` (≥ 16 Zeichen, nur Buchstaben/Ziffern empfohlen). |
 | `TOTP_ENCRYPTION_KEY` | ja | 32 Byte (Base64/Hex). Ohne gültigen Schlüssel startet die App nicht. Getrennt von DB-Backups sichern. |

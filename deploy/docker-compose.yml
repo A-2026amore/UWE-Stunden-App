@@ -86,9 +86,9 @@ services:
       DATABASE_URL: postgres://app_api:${APP_DB_PASSWORD:?APP_DB_PASSWORD fehlt}@db:5432/${POSTGRES_DB:-stunden}
       PUBLIC_ORIGIN: https://${APP_HOSTNAME:?APP_HOSTNAME fehlt}
       STATIC_DIR: /app/platform/dist
-      # X-Forwarded-For nur von Absendern aus dem Netz "proxy" (Caddy) auswerten.
+      # X-Forwarded-For nur von der festen Adresse des Caddy im Netz "proxy" auswerten (nicht vom ganzen Netz).
       TRUST_PROXY: "1"
-      TRUST_PROXY_CIDRS: ${PROXY_SUBNET:?PROXY_SUBNET fehlt}
+      TRUST_PROXY_CIDRS: ${TRUSTED_PROXY_IP:?TRUSTED_PROXY_IP fehlt}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY fehlt}
       TOTP_ENCRYPTION_KEY_PREVIOUS: ${TOTP_ENCRYPTION_KEY_PREVIOUS:-}
       TOTP_ISSUER: ${TOTP_ISSUER:-Stundenwerk}

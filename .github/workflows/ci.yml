@@ -105,13 +105,12 @@ jobs:
       - name: Start mit Wegwerf-Werten (DB, Migration, App)
         run: |
           docker network create proxy
-          subnet=$(docker network inspect proxy -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}')
           {
             echo "STAGE=ci"
             echo "APP_HOSTNAME=stunden-ci.example.invalid"
             echo "APP_IMAGE=stunden-app"
             echo "APP_IMAGE_TAG=ci"
-            echo "PROXY_SUBNET=$subnet"
+            echo "TRUSTED_PROXY_IP=172.30.0.2"
             echo "POSTGRES_USER=stunden_admin"
             echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
             echo "APP_DB_PASSWORD=$(openssl rand -hex 24)"
