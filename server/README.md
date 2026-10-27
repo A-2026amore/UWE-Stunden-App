@@ -28,7 +28,7 @@ Internet ──► Firewall (ufw: nur 22, 80, 443)
 - **Updates:** Sicherheitsupdates laufen täglich automatisch, ein Neustart erfolgt bei Bedarf um 04:30 Uhr. Docker-Images aktualisiere ich
   bewusst per Pull Request (feste Versionen, kein `latest`).
 - **Backup:** Die Sicherung läuft jede Nacht um 02:15 Uhr mit restic (AES-256). Sie umfasst Datenbank-Dumps, Uploads und Konfiguration und geht
-  **auf einen externen Speicher**. Den Wiederherstellungstest führen Sie monatlich mit `restore-test.sh` durch.
+  **auf eine Hetzner Storage Box** (anderer Anbieter, getrennt vom Server). Den Wiederherstellungstest führen Sie monatlich mit `restore-test.sh` durch.
 - **Monitoring:** Uptime Kuma überwacht alle Adressen und Zertifikate und benachrichtigt per E-Mail oder App. Die KI-Telefonie
   hat zusätzlich eine eigene Betriebsüberwachung.
 
@@ -89,19 +89,41 @@ cd ../monitoring && docker compose up -d
 
 Uptime Kuma: `https://status.appzentrale24.de` öffnen, Administrator anlegen und Monitore für alle Subdomains hinzufügen.
 
-### Schritt 6 – Backup
+### Schritt 6 – Backup (Hetzner Storage Box)
 
-Nötig ist ein externer Speicher, zum Beispiel netcup Storage Space oder eine Storage Box. Er ist kostenpflichtig, deshalb entscheiden Sie darüber.
+1. Bei Hetzner eine Storage Box bestellen (Standort Deutschland). In der Hetzner-Konsole **SSH-Support** aktivieren.
+   Der Benutzername steht in der Konsole, Form `uXXXXXX`.
+2. Auf dem Server einen eigenen Schlüssel nur für die Sicherung anlegen und hinterlegen
+   (`uXXXXXX` durch Ihren Benutzer ersetzen; einmalig wird das Storage-Box-Passwort abgefragt):
+
+```bash
+sudo ssh-keygen -t ed25519 -N '' -f /root/.ssh/storagebox -C appzentrale24-backup
+sudo ssh-copy-id -p 23 -s -i /root/.ssh/storagebox.pub uXXXXXX@uXXXXXX.your-storagebox.de
+sudo tee -a /root/.ssh/config >/dev/null <<'CFG'
+Host storagebox
+    HostName uXXXXXX.your-storagebox.de
+    User uXXXXXX
+    Port 23
+    IdentityFile /root/.ssh/storagebox
+    IdentitiesOnly yes
+CFG
+sudo ssh storagebox mkdir -p appzentrale24    # Test: muss ohne Passwort klappen
+```
+
+3. Sicherung einrichten:
 
 ```bash
 sudo install -d -m 700 /etc/appzentrale24
 sudo cp ~/kit/server/backup/backup.env.example /etc/appzentrale24/backup.env
-sudo chmod 600 /etc/appzentrale24/backup.env && sudo nano /etc/appzentrale24/backup.env
+sudo chmod 600 /etc/appzentrale24/backup.env
+openssl rand -base64 32          # Ergebnis als RESTIC_PASSWORD eintragen UND offline aufbewahren
+sudo nano /etc/appzentrale24/backup.env
 sudo cp ~/kit/server/backup/*.sh /srv/appzentrale24/backup/
 sudo cp ~/kit/server/backup/appzentrale24-backup.{service,timer} /etc/systemd/system/
 sudo bash -c 'set -a; . /etc/appzentrale24/backup.env; restic init'
 sudo systemctl daemon-reload && sudo systemctl enable --now appzentrale24-backup.timer
 sudo systemctl start appzentrale24-backup.service && sudo journalctl -u appzentrale24-backup -n 30
+sudo bash /srv/appzentrale24/backup/restore-test.sh   # Wiederherstellung einmal testen
 ```
 
 ## Wichtig
