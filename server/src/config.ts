@@ -24,8 +24,15 @@ export interface RateLimitConfig {
   loginPerKey: number;
   /** Login attempts per IP within the window (all e-mails). */
   loginPerIp: number;
+  /**
+   * Failed logins per e-mail address within the window, from all IPs together (distributed
+   * guessing / credential stuffing against one account). Not reset by a successful login.
+   */
+  loginPerEmail: number;
   /** Password-reset requests per IP + e-mail within the window. */
   resetPerKey: number;
+  /** Password-reset requests per e-mail address within the window, from all IPs together (mail flooding). */
+  resetPerEmail: number;
   /** Password-reset / invitation token submissions per IP within the window. */
   tokenPerIp: number;
   /** Wrong two-factor codes per account within the window (sign-in, setup, disable). */
@@ -189,7 +196,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       windowMs: int(env, "RATE_LIMIT_WINDOW_MINUTES", 15, 1, 24 * 60) * 60_000,
       loginPerKey: int(env, "RATE_LIMIT_LOGIN_PER_ACCOUNT", 5, 1, 1000),
       loginPerIp: int(env, "RATE_LIMIT_LOGIN_PER_IP", 100, 1, 100000),
+      loginPerEmail: int(env, "RATE_LIMIT_LOGIN_PER_EMAIL", 30, 1, 100000),
       resetPerKey: int(env, "RATE_LIMIT_RESET_PER_ACCOUNT", 3, 1, 1000),
+      resetPerEmail: int(env, "RATE_LIMIT_RESET_PER_EMAIL", 10, 1, 1000),
       tokenPerIp: int(env, "RATE_LIMIT_TOKEN_PER_IP", 20, 1, 100000),
       twoFactorPerAccount: int(env, "RATE_LIMIT_2FA_PER_ACCOUNT", 5, 1, 1000),
       twoFactorPerIp: int(env, "RATE_LIMIT_2FA_PER_IP", 50, 1, 100000),

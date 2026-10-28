@@ -111,8 +111,10 @@ export function createApp(deps: AppDeps) {
   const limiters = {
     loginKey: new RateLimiter(rl.loginPerKey, rl.windowMs),
     loginIp: new RateLimiter(rl.loginPerIp, rl.windowMs),
+    loginEmail: new RateLimiter(rl.loginPerEmail, rl.windowMs),
     resetKey: new RateLimiter(rl.resetPerKey, rl.windowMs),
     resetIp: new RateLimiter(rl.loginPerIp, rl.windowMs),
+    resetEmail: new RateLimiter(rl.resetPerEmail, rl.windowMs),
     tokenIp: new RateLimiter(rl.tokenPerIp, rl.windowMs),
     twoFactorKey: new RateLimiter(rl.twoFactorPerAccount, rl.windowMs),
     twoFactorIp: new RateLimiter(rl.twoFactorPerIp, rl.windowMs),
@@ -195,7 +197,9 @@ export function createApp(deps: AppDeps) {
     }
     const email = b.email.trim().toLowerCase();
     const key = `${ctx.ip}|${email}`;
-    const wait = Math.max(limiters.loginIp.blockedFor(ctx.ip), limiters.loginKey.blockedFor(key));
+    // Per e-mail across all IPs as well (distributed guessing); unknown addresses are limited the
+    // same way, so the 429 reveals nothing about the account.
+    const wait = Math.max(limiters.loginIp.blockedFor(ctx.ip), limiters.loginKey.blockedFor(key), limiters.loginEmail.blockedFor(email));
     if (wait > 0) throw tooMany(wait, "Anmeldeversuche");
     limiters.loginIp.hit(ctx.ip);
 
@@ -203,6 +207,7 @@ export function createApp(deps: AppDeps) {
     // status, code, text and rate-limit counting (QA 2026-10-28, B4).
     const invalidLogin = () => {
       limiters.loginKey.hit(key);
+      limiters.loginEmail.hit(email);
       return new HttpError(401, "unauthenticated", "E-Mail-Adresse oder Passwort ist falsch.");
     };
 
@@ -388,10 +393,11 @@ export function createApp(deps: AppDeps) {
     const b = v.object(ctx.body, ["email"]);
     const email = v.email(b.email);
     const key = `${ctx.ip}|${email}`;
-    const wait = Math.max(limiters.resetIp.blockedFor(ctx.ip), limiters.resetKey.blockedFor(key));
+    const wait = Math.max(limiters.resetIp.blockedFor(ctx.ip), limiters.resetKey.blockedFor(key), limiters.resetEmail.blockedFor(email));
     if (wait > 0) throw tooMany(wait, "Anfragen");
     limiters.resetIp.hit(ctx.ip);
     limiters.resetKey.hit(key);
+    limiters.resetEmail.hit(email);
     const token = await createPasswordReset(pool, email);
     if (token) {
       app.sendLater([{
