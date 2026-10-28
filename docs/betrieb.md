@@ -302,11 +302,14 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning --import .
   (restic-Rotation). Wiederherstellung einer Sicherung nach einer Löschung: Löschung danach erneut ausführen.
   Frist rechtlich prüfen und im AV-Vertrag nennen.
 
-**Selbstbedienungs-Export für gesperrte Inhaber (Variante b) – nicht umgesetzt:** Dafür müssten Anmeldung,
-Zwei-Faktor-Ablauf, Sitzungsprüfung (`asUser`) und die Oberfläche einen eigenen „nur Export“-Zustand bekommen. Das
-greift in sicherheitskritische Pfade ein und wurde in der verfügbaren Zeit nicht sauber und getestet machbar.
-Stattdessen: Export durch den Betreiber (oben) und Übergabe an den Inhaber; alternativ den Mandanten für die
-Exportfrist kurz reaktivieren.
+**Selbstbedienungs-Export für gesperrte Inhaber (Variante b) – bewusst nicht umgesetzt:** Gesperrte Zugänge
+erhalten heute ohne 2FA dieselbe Antwort wie bei falschem Passwort (QA 2026-10-28, B4: keine Auskunft über
+gesperrte Konten, gleiche Zeit, gleiche Ratenbegrenzung). Ein „nur Export“-Zugang würde diese Entscheidung
+aufweichen und Anmeldung, Zwei-Faktor-Ablauf, Sitzungsprüfung (`asUser`), Demo-Repository und Oberflächen
+gleichzeitig ändern – das ist in sicherheitskritischen Pfaden nicht ohne eigene Prüfung sauber machbar.
+Stattdessen: Export durch den Betreiber (oben) und gesicherte Übergabe an den Inhaber; alternativ den Mandanten
+für die Exportfrist reaktivieren (der Inhaber exportiert dann selbst im Chef-Portal). Falls gewünscht, als eigene
+Aufgabe mit Sicherheitsprüfung planen.
 
 ## 6.2 Container-Betrieb (Docker Compose)
 

@@ -366,4 +366,4 @@ revoke all on function
 from public;
 
 -- Called from the audit_log guard while request roles write (always NULL for them).
-grant execute on function private.tenant_deletion_tenant() to app_user, app_service, app_auth, app_anon;
+grant execute on function private.tenant_deletion_tenant() to app_user, app_service;
