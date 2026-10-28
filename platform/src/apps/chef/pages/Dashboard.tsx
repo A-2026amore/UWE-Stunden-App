@@ -1,11 +1,12 @@
 import { activeShifts } from "../../../core/time";
 import { Alert, Card, LinkButton, StatTile, StatusPill, Table } from "../../../design";
 import { useAsync } from "../../shared/hooks";
-import { currentMonth, hoursLabel, monthLabelDE, signedHours } from "../../shared/format";
+import { currentMonth, formatDateDE, hoursLabel, monthLabelDE, signedHours } from "../../shared/format";
 import { shiftMonth } from "../../../data/demo";
 import { workedMinutesInMonth } from "../../../core/workAccount";
 import { loadTenantMonth, useChef } from "../context";
 import { DemoBanner } from "../../shared/ui";
+import { CORRECTION_KIND_LABEL, requestDate } from "../../shared/corrections";
 import { IS_DEMO } from "../../shared/repo";
 
 export function DashboardPage() {
@@ -15,10 +16,11 @@ export function DashboardPage() {
   const policy = tenant.settings.workAccount;
 
   const q = useAsync(async () => {
-    const [data, stCur, stPrev] = await Promise.all([
+    const [data, stCur, stPrev, corrections] = await Promise.all([
       loadTenantMonth(repo, tenant, month), repo.listStatements(tenant.id, month), repo.listStatements(tenant.id, prev),
+      repo.listCorrectionRequests(tenant.id, { status: "open" }),
     ]);
-    return { data, statements: [...stPrev, ...stCur] };
+    return { data, statements: [...stPrev, ...stCur], corrections };
   }, [version, tenant.id]);
 
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
@@ -38,6 +40,8 @@ export function DashboardPage() {
     for (const a of d!.allocations.get(e.id) ?? []) if (a.status === "proposed") pendingAllocations.push({ name: e.displayName, month: a.month, minutes: a.minutes });
   }
   const openStatements = (q.data?.statements ?? []).filter((s) => s.status === "submitted");
+  const openCorrections = q.data?.corrections ?? [];
+  const correctedAfterApproval = (q.data?.statements ?? []).filter((s) => s.correctedAfterApproval);
   const nameOf = (id: string) => d?.employees.find((e) => e.id === id)?.displayName ?? "—";
 
   return (
@@ -55,11 +59,32 @@ export function DashboardPage() {
         <StatTile label={`Geleistete Stunden ${monthLabelDE(month)}`} value={hoursLabel(worked)} tone="brand" />
         <StatTile label="Für Abrechnung vorgesehen" value={hoursLabel(billing)} hint={policy.enabled ? `${hoursLabel(allocatedTotal)} ins Arbeitszeitkonto` : undefined} />
         <StatTile label="Offene Monatsnachweise" value={openStatements.length} tone={openStatements.length ? "warning" : "default"} hint="eingereicht, warten auf Prüfung" />
+        <StatTile label="Offene Korrekturanfragen" value={openCorrections.length} tone={openCorrections.length ? "warning" : "default"} hint="von Mitarbeitenden, warten auf Entscheidung" />
         {policy.enabled && <StatTile label="Summe Arbeitszeitkonten" value={signedHours(accountTotal)} hint="aktueller Zeitraum, alle Mitarbeitenden" />}
         {policy.enabled && <StatTile label="Offene Freigaben Arbeitszeitkonto" value={pendingAllocations.length} tone={pendingAllocations.length ? "warning" : "default"} />}
       </div>
 
+      {correctedAfterApproval.length > 0 && (
+        <Alert tone="warning" title="Nach Freigabe korrigiert">
+          <p>{correctedAfterApproval.map((s) => `${nameOf(s.employeeId)} (${monthLabelDE(s.month)})`).join(", ")}: Einträge wurden nach der Freigabe korrigiert.
+            Die freigegebenen Zahlen werden nicht automatisch angepasst. <a href="#/nachweise">Zu den Monatsnachweisen</a></p>
+        </Alert>
+      )}
+
       <div class="grid-2">
+        <Card title="Offene Korrekturanfragen" actions={<LinkButton href="#/korrekturen" size="sm">Alle Anfragen</LinkButton>}>
+          <Table
+            caption="Offene Korrekturanfragen"
+            rows={openCorrections.slice(0, 8)}
+            rowKey={(r) => r.id}
+            empty={<p class="muted">Keine offenen Korrekturanfragen.</p>}
+            columns={[
+              { key: "n", header: "Mitarbeiter", render: (r) => nameOf(r.employeeId) },
+              { key: "k", header: "Art", render: (r) => CORRECTION_KIND_LABEL[r.kind] },
+              { key: "d", header: "Einsatz", render: (r) => formatDateDE(requestDate(r)) },
+            ]}
+          />
+        </Card>
         <Card title="Monatsnachweise zur Prüfung" actions={<LinkButton href="#/nachweise" size="sm">Alle Nachweise</LinkButton>}>
           <Table
             caption="Offene Monatsnachweise"

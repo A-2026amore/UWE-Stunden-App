@@ -65,6 +65,7 @@ export function StatementsPage() {
 
   const rows = q.data ?? [];
   const open = rows.filter((r) => r.statement?.status === "submitted").length;
+  const corrected = rows.filter((r) => r.statement?.correctedAfterApproval);
 
   return (
     <div class="stack">
@@ -75,6 +76,12 @@ export function StatementsPage() {
           <Badge tone={open ? "warning" : "success"}>{open} zur Prüfung</Badge>
         </div>
         {q.error && <Alert tone="danger" live>{q.error}</Alert>}
+        {corrected.length > 0 && (
+          <Alert tone="warning" title={`${corrected.length} freigegebene${corrected.length > 1 ? "" : "r"} Nachweis${corrected.length > 1 ? "e" : ""} nach Freigabe korrigiert`}>
+            <p>Die Spalten zeigen die Zahlen zum Zeitpunkt der Freigabe; die aktuellen Werte stehen unter „Hinweise“. Eine automatische Anpassung
+              freigegebener Nachweise ist noch nicht entschieden. Bei Bedarf kann der Inhaber den Nachweis zurückgeben und neu einreichen lassen.</p>
+          </Alert>
+        )}
         <Table<Row>
           caption={`Monatsnachweise ${monthLabelDE(month)}`}
           rows={rows}
@@ -89,6 +96,15 @@ export function StatementsPage() {
             { key: "i", header: "Hinweise", render: (r) => (
               <span class="small">
                 {r.issues > 0 && <Badge tone="danger">{r.issues} Pausenproblem{r.issues > 1 ? "e" : ""}</Badge>}
+                {r.statement?.correctedAfterApproval && (
+                  <div>
+                    <Badge tone="warning">nach Freigabe korrigiert</Badge>
+                    <div class="xsmall">{r.statement.correctedAfterApproval.count} Korrektur{r.statement.correctedAfterApproval.count > 1 ? "en" : ""}, zuletzt {dateTimeDE(r.statement.correctedAfterApproval.lastAt)}</div>
+                    {(r.worked !== r.statement.workedMinutes || r.billing !== r.statement.billingMinutes) && (
+                      <div class="xsmall">aktuell {hoursLabel(r.worked)} geleistet / {hoursLabel(r.billing)} Abrechnung</div>
+                    )}
+                  </div>
+                )}
                 {r.statement?.submittedAt && <div class="xsmall muted">eingereicht {dateTimeDE(r.statement.submittedAt)}</div>}
                 {r.statement?.status === "returned" && <div class="xsmall">Grund: {r.statement.reviewNote}</div>}
               </span>

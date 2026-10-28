@@ -11,6 +11,7 @@ import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, todayISO, weekdayShort } from "../../shared/format";
 import { buildStatement } from "../../shared/statement";
 import { monthRange, useChef } from "../context";
+import { EntryHistoryDialog } from "./Corrections";
 
 type View = "day" | "week" | "month";
 
@@ -51,6 +52,7 @@ export function TimesPage() {
   const [date, setDate] = useState(todayISO());
   const [employeeId, setEmployeeId] = useState("all");
   const [correcting, setCorrecting] = useState<TimeEntry | null>(null);
+  const [history, setHistory] = useState<{ employeeId: string; entryId: string; title: string } | null>(null);
   const [from, to] = rangeFor(view, date);
 
   const q = useAsync(async () => {
@@ -154,6 +156,7 @@ export function TimesPage() {
               key: "a", header: "Aktionen", actions: true, render: (e) => (
                 <div class="btn-row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
                   <Button size="sm" variant="secondary" icon="edit" onClick={() => setCorrecting(e)} aria-label={`Einsatz ${formatDateDE(e.date)} ${e.start}–${e.end} von ${byId.get(e.employeeId)?.displayName ?? ""} korrigieren`}>Korrigieren</Button>
+                  <Button size="sm" variant="ghost" icon="log" onClick={() => setHistory({ employeeId: e.employeeId, entryId: e.id, title: `${byId.get(e.employeeId)?.displayName ?? ""} – ${formatDateDE(e.date)}, ${e.start}–${e.end} Uhr` })} aria-label={`Verlauf des Einsatzes ${formatDateDE(e.date)} ${e.start}–${e.end} von ${byId.get(e.employeeId)?.displayName ?? ""}`} />
                   <Button size="sm" variant="ghost" icon="trash" onClick={() => remove(e)} aria-label={`Einsatz ${formatDateDE(e.date)} ${e.start}–${e.end} löschen`} />
                 </div>
               ),
@@ -167,6 +170,7 @@ export function TimesPage() {
           </div>
         )}
       </Card>
+      <EntryHistoryDialog target={history} onClose={() => setHistory(null)} />
       <CorrectionDialog entry={correcting} employee={correcting ? byId.get(correcting.employeeId) ?? null : null} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); changed(); }} />
     </div>
   );

@@ -17,6 +17,7 @@ import { AccountsPage } from "./pages/Accounts";
 import { CompanyPage } from "./pages/Company";
 import { SettingsPage } from "./pages/Settings";
 import { AuditPage } from "./pages/Audit";
+import { CorrectionsPage } from "./pages/Corrections";
 
 const repo = getRepository("chef");
 
@@ -28,6 +29,7 @@ const NAV: NavItem[] = [
   { href: "#/mitarbeiter", label: "Mitarbeiter", icon: "users", match: "/mitarbeiter" },
   { href: "#/zeiten", label: "Arbeitszeiten", icon: "clock", match: "/zeiten" },
   { href: "#/nachweise", label: "Monatsnachweise", icon: "fileCheck", match: "/nachweise" },
+  { href: "#/korrekturen", label: "Korrekturanfragen", icon: "message", match: "/korrekturen" },
   { href: "#/konten", label: "Arbeitszeitkonten", icon: "wallet", match: "/konten" },
   { href: "#/firma", label: "Firmenprofil", icon: "building", match: "/firma" },
   { href: "#/einstellungen", label: "Einstellungen", icon: "settings", match: "/einstellungen" },
@@ -98,6 +100,7 @@ export function ChefApp() {
     case "/mitarbeiter": page = <EmployeesPage />; break;
     case "/zeiten": page = <TimesPage />; break;
     case "/nachweise": page = <StatementsPage />; break;
+    case "/korrekturen": page = <CorrectionsPage />; break;
     case "/konten": page = <AccountsPage />; break;
     case "/firma": page = <CompanyPage />; break;
     case "/einstellungen": page = <SettingsPage />; break;

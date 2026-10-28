@@ -12,12 +12,16 @@ import { navigate } from "../../shared/router";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { useEmployee } from "../context";
 import { syncStateOf } from "../../../data/sync";
+import type { CorrectionRequest } from "../../../core/types";
+import { requestInMonth } from "../../shared/corrections";
+import { CorrectionRequestDialog, CorrectionRequestList, type CorrectionTarget } from "../CorrectionRequests";
 
 export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   const { repo, me, tenant, month, setMonth, version, changed } = useEmployee();
   const toast = useToast();
   const dialogs = useDialogs();
   const [busy, setBusy] = useState<string | null>(null);
+  const [correction, setCorrection] = useState<CorrectionTarget | null>(null);
   const policy = tenant.settings.workAccount;
 
   useEffect(() => { if (initialMonth && isValidMonth(initialMonth)) setMonth(initialMonth); }, [initialMonth]);
@@ -28,6 +32,11 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
     ]);
     return { entries, allocations, statement };
   }, [month, version]);
+
+  // Correction requests need the server (not cached offline): a failure only hides this part.
+  const cq = useAsync(() => repo.listCorrectionRequests(tenant.id, { employeeId: me.id }), [version]);
+  const monthRequests = (cq.data ?? []).filter((r) => requestInMonth(r, month));
+  const requestFor = (entryId: string): CorrectionRequest | undefined => (cq.data ?? []).find((r) => r.entryId === entryId);
 
   const data = q.data;
   const summary = data ? summarizeMonth({ entries: activeShifts(data.entries), allocations: data.allocations, month, policy }) : null;
@@ -108,6 +117,9 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
               {policy.enabled && <><dt>Davon ins Arbeitszeitkonto übertragen</dt><dd class="num">–{hoursLabel(summary.allocatedMinutes)}</dd></>}
             </dl>
             <p class="muted small mb-0">Die geleisteten Stunden bleiben vollständig dokumentiert. Die Monatsstunden für die Abrechnung werden nach deiner gespeicherten Übertragung berechnet.</p>
+            {data?.statement?.correctedAfterApproval && (
+              <Alert tone="info" title="Nach Freigabe korrigiert"><p>Einträge dieses Monats wurden nach der Freigabe korrigiert. Die freigegebenen Monatszahlen bleiben vorerst unverändert; Rückfragen bitte an deine Vorgesetzten.</p></Alert>
+            )}
             {data?.statement?.status === "returned" && (
               <Alert tone="danger" title="Zurückgegeben"><p>Begründung: {data.statement.reviewNote}</p></Alert>
             )}
@@ -135,7 +147,13 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
       </Card>
 
       <section aria-labelledby="days-title" class="stack-sm">
-        <h2 id="days-title">Einsätze</h2>
+        <div class="row-between">
+          <h2 id="days-title" class="mb-0">Einsätze</h2>
+          {locked && <Button size="sm" variant="secondary" icon="plus" onClick={() => setCorrection({ kind: "add", date: `${month}-01` })}>Fehlenden Einsatz melden</Button>}
+        </div>
+        {locked && (
+          <p class="muted small mb-0">{status === "approved" ? "Dieser Monat ist freigegeben." : "Dieser Monat ist eingereicht."} Änderungen beantragst du über „Korrektur beantragen“ – deine Vorgesetzten entscheiden.</p>
+        )}
         {data && data.entries.length === 0 && (
           <EmptyState icon="calendar" title="Keine Arbeitszeiten in diesem Monat" action={<LinkButton href="#/erfassen" variant="primary" icon="plus">Arbeitszeit erfassen</LinkButton>} />
         )}
@@ -149,8 +167,11 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
                 <div class="shift" key={x.id}>
                   <div class="shift-main">
                     <div class="shift-time">{x.start}–{x.end} Uhr</div>
-                    <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}</div>
+                    <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}{correctionHint(requestFor(x.id))}</div>
                   </div>
+                  {locked && requestFor(x.id)?.status !== "open" && (
+                    <Button size="sm" variant="ghost" icon="message" aria-label={`Korrektur für Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} beantragen`} onClick={() => setCorrection({ kind: "change", entry: x })} />
+                  )}
                   {!locked && <>
                     <Button size="sm" variant="ghost" icon="edit" aria-label={`Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} bearbeiten`} onClick={() => navigate(`/erfassen/${x.id}?datum=${x.date}`)} />
                     <Button size="sm" variant="ghost" icon="trash" aria-label={`Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} löschen`} onClick={() => remove(x)} />
@@ -162,6 +183,22 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
           );
         })}
       </section>
+
+      {(monthRequests.length > 0 || cq.error) && (
+        <section aria-labelledby="corr-title" class="stack-sm">
+          <h2 id="corr-title">Korrekturanfragen</h2>
+          {cq.error && <Alert tone="info">Korrekturanfragen können gerade nicht geladen werden (Internetverbindung nötig).</Alert>}
+          <CorrectionRequestList requests={monthRequests} onChanged={changed} />
+        </section>
+      )}
+      <CorrectionRequestDialog target={correction} onClose={() => setCorrection(null)} onSaved={() => { setCorrection(null); changed(); }} />
     </div>
   );
+}
+
+function correctionHint(r: CorrectionRequest | undefined): string {
+  if (!r) return "";
+  if (r.status === "open") return " · Korrektur angefragt";
+  if (r.status === "rejected") return " · Korrektur abgelehnt";
+  return "";
 }
