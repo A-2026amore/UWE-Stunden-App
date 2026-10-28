@@ -127,6 +127,63 @@ export interface TenantOverview {
   activeEmployeeCount: number;
 }
 
+/** Returned by inviteEmployee / resendInvitation when an invitation was created. */
+export interface InvitationInfo {
+  expiresAt: string;
+  /**
+   * "email": sent via SMTP · "log": development server without SMTP (link in the server log) · "none": not sent (SMTP missing)
+   * · "link": not sent – `link` is returned once for sharing (copy / WhatsApp) · "demo": demo build, nothing sent.
+   */
+  delivery: "email" | "log" | "none" | "link" | "demo";
+  /** One-time invitation link (only for delivery "link"). Never stored by the client. */
+  link?: string;
+}
+
+/** How a new invitation reaches the employee: e-mail from the server, or a link the manager shares. */
+export type InvitationChannel = "email" | "link";
+
+export interface NewEmployee {
+  displayName: string;
+  personnelNumber: string;
+  email: string | null;
+  role: TenantRole;
+  /** Default "email". */
+  invitation?: InvitationChannel;
+}
+
+export type InvitedEmployee = Employee & { invitation?: InvitationInfo };
+
+/** Input of Repository.createTenant. freeOfCharge = free test customer in one step (special condition "free"). */
+export interface NewTenant {
+  name: string;
+  slug: string;
+  plan: LicensePlan;
+  isDemo: boolean;
+  ownerEmail: string;
+  freeOfCharge?: boolean;
+  conditionNote?: string | null;
+  /** Last day of the free condition (YYYY-MM-DD); null/undefined = unlimited. */
+  conditionValidUntil?: string | null;
+}
+
+/** Technical status for platform staff (GET /api/platform/system) – no secrets, no personal data. */
+export interface SystemOverview {
+  version: string | null;
+  commit: string | null;
+  serverTime: string;
+  uptimeSeconds: number;
+  nodeVersion: string;
+  production: boolean;
+  database: { reachable: boolean; time: string | null };
+  migrations: { count: number; latest: string | null; appliedAt: string | null } | null;
+  activeSessions: number | null;
+  tenants: Record<string, number>;
+  mail: { configured: boolean; delivery: "email" | "log" | "none" };
+  paymentProvider: string;
+  /** null = not known. */
+  lastBackupAt: string | null;
+}
+
 export interface Repository {
   // ---- authentication
   /** Throws TwoFactorRequiredError when the account uses two-factor authentication. */
@@ -187,7 +244,7 @@ export interface Repository {
 
   // ---- platform administration (super_admin only)
   listTenants(): Promise<TenantOverview[]>;
-  createTenant(input: { name: string; slug: string; plan: LicensePlan; isDemo: boolean; ownerEmail: string }): Promise<TenantOverview>;
+  createTenant(input: NewTenant): Promise<TenantOverview>;
   setTenantStatus(tenantId: UUID, status: Tenant["status"], reason: string): Promise<Tenant>;
   setLicense(tenantId: UUID, plan: LicensePlan, patch?: LicensePatch): Promise<License>;
 }

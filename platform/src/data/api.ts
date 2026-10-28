@@ -24,12 +24,13 @@
  */
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, ISOMonth, License,
-  LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry,
+  LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
   TimeEntryRevision, UUID,
 } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type LicensePatch, type NewCorrectionRequest, type NewTimeEntry, type Repository, type Session, type TenantOverview,
+  type BillingApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type Repository, type Session,
+  type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type SystemOverview, type TenantOverview,
   type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
 } from "./repository";
@@ -75,14 +76,7 @@ export class TwoFactorSetupRequiredError extends AccessDeniedError {
 
 export type AuthFailure = { kind: "expired" | "suspended" | "two_factor_setup"; message: string };
 
-/** Returned by inviteEmployee / resendInvitation when an invitation was created. */
-export interface InvitationInfo {
-  expiresAt: string;
-  /** "email": sent via SMTP · "log": development server without SMTP (link in the server log) · "none": not sent (SMTP missing). */
-  delivery: "email" | "log" | "none";
-}
-
-export type InvitedEmployee = Employee & { invitation?: InvitationInfo };
+export type { InvitationChannel, InvitationInfo, InvitedEmployee, NewEmployee } from "./repository";
 
 export interface InvitationResult {
   existingAccount: boolean;
@@ -108,8 +102,14 @@ export interface ApiRepository extends Repository, TwoFactorApi, BillingApi {
    * show `message` and ask the user to sign in with the existing password.
    */
   acceptInvitation(token: string, password?: string): Promise<InvitationResult>;
-  inviteEmployee(tenantId: UUID, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }): Promise<InvitedEmployee>;
+  inviteEmployee(tenantId: UUID, input: NewEmployee): Promise<InvitedEmployee>;
   resendInvitation(employeeId: UUID): Promise<InvitationInfo | null>;
+  /** New invitation for an invited employee (earlier links become invalid). */
+  createInvitation(employeeId: UUID, channel: InvitationChannel): Promise<InvitationInfo>;
+  /** Owner: display name of the company. */
+  renameTenant(tenantId: UUID, name: string): Promise<Tenant>;
+  /** super_admin / support: technical status. */
+  getSystemOverview(): Promise<SystemOverview>;
 }
 
 export interface ApiRepositoryOptions {
@@ -240,6 +240,9 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     updateContact(tenantId, contact: Partial<CompanyContact>) {
       return request<Tenant>("PATCH", `/api/tenants/${enc(tenantId)}/contact`, contact);
     },
+    renameTenant(tenantId, name) {
+      return request<Tenant>("PATCH", `/api/tenants/${enc(tenantId)}/name`, { name });
+    },
     updateSettings(tenantId, settings: Partial<TenantSettings>) {
       return request<Tenant>("PATCH", `/api/tenants/${enc(tenantId)}/settings`, settings);
     },
@@ -254,12 +257,17 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     listEmployees(tenantId) {
       return request<Employee[]>("GET", `/api/tenants/${enc(tenantId)}/employees`);
     },
-    inviteEmployee(tenantId, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }) {
-      return request<InvitedEmployee>("POST", `/api/tenants/${enc(tenantId)}/employees`, input);
+    inviteEmployee(tenantId, input: NewEmployee) {
+      const { invitation, ...rest } = input;
+      return request<InvitedEmployee>("POST", `/api/tenants/${enc(tenantId)}/employees`, invitation === "link" ? { ...rest, invitation } : rest);
     },
     async resendInvitation(employeeId) {
       const r = await request<{ expiresAt: string; delivery?: InvitationInfo["delivery"] } | null>("POST", `/api/employees/${enc(employeeId)}/invitation`, {});
       return r ? { expiresAt: r.expiresAt, delivery: r.delivery ?? "email" } : null;
+    },
+    async createInvitation(employeeId, channel) {
+      const r = await request<InvitationInfo>("POST", `/api/employees/${enc(employeeId)}/invitation`, channel === "link" ? { channel } : {});
+      return { expiresAt: r.expiresAt, delivery: r.delivery ?? "email", ...(r.link ? { link: r.link } : {}) };
     },
     updateEmployee(employeeId, patch) {
       return request<Employee>("PATCH", `/api/employees/${enc(employeeId)}`, patch);
@@ -358,8 +366,11 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     listTenants() {
       return request<TenantOverview[]>("GET", "/api/platform/tenants");
     },
-    createTenant(input: { name: string; slug: string; plan: LicensePlan; isDemo: boolean; ownerEmail: string }) {
+    createTenant(input: NewTenant) {
       return request<TenantOverview>("POST", "/api/platform/tenants", input);
+    },
+    getSystemOverview() {
+      return request<SystemOverview>("GET", "/api/platform/system");
     },
     setTenantStatus(tenantId, status, reason) {
       return request<Tenant>("POST", `/api/platform/tenants/${enc(tenantId)}/status`, { status, reason });

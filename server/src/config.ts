@@ -73,6 +73,8 @@ export interface Config {
   twoFactor: TwoFactorConfig;
   /** Payment provider (PAYMENT_PROVIDER). Only "none" exists: nothing is charged automatically (server/src/payment.ts). */
   paymentProvider: PaymentProviderName;
+  /** System overview (Super-Admin): build commit (APP_COMMIT) and a file whose timestamp marks the last successful backup (BACKUP_STATUS_FILE). */
+  system: { commit: string | null; backupStatusFile: string | null };
 }
 
 function int(env: NodeJS.ProcessEnv, name: string, def: number, min: number, max: number): number {
@@ -196,5 +198,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     },
     twoFactor: loadTwoFactor(env, production),
     paymentProvider: parsePaymentProviderName(env.PAYMENT_PROVIDER),
+    system: {
+      commit: /^[0-9a-f]{7,40}$/i.test(env.APP_COMMIT ?? "") ? env.APP_COMMIT!.toLowerCase() : null,
+      backupStatusFile: env.BACKUP_STATUS_FILE ? env.BACKUP_STATUS_FILE : null,
+    },
   };
 }

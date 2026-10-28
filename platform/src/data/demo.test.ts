@@ -204,6 +204,75 @@ describe("demo repository – statements, work account, platform", () => {
   });
 });
 
+describe("demo repository – chef portal and super-admin polish", () => {
+  it("invites with a one-time link (or e-mail placeholder); a new link is only possible while invited", async () => {
+    const { repo } = await as("chef@demo-kt.example");
+    const viaLink = await repo.inviteEmployee(DEMO_TENANT_IDS.kt, { displayName: "Lena Neu", personnelNumber: "777", email: "lena@demo-kt.example", role: "employee", invitation: "link" });
+    expect(viaLink.invitation?.delivery).toBe("link");
+    expect(viaLink.invitation?.link).toMatch(/\/einladung\/#token=demo-[0-9a-f]{32}$/);
+    expect(Date.parse(viaLink.invitation!.expiresAt) - Date.now()).toBeGreaterThan(6.9 * 86400000);
+    const viaMail = await repo.inviteEmployee(DEMO_TENANT_IDS.kt, { displayName: "Max Neu", personnelNumber: "778", email: "max@demo-kt.example", role: "employee" });
+    expect(viaMail.invitation).toMatchObject({ delivery: "demo" });
+    expect(viaMail.invitation?.link).toBeUndefined();
+    const again = await repo.createInvitation(viaLink.id, "link");
+    expect(again.link).not.toBe(viaLink.invitation?.link);
+    await expect(repo.createInvitation(ANNA, "link")).rejects.toThrow("bereits ein Benutzerkonto");
+    const noMail = await repo.inviteEmployee(DEMO_TENANT_IDS.kt, { displayName: "Ohne Mail", personnelNumber: "779", email: null, role: "employee" });
+    expect("invitation" in noMail).toBe(false);
+    await expect(repo.createInvitation(noMail.id, "link")).rejects.toThrow("E-Mail-Adresse");
+    expect((await repo.listAudit(DEMO_TENANT_IDS.kt)).some((e) => e.action === "invitation.created")).toBe(true);
+    // Employees and other tenants cannot create invitations.
+    const emp = (await as("anna@demo-kt.example")).repo;
+    await expect(emp.createInvitation(viaLink.id, "link")).rejects.toBeInstanceOf(AccessDeniedError);
+    const other = (await as("leitung@muster-pflege.example")).repo;
+    await expect(other.createInvitation(viaLink.id, "link")).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("owner renames the company; managers and employees cannot", async () => {
+    const { repo } = await as("chef@demo-kt.example");
+    const t = await repo.renameTenant(DEMO_TENANT_IDS.kt, "  Demo Krankentransporte GmbH ");
+    expect(t.name).toBe("Demo Krankentransporte GmbH");
+    await expect(repo.renameTenant(DEMO_TENANT_IDS.kt, "x")).rejects.toThrow("Firmennamen");
+    await expect(repo.renameTenant(DEMO_TENANT_IDS.pflege, "Fremd GmbH")).rejects.toBeInstanceOf(AccessDeniedError);
+    const emp = (await as("anna@demo-kt.example")).repo;
+    await expect(emp.renameTenant(DEMO_TENANT_IDS.kt, "Neu GmbH")).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("creates a free test customer in one step", async () => {
+    const admin = (await as("admin@plattform.example")).repo;
+    const o = await admin.createTenant({
+      name: "Test Fahrdienst", slug: "test-fahrdienst", plan: "standard", isDemo: false, ownerEmail: "inhaber@test-fahrdienst.example",
+      freeOfCharge: true, conditionNote: "Testzeitraum", conditionValidUntil: "2026-12-31",
+    });
+    expect(o.license).toMatchObject({ plan: "standard", freeOfCharge: true, conditionNote: "Testzeitraum", conditionValidUntil: "2026-12-31" });
+    const pilot = await admin.createTenant({ name: "Pilot GmbH", slug: "pilot-gmbh", plan: "pilot_free", isDemo: false, ownerEmail: "p@pilot.example" });
+    expect(pilot.license?.plan).toBe("pilot_free");
+  });
+
+  it("deactivates a tenant without deleting data; sign-in is refused with a clear text, reactivation works", async () => {
+    const ctx = await as("admin@plattform.example");
+    const before = (await ctx.repo.listTenants()).find((t) => t.tenant.id === DEMO_TENANT_IDS.pflege)!;
+    await ctx.repo.setTenantStatus(DEMO_TENANT_IDS.pflege, "deactivated", "Vertrag beendet");
+    const after = (await ctx.repo.listTenants()).find((t) => t.tenant.id === DEMO_TENANT_IDS.pflege)!;
+    expect(after.tenant.status).toBe("deactivated");
+    expect(after.employeeCount).toBe(before.employeeCount);
+    const user = createDemoRepository(ctx.storage, { now: NOW, sessionKey: "u" });
+    await expect(user.signIn("mia@muster-pflege.example", DEMO_PASSWORD)).rejects.toThrow("Der Firmenzugang ist deaktiviert.");
+    expect((await ctx.repo.listPlatformAudit()).some((e) => e.action === "tenant.status_deactivated" && e.reason === "Vertrag beendet")).toBe(true);
+    await ctx.repo.setTenantStatus(DEMO_TENANT_IDS.pflege, "active", "Neuer Vertrag");
+    await expect(user.signIn("mia@muster-pflege.example", DEMO_PASSWORD)).resolves.toMatchObject({ tenantId: DEMO_TENANT_IDS.pflege });
+  });
+
+  it("system overview: platform staff only, no secrets", async () => {
+    const support = (await as("support@plattform.example")).repo;
+    const o = await support.getSystemOverview();
+    expect(o).toMatchObject({ paymentProvider: "none", lastBackupAt: null, mail: { configured: false } });
+    expect(o.tenants.active).toBe(2);
+    const chef = (await as("chef@demo-kt.example")).repo;
+    await expect(chef.getSystemOverview()).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+});
+
 describe("demo repository – two-factor authentication", () => {
   // Fixed clock in the middle of a 30-second step: no step change during a test.
   beforeEach(() => {

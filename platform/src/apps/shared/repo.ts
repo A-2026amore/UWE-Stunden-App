@@ -8,10 +8,12 @@
  *    (default: same origin). One HttpOnly session cookie is shared by all
  *    areas of the origin.
  */
-import type { AuditEvent, UUID } from "../../core/types";
+import type { AuditEvent, Tenant, UUID } from "../../core/types";
 import { createApiRepository, type ApiRepository, type AuthFailure, type SupportGrantInfo } from "../../data/api";
 import { createDemoRepository, memoryStorage, type DemoRepository, type KeyValueStorage } from "../../data/demo";
-import type { BillingApi, Repository, TwoFactorApi } from "../../data/repository";
+import type {
+  BillingApi, InvitationChannel, InvitationInfo, InvitedEmployee, NewEmployee, Repository, SystemOverview, TwoFactorApi,
+} from "../../data/repository";
 
 export type AppArea = "app" | "chef" | "admin";
 export type DataMode = "demo" | "api";
@@ -27,6 +29,10 @@ export interface AreaRepository extends Repository, TwoFactorApi, BillingApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number): Promise<SupportGrantInfo | null>;
+  inviteEmployee(tenantId: UUID, input: NewEmployee): Promise<InvitedEmployee>;
+  createInvitation(employeeId: UUID, channel: InvitationChannel): Promise<InvitationInfo>;
+  renameTenant(tenantId: UUID, name: string): Promise<Tenant>;
+  getSystemOverview(): Promise<SystemOverview>;
 }
 
 export function safeStorage(): KeyValueStorage {

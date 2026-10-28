@@ -3,20 +3,12 @@ import type { Employee, TenantRole } from "../../../core/types";
 import { Alert, Button, Card, Dialog, InputField, SelectField, StatusPill, Table, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
-import { IS_DEMO, getApiRepository } from "../../shared/repo";
-import type { InvitationInfo, InvitedEmployee } from "../../../data/api";
+import type { InvitationChannel, InvitationInfo, InvitedEmployee } from "../../../data/repository";
 import { useChef } from "../context";
+import { InvitationShareDialog, invitationText } from "../InvitationShare";
 
-/** German text for an invitation sent through the API (where did it go, how long is it valid). */
-export function invitationText(name: string, email: string, info: InvitationInfo): { tone: "success" | "warning"; text: string } {
-  const until = `Der Link ist gültig bis ${dateTimeDE(info.expiresAt)}.`;
-  if (info.delivery === "email") return { tone: "success", text: `Die Einladung für ${name} wurde per E-Mail an ${email} gesendet. ${until}` };
-  if (info.delivery === "log") return { tone: "warning", text: `Entwicklungsserver ohne E-Mail-Versand: Die Einladung für ${name} (${email}) steht mit Link im Server-Log. ${until}` };
-  return { tone: "warning", text: `Die Einladung für ${name} wurde angelegt, aber nicht zugestellt: Der E-Mail-Versand ist auf dem Server nicht eingerichtet. Bitte den Betreiber informieren.` };
-}
-
-interface FormState { displayName: string; personnelNumber: string; email: string; role: TenantRole }
-const EMPTY: FormState = { displayName: "", personnelNumber: "", email: "", role: "employee" };
+interface FormState { displayName: string; personnelNumber: string; email: string; role: TenantRole; channel: InvitationChannel }
+const EMPTY: FormState = { displayName: "", personnelNumber: "", email: "", role: "employee", channel: "email" };
 
 export function EmployeesPage() {
   const { repo, tenant, me, version, changed } = useChef();
@@ -29,11 +21,12 @@ export function EmployeesPage() {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "invited" | "locked" | "deactivated">("all");
   const [sent, setSent] = useState<{ tone: "success" | "warning"; text: string } | null>(null);
+  const [sharing, setSharing] = useState<{ employee: Employee; initial: InvitationInfo | null } | null>(null);
 
   const open = (e: Employee | "new") => {
     setEditing(e);
     setError(null);
-    setForm(e === "new" ? EMPTY : { displayName: e.displayName, personnelNumber: e.personnelNumber, email: e.email ?? "", role: e.role });
+    setForm(e === "new" ? EMPTY : { displayName: e.displayName, personnelNumber: e.personnelNumber, email: e.email ?? "", role: e.role, channel: "email" });
   };
 
   const save = async (ev: Event) => {
@@ -42,14 +35,18 @@ export function EmployeesPage() {
     setError(null);
     try {
       if (editing === "new") {
-        const emp: InvitedEmployee = await repo.inviteEmployee(tenant.id, { displayName: form.displayName, personnelNumber: form.personnelNumber, email: form.email.trim() || null, role: form.role });
-        if (IS_DEMO) {
-          toast(`${emp.displayName} wurde eingeladen.${emp.email ? " (Demo: keine E-Mail versendet, Passwort „demo“)" : ""}`);
+        const email = form.email.trim() || null;
+        const emp: InvitedEmployee = await repo.inviteEmployee(tenant.id, {
+          displayName: form.displayName, personnelNumber: form.personnelNumber, email, role: form.role, invitation: form.channel,
+        });
+        toast(`${emp.displayName} wurde angelegt.`);
+        if (emp.email && emp.invitation?.link) {
+          setSent(null);
+          setSharing({ employee: emp, initial: emp.invitation });
         } else {
-          toast(`${emp.displayName} wurde angelegt.`);
           setSent(emp.email && emp.invitation
             ? invitationText(emp.displayName, emp.email, emp.invitation)
-            : { tone: "warning", text: `${emp.displayName} hat keine E-Mail-Adresse – es wurde keine Einladung versendet. Trage eine E-Mail-Adresse ein und sende die Einladung dann erneut.` });
+            : { tone: "warning", text: `${emp.displayName} hat keine E-Mail-Adresse – es wurde keine Einladung erstellt. Trage eine E-Mail-Adresse ein (sie ist der Anmeldename) und nutze dann „Zugang senden“.` });
         }
       } else if (editing) {
         await repo.updateEmployee(editing.id, { displayName: form.displayName, personnelNumber: form.personnelNumber, email: form.email.trim() || null, ...(form.role !== editing.role ? { role: form.role } : {}) });
@@ -105,16 +102,6 @@ export function EmployeesPage() {
     ));
   };
 
-  const resend = async (e: Employee) => {
-    try {
-      const info = await getApiRepository().resendInvitation(e.id);
-      setSent(info && e.email ? invitationText(e.displayName, e.email, info) : null);
-      toast("Einladung erneut erstellt.");
-    } catch (err) {
-      toast(errorText(err), "error");
-    }
-  };
-
   const list = (q.data ?? []).filter((e) => filter === "all" || e.status === filter);
   const set = (k: keyof FormState) => (v: string) => setForm({ ...form, [k]: v });
 
@@ -149,8 +136,8 @@ export function EmployeesPage() {
               key: "a", header: "Aktionen", actions: true, render: (e) => (
                 <div class="btn-row" style={{ justifyContent: "flex-end" }}>
                   <Button size="sm" variant="secondary" icon="edit" onClick={() => open(e)} aria-label={`${e.displayName} bearbeiten`}>Bearbeiten</Button>
-                  {!IS_DEMO && e.status === "invited" && e.email && (
-                    <Button size="sm" variant="ghost" icon="mail" onClick={() => resend(e)} aria-label={`Einladung an ${e.displayName} erneut senden`}>Erneut einladen</Button>
+                  {e.status === "invited" && (
+                    <Button size="sm" variant="primary" icon="send" onClick={() => setSharing({ employee: e, initial: null })} aria-label={`Zugang an ${e.displayName} senden`}>Zugang senden</Button>
                   )}
                   {e.id !== me.id && statusButtons(e)}
                 </div>
@@ -159,6 +146,8 @@ export function EmployeesPage() {
           ]}
         />
       </Card>
+
+      <InvitationShareDialog employee={sharing?.employee ?? null} initial={sharing?.initial ?? null} onClose={() => setSharing(null)} />
 
       <Dialog
         open={editing !== null}
@@ -172,7 +161,13 @@ export function EmployeesPage() {
         <form id="employee-form" class="stack" onSubmit={save} noValidate>
           <InputField label="Name" value={form.displayName} onValue={set("displayName")} required autoComplete="off" data-autofocus />
           <InputField label="Personalnummer" value={form.personnelNumber} onValue={set("personnelNumber")} required hint="Buchstaben, Ziffern, - und _ (max. 30 Zeichen)." />
-          <InputField label="E-Mail-Adresse" type="email" optional value={form.email} onValue={set("email")} hint="An diese Adresse geht die Einladung zur Anmeldung." />
+          <InputField label="E-Mail-Adresse" type="email" optional value={form.email} onValue={set("email")} hint="Anmeldename für die App. Ohne E-Mail-Adresse wird keine Einladung erstellt." />
+          {editing === "new" && (
+            <SelectField label="Zugang senden" value={form.channel} onValue={(v) => setForm({ ...form, channel: v as InvitationChannel })}
+              disabled={!form.email.trim()}
+              hint="Einmaliger Einladungslink, 7 Tage gültig. Die Person legt ihr Passwort selbst fest – es wird kein Passwort verschickt."
+              options={[{ value: "email", label: "Per E-Mail senden" }, { value: "link", label: "Link selbst teilen (WhatsApp oder kopieren)" }]} />
+          )}
           <SelectField label="Rolle" value={form.role} onValue={(v) => setForm({ ...form, role: v as TenantRole })}
             disabled={me.role !== "owner" || (editing !== "new" && editing?.id === me.id)}
             hint={me.role !== "owner" ? "Rollen kann nur der Inhaber ändern." : undefined}

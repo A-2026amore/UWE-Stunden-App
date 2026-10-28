@@ -7,7 +7,7 @@ import { PLAN_LABEL, dateTimeDE, formatDateDE, hoursLabel, monthLabelDE } from "
 const STATUS_DE: Record<string, string> = { active: "aktiv", deactivated: "deaktiviert", invited: "eingeladen", suspended: "gesperrt", proposed: "zur Prüfung", approved: "bestätigt", rejected: "abgelehnt" };
 const de = (v: unknown) => STATUS_DE[String(v)] ?? String(v ?? "—");
 import { useChef } from "../context";
-import { ACTION_LABEL } from "../../shared/audit";
+import { auditLabel } from "../../shared/audit";
 import { CORRECTION_KIND_LABEL, CORRECTION_STATUS_LABEL, valuesLabel } from "../../shared/corrections";
 import type { CorrectionKind, CorrectionStatus, EntryValues } from "../../../core/types";
 
@@ -75,7 +75,7 @@ export function AuditPage() {
           empty={<p class="muted">Keine Einträge.</p>}
           columns={[
             { key: "t", header: "Zeitpunkt", render: (e) => <span class="small nowrap">{dateTimeDE(e.createdAt)}</span> },
-            { key: "a", header: "Aktion", render: (e) => <Badge tone={e.action.includes("deleted") || e.action.includes("deactivated") || e.action.includes("rejected") || e.action.includes("returned") ? "danger" : e.action.includes("corrected") ? "warning" : "neutral"}>{ACTION_LABEL[e.action] ?? e.action}</Badge> },
+            { key: "a", header: "Aktion", render: (e) => <Badge tone={e.action.includes("deleted") || e.action.includes("deactivated") || e.action.includes("rejected") || e.action.includes("returned") ? "danger" : e.action.includes("corrected") ? "warning" : "neutral"}>{auditLabel(e)}</Badge> },
             { key: "w", header: "Durch", render: (e) => name(e.actorId) },
             { key: "s", header: "Betrifft", render: (e) => subject(e) },
             { key: "d", header: "Details", render: (e) => <span class="small">{describe(e)}</span> },

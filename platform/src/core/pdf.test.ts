@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStatementPdf, createStatementPdfBytes, statementFileName, type StatementPdfArgs } from "./pdf";
+import { createStatementPdf, createStatementPdfBytes, jpegInfo, statementFileName, type StatementPdfArgs } from "./pdf";
 import type { ShiftLike } from "./types";
 import { loadLegacy } from "./__legacy__/loadLegacy";
 import { clock, int, pick, rng } from "./__legacy__/random";
@@ -110,3 +110,51 @@ function loadLegacyWithBlob(): (args: unknown) => string {
     return latin1(last!);
   };
 }
+
+describe("pdf: tenant logo (generic brand)", () => {
+  // Minimal JPEG header: SOI, APP0 stub, SOF0 (8 bit, 40×20 px, 3 components), EOI.
+  const jpeg = new Uint8Array([
+    0xff, 0xd8,
+    0xff, 0xe0, 0x00, 0x04, 0x00, 0x00,
+    0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x14, 0x00, 0x28, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+    0xff, 0xd9,
+  ]);
+  const generic = (logo: StatementPdfArgs["tenant"]["logo"]): StatementPdfArgs["tenant"] => ({
+    name: "Muster Pflegedienst GmbH", brand: "generic", primaryColor: "#2d4f73", logo,
+    contact: { legalName: "Muster Pflegedienst GmbH", street: "Beispielweg 2", postalCode: "50667", city: "Köln" },
+  });
+
+  it("reads the pixel size of a JPEG and rejects other data", () => {
+    expect(jpegInfo(jpeg)).toEqual({ width: 40, height: 20, components: 3 });
+    expect(jpegInfo(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(jpegInfo(new Uint8Array([0xff, 0xd8, 0xff]))).toBeNull();
+  });
+
+  it("embeds the logo once and shows it with the company name on every page", () => {
+    const text = latin1(createStatementPdfBytes({
+      tenant: generic({ jpeg, width: 40, height: 20 }), employee: { name: "Erika Muster", personnelNumber: "4711" },
+      month: "2026-11", entries: makeEntries(60), createdAt: new Date(2026, 10, 30),
+    }));
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    expect(pages).toBeGreaterThan(1);
+    expect(text.split("/Subtype /Image").length - 1).toBe(1);
+    expect(text).toContain("/Width 40 /Height 20 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode");
+    expect(text.split("/Logo Do").length - 1).toBe(pages);
+    expect(text.split("(Muster Pflegedienst GmbH) Tj").length - 1).toBeGreaterThanOrEqual(pages);
+    // xref offsets stay correct with binary image data.
+    const start = Number(/startxref\n(\d+)/.exec(text)![1]);
+    expect(text.slice(start, start + 4)).toBe("xref");
+    for (const m of text.matchAll(/^(\d{10}) 00000 n $/gm)) expect(text.slice(Number(m[1]))).toMatch(/^\d+ 0 obj/);
+  });
+
+  it("falls back to the typographic logo without (or with an unusable) logo; UWE keeps its vector logo", () => {
+    const base = { employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries: makeEntries(3) };
+    const none = latin1(createStatementPdfBytes({ ...base, tenant: generic(null) }));
+    expect(none).not.toContain("/XObject");
+    expect(none).toContain("(Muster Pflegedienst GmbH) Tj");
+    const broken = latin1(createStatementPdfBytes({ ...base, tenant: generic({ jpeg: new Uint8Array([1, 2, 3]), width: 1, height: 1 }) }));
+    expect(broken).not.toContain("/XObject");
+    const uwe = latin1(createStatementPdfBytes({ ...base, tenant: { ...uweTenant, logo: { jpeg, width: 40, height: 20 } } }));
+    expect(uwe).not.toContain("/XObject");
+  });
+});

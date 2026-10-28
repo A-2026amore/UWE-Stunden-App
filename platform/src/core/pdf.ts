@@ -6,8 +6,9 @@
  *    page) – header and table header are repeated on every page, footer
  *    shows "Seite x von y";
  *  - UWE brand: original vector logo + wing watermark (paths copied 1:1);
- *    other tenants: company name as typographic logo in the primary colour
- *    (TODO: raster logo embedding from Branding.logoUrl);
+ *    other tenants: their uploaded logo (as JPEG, see StatementPdfLogo) next
+ *    to the company name, or the company name as typographic logo in the
+ *    primary colour when there is no logo;
  *  - optional work-account section; worked hours are never replaced.
  *
  * The only DOM/browser API used is `Blob` (also available in Node ≥ 18).
@@ -161,6 +162,45 @@ export interface StatementPdfTenant {
   contact?: Partial<Pick<CompanyContact, "legalName" | "street" | "postalCode" | "city" | "phone" | "email" | "website">> | null;
   /** Short prefix for file names, e.g. "UWE" (defaults to a cleaned company name). */
   filePrefix?: string;
+  /** Uploaded company logo (generic brand only), already converted to baseline JPEG. */
+  logo?: StatementPdfLogo | null;
+}
+
+/** A JPEG image (DCTDecode) – the browser converts PNG/SVG/WebP logos via canvas (apps/shared/statement.ts). */
+export interface StatementPdfLogo {
+  jpeg: Uint8Array;
+  /** Pixel size of the JPEG. */
+  width: number;
+  height: number;
+}
+
+/** Pixel size and colour components of a JPEG (SOF0–SOF15 marker), or null when it is not a usable JPEG. */
+export function jpegInfo(data: Uint8Array): { width: number; height: number; components: number } | null {
+  if (data.length < 4 || data[0] !== 0xff || data[1] !== 0xd8) return null;
+  let i = 2;
+  while (i + 9 < data.length) {
+    if (data[i] !== 0xff) return null;
+    const marker = data[i + 1]!;
+    if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue; }
+    const len = (data[i + 2]! << 8) | data[i + 3]!;
+    // SOFn except DHT (C4), JPG (C8) and DAC (CC).
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+      const height = (data[i + 5]! << 8) | data[i + 6]!;
+      const width = (data[i + 7]! << 8) | data[i + 8]!;
+      const components = data[i + 9]!;
+      if (!width || !height || ![1, 3].includes(components)) return null;
+      return { width, height, components };
+    }
+    if (len < 2) return null;
+    i += 2 + len;
+  }
+  return null;
+}
+
+/** Fits w×h into the box (keeps the aspect ratio). */
+function fit(w: number, h: number, maxW: number, maxH: number): [number, number] {
+  const k = Math.min(maxW / w, maxH / h);
+  return [w * k, h * k];
 }
 
 export interface StatementPdfAccount {
@@ -244,12 +284,22 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   const status = args.status ?? null;
 
   const headerExtra = test ? 39 : 0;
+  const logoInfo = !isUwe && tenant.logo ? jpegInfo(tenant.logo.jpeg) : null;
+  const logoSize = logoInfo ? fit(logoInfo.width, logoInfo.height, 150, 46) : null;
 
   function pageHeader(): string {
     let s = "";
     if (isUwe) {
       s += drawWingWatermark();
       s += drawOriginalLogo(M, H - 15, 250);
+    } else if (logoSize) {
+      // Uploaded logo (top left, max. 150 × 46 pt) and the company name next to it.
+      const [lw, lh] = logoSize;
+      s += "q " + lw.toFixed(2) + " 0 0 " + lh.toFixed(2) + " " + M + " " + (H - 76 + (46 - lh) / 2).toFixed(2) + " cm /Logo Do Q\n";
+      const x = M + lw + 12;
+      let name = tenant.name;
+      while (name.length > 1 && x + textWidth(name, 13, true) > W - 182) name = name.slice(0, -2) + "…";
+      s += txt(x, H - 57, name, 13, true, pal.accent);
     } else {
       // Typographic logo: company name in the primary colour.
       const name = latin(tenant.name).length > 34 ? tenant.name.slice(0, 33) + "…" : tenant.name;
@@ -363,12 +413,22 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   objects[5] = "<< /Type /ExtGState /ca 0.085 /CA 0.085 >>";
   const pageRefs: string[] = [];
   let n = 6;
+  let xobjects = "";
+  if (logoInfo) {
+    const id = n++;
+    let raw = "";
+    for (const b of tenant.logo!.jpeg) raw += String.fromCharCode(b);
+    objects[id] = "<< /Type /XObject /Subtype /Image /Width " + logoInfo.width + " /Height " + logoInfo.height +
+      " /ColorSpace /" + (logoInfo.components === 1 ? "DeviceGray" : "DeviceRGB") + " /BitsPerComponent 8 /Filter /DCTDecode /Length " +
+      raw.length + " >>\nstream\n" + raw + "\nendstream";
+    xobjects = " /XObject << /Logo " + id + " 0 R >>";
+  }
   for (const p of pages) {
     const pg = n++;
     const streamId = n++;
     const body = p.join("");
     pageRefs.push(pg + " 0 R");
-    objects[pg] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + W + " " + H + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /ExtGState << /GSWatermark 5 0 R >> >> /Contents " + streamId + " 0 R >>";
+    objects[pg] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + W + " " + H + "] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /ExtGState << /GSWatermark 5 0 R >>" + xobjects + " >> /Contents " + streamId + " 0 R >>";
     objects[streamId] = "<< /Length " + bytes(body).length + " >>\nstream\n" + body + "\nendstream";
   }
   objects[2] = "<< /Type /Pages /Kids [" + pageRefs.join(" ") + "] /Count " + pages.length + " >>";
