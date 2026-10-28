@@ -7,7 +7,7 @@ export default defineConfig({
   testIgnore: process.env.PW_PLATFORM === "0" ? ["platform/**"] : [],
   timeout: 30000,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  reporter: process.env.CI ? [["list"], ["github"], ["html", { open: "never" }]] : "list",
   use: { trace: "retain-on-failure", locale: "de-DE", timezoneId: "Europe/Berlin" },
   projects: [
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },

@@ -136,13 +136,22 @@ jobs:
       - name: Testzugänge, Backup und Wiederherstellungsprobe
         run: |
           C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"
+          L="$RUNNER_TEMP/step.log"
+          # Fehlerausgabe zusätzlich als Annotation (ohne Passwörter: die Ausgabe der Testzugänge wird verworfen).
+          annotate() { echo "::error title=$1::$(tail -c 4000 "$L" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
           $C run --rm migrate node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
-            server/src/cli.ts seed-test-env --confirm-test-environment --domain=stunden-ci.example > /dev/null
-          docker exec stunden-ci-db psql -U stunden_admin -d stunden -Atc "select count(*) from public.employees" | grep -qx 10
+            server/src/cli.ts seed-test-env --confirm-test-environment --domain=stunden-ci.example > /dev/null 2> "$L" \
+            || annotate "seed-test-env"
+          docker exec stunden-ci-db psql -U stunden_admin -d stunden -Atc "select count(*) from public.employees" > "$L" 2>&1 || annotate "Zählung"
+          grep -qx 10 "$L" || annotate "Testzugänge: erwartet 10 Mitarbeitende"
           umask 077
           BK="$RUNNER_TEMP/backup"; mkdir -p "$BK"; openssl rand -hex 32 > "$BK/pass"
-          BACKUP_PASSPHRASE_FILE="$BK/pass" BACKUP_KEEP_LOCAL=0 deploy/backup.sh --compose deploy/.env --out "$BK/out"
-          BACKUP_PASSPHRASE_FILE="$BK/pass" deploy/restore-test.sh --docker --migrations db/migrations "$BK"/out/stunden-ci-*.tar.gpg
+          BACKUP_PASSPHRASE_FILE="$BK/pass" BACKUP_KEEP_LOCAL=0 deploy/backup.sh --compose deploy/.env --out "$BK/out" > "$L" 2>&1 \
+            || annotate "backup.sh --compose"
+          cat "$L"
+          BACKUP_PASSPHRASE_FILE="$BK/pass" deploy/restore-test.sh --docker --migrations db/migrations "$BK"/out/stunden-ci-*.tar.gpg > "$L" 2>&1 \
+            || annotate "restore-test.sh --docker"
+          cat "$L"
       - name: Logs bei Fehler
         if: failure()
         run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs --no-color || true
