@@ -18,6 +18,7 @@ import { withTx, type Queryable } from "./db.ts";
 import { HttpError, badRequest } from "./errors.ts";
 import { Router, createRequestHandler, serializeCookie, type Reply, type RequestContext } from "./http.ts";
 import type { Mail, Mailer } from "./mailer.ts";
+import { oneTimeLink } from "./operator.ts";
 import { RateLimiter } from "./rateLimit.ts";
 import { registerDomainRoutes } from "./routes.ts";
 import { withStaticFiles } from "./static.ts";
@@ -163,7 +164,7 @@ export function createApp(deps: AppDeps) {
     link(kind, token) {
       const path = kind === "reset" ? config.resetLinkPath : config.inviteLinkPath;
       // Token in the fragment: never sent to servers, not in access logs or Referer.
-      return `${config.publicOrigins[0]}${path}#token=${encodeURIComponent(token)}`;
+      return oneTimeLink(config.publicOrigins[0]!, path, token);
     },
   };
 

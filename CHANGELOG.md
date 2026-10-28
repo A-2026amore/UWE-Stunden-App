@@ -5,6 +5,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Betreiberbefehl `cli.ts invite-link <mandant> <email> <rolle>` (QA 2026-10-28, B1): Einladungslink ohne
+  E-Mail, Ausgabe nur auf der Konsole; Migration `0010_operator_invitation.sql`.
 - Container-Betrieb: mehrstufiges `Dockerfile` (Node 22, Lockfile, Nicht-root, API liefert die gebauten
   Oberflächen aus), `deploy/docker-compose.yml` mit PostgreSQL 16 im internen Netz, externem Netz `proxy`,
   Backup-Label und Healthchecks, `deploy/.env.example`, `deploy/README.md`. Migrationsjob

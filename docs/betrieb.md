@@ -74,6 +74,8 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
   optional `SMTP_*`); vollständige Liste, systemd-Unit, Caddy-Beispiel und Backup-Hinweise in
   `server/README.md`.
 - Passwörter setzt der Betrieb mit `server/src/cli.ts set-password <email>` (Passwort über stdin).
+- Einladungslinks ohne E-Mail (kein SMTP): `server/src/cli.ts invite-link <mandant-kurzname> <email> <rolle>`.
+  Der Link erscheint nur auf der Konsole, nie im Log oder in der API (Details `server/README.md`).
 - Ohne SMTP werden E-Mails nur in der Entwicklung ins Log geschrieben; in Produktion nie.
 - Rate-Limits liegen im Prozessspeicher: **eine** API-Instanz betreiben (oder gemeinsamen Speicher ergänzen).
 - Tests: `npx vitest run --project db --no-file-parallelism tests/server`.
