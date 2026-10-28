@@ -34,6 +34,8 @@
 #                       ausgeführt wird, z. B. Übergabe an das vorhandene restic-Repository:
 #                         BACKUP_HOOK='restic backup --tag stunden --tag "$STAGE" "$@"'
 #                       Das Skript ändert keine bestehende Backup-Konfiguration des Servers.
+#   BACKUP_STATUS_FILE  Nach vollständigem Erfolg (inkl. Hook) wird hier der ISO-Zeitstempel abgelegt
+#                       („Letzte Sicherung“ in der Systemübersicht des Super-Admins, docs/betrieb.md).
 #
 # Exit-Code ≠ 0 bei jedem Fehler; dann bleibt kein halbfertiges Archiv liegen.
 set -Eeuo pipefail
@@ -167,5 +169,8 @@ fi
 if [ -n "${BACKUP_HOOK:-}" ]; then
   log "Übergabe an BACKUP_HOOK …"
   STAGE="$STAGE" bash -c "$BACKUP_HOOK" backup-hook "$TARGET" "$TARGET.sha256" || die "BACKUP_HOOK fehlgeschlagen (Archiv bleibt lokal erhalten: $TARGET)."
+fi
+if [ -n "${BACKUP_STATUS_FILE:-}" ]; then
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$BACKUP_STATUS_FILE.tmp" && chmod 644 "$BACKUP_STATUS_FILE.tmp" && mv "$BACKUP_STATUS_FILE.tmp" "$BACKUP_STATUS_FILE"
 fi
 echo "$TARGET"

@@ -106,8 +106,18 @@ API-Endpunkte bzw. `pgaudit` auf dem Server.
   `create_password_reset` gibt für unbekannte Adressen `NULL` zurück – die API muss in beiden
   Fällen gleich antworten (keine Kontenaufzählung).
 - `auth.*` ist nur für `app_auth` und SECURITY-DEFINER-Funktionen zugänglich, nie für `app_user`.
-- Offen/zu ergänzen in der API: Rate-Limiting/Sperre bei Fehlversuchen, HttpOnly-/Secure-/SameSite-Cookies,
-  CSRF-Schutz. Zwei-Faktor-Anmeldung (TOTP): umgesetzt, siehe Abschnitt 4a.
+- In der API umgesetzt (Details `server/README.md`): Sitzungs-Cookie `__Host-sid` mit `HttpOnly; Secure;
+  SameSite=Strict`; CSRF-Schutz durch `SameSite=Strict` **und** Pflicht-`Origin` aus `PUBLIC_ORIGIN` bei jeder
+  ändernden Anfrage (nur JSON-Körper); Sicherheits-Header (CSP `default-src 'none'` für die API, eigene CSP für
+  die Seiten, `nosniff`, `X-Frame-Options: DENY`, HSTS in Produktion); Passwörter mit scrypt (N = 32768).
+- Rate-Limits (Prozessspeicher, Zeitfenster `RATE_LIMIT_WINDOW_MINUTES`): Fehlanmeldungen je IP + E-Mail und
+  je IP, **seit der Sicherheitsprüfung 2026-10-28 zusätzlich je E-Mail-Adresse über alle IPs**
+  (`RATE_LIMIT_LOGIN_PER_EMAIL`, Standard 30) – ein Angriff aus vielen IPs auf ein Konto wird gebremst; während
+  der Sperre wird auch das richtige Passwort mit 429 abgelehnt (sonst ließe sich weiterraten). Unbekannte
+  Adressen werden gleich behandelt (keine Kontenaufzählung). Ebenso Reset-Mails je Adresse
+  (`RATE_LIMIT_RESET_PER_EMAIL`, Standard 10). Kompromiss: Wer absichtlich Fehlversuche für ein fremdes Konto
+  erzeugt, sperrt es bis zum Ende des Zeitfensters (höchstens 15 Minuten in der Standardeinstellung).
+- Zwei-Faktor-Anmeldung (TOTP): umgesetzt, siehe Abschnitt 4a; für Plattformkonten Pflicht.
 
 ## 4a. Zwei-Faktor-Anmeldung (TOTP)
 
@@ -194,6 +204,13 @@ selbst verlangt (bei bestehender Sitzung) kein erneutes Passwort.
   in der Datenbank abgelehnt (SVG kann Skripte enthalten). Die API prüft zusätzlich Größe und Dateisignatur.
 - `audit_log` ist append-only (UPDATE/DELETE/TRUNCATE werden auch für den Superuser abgelehnt,
   solange der Trigger aktiv ist). Anfragerollen können keine Audit-Einträge schreiben.
+  **Einzige Ausnahme (Migration 0016):** Die Anonymisierung ausgeschiedener Mitarbeitender
+  (`public.anonymize_employee`) darf innerhalb ihrer eigenen Transaktion personenbezogene Werte in
+  `audit_log`, `time_entry_revisions` und Korrekturanfragen durch `[anonymisiert]` ersetzen. Die Freigabe gilt
+  nur für diese Transaktion (Eintrag in `private.privacy_redactions`, ohne Rechte für Anfragerollen), nur für
+  den Mandanten der Person und nur für Inhaltsfelder – Kennungen, Zeitpunkte, Aktionen und Zeitwerte bleiben
+  unverändert; DELETE bleibt immer verboten. Die Anonymisierung selbst wird protokolliert
+  (`employee.anonymize`).
 - Alle SECURITY-DEFINER-Funktionen setzen `search_path = ''` und verwenden voll qualifizierte Namen.
 
 ## 6. Secrets
@@ -227,6 +244,25 @@ Notizfelder sollten in der App mit Hinweis „keine Patientendaten eintragen“ 
 Kundenmandanten; Verzeichnis der Verarbeitungstätigkeiten; TOMs dokumentieren. Prüfen, ob die
 Support-Freigabe vertraglich geregelt werden muss.
 
-**Betroffenenrechte:** Auskunft/Export je Mitarbeiter lässt sich aus `time_entries`,
-`time_entry_revisions`, `work_account_allocations`, `monthly_statements`, `audit_log` erzeugen
-(Wartungsjob/Export-Endpunkt – noch nicht umgesetzt).
+**Betroffenenrechte:** umgesetzt seit Migration 0016 – Datenauskunft (JSON/CSV) durch die Person selbst
+(Mitarbeiter-App → Einstellungen → „Meine Daten“) oder den Inhaber, Anonymisierung nach einstellbarer Frist,
+Gesamtexport des Mandanten. Fachliche Beschreibung, Entwurf des Verarbeitungsverzeichnisses, TOMs und
+Löschkonzept: [`docs/datenschutz.md`](datenschutz.md) (Entwurf, rechtlich zu prüfen).
+
+## 8. Sicherheitsprüfung release/1.0 (28.10.2026)
+
+Unabhängige Prüfung des Stands `release/1.0` (Schwerpunkt Migrationen 0012–0015, Abrechnung, Korrekturen,
+Pausenregeln, Super-Admin) plus Datenschutz-/Backup-Funktionen dieses Zweigs. Geprüft = durch automatische
+Tests belegt (Spalte „Test“); Einschätzungen ohne Test sind als solche markiert.
+
+| Bereich | Ergebnis | Schwere | Behoben | Test |
+|---|---|---|---|---|
+| Fehlanmeldungen/Reset-Mails nur je IP bzw. IP + Konto begrenzt – verteilte Angriffe (viele IPs, ein Konto) und Mail-Bombing über wechselnde IPs nicht gebremst | Begrenzung je E-Mail-Adresse über alle IPs ergänzt | Mittel | ja | `tests/server/rate-limit-email.test.ts` |
+| Mandantentrennung über HTTP: **jede** registrierte Route (aus dem Router gelesen) mit fremdem Inhaber, fremdem Mitarbeiter, Mitarbeiter und Leitung desselben Mandanten sowie Support ohne Freigabe | keine Lücke gefunden; neue Routen ohne Einstufung lassen den Test scheitern | – | – | `tests/server/route-isolation.test.ts` |
+| Plattformpersonal liest Mandanten-Protokoll (`/api/tenants/:id/audit`) | ohne Support-Freigabe nur Plattform-Ereignisse (Mandant, Lizenz, Freigaben, Abrechnung), keine Personen- oder Zeitwerte; mit Freigabe alles dieses Mandanten, nach Widerruf sofort wieder nicht (RLS `audit_select`, 0012) – Hinweis aus dem Super-Admin-Zweig nicht bestätigt | – | – | `tests/server/platform-audit-visibility.test.ts`, `platform/src/data/demo-privacy.test.ts` |
+| SECURITY-DEFINER-Funktionen, RLS, Views, Rechte, Rollen (Katalogprüfung nach allen Migrationen) | alle DEFINER-Funktionen mit `search_path = ''`; RLS auf allen Tabellen in `public`/`auth`; Views `security_invoker`; nichts an PUBLIC; `app_anon` erreicht nur drei Funktionen; keine DELETE-Rechte für Anfragerollen; `app_api` ohne BYPASSRLS/Eigentum | – | – | `tests/db/security-catalog.test.ts` |
+| Kein `FORCE ROW LEVEL SECURITY` | Tabelleneigentümer ist der Migrations-Superuser, den die App nie benutzt; `app_api` besitzt nichts → kein Risiko, keine Änderung | Info | – | Katalogtest |
+| Sitzungen, Cookies, CSRF, Header, Passwort-Hash, SVG-Uploads | Code gelesen; vorhandene Tests decken Cookie-Flags und Origin-Prüfung (`tests/server/auth.test.ts`), Header (`static.test.ts`) und SVG-Ablehnung (`entries.test.ts`, `tests/db/hardening.test.ts`) ab; keine Lücke gefunden | – | – | vorhandene Tests |
+| Support-Lesezugriffe werden nicht einzeln protokolliert, nur Erteilen/Widerrufen der Freigabe | offen (Abschnitt 3) | Niedrig | nein | – |
+| Rate-Limits im Prozessspeicher (gelten je Instanz, Neustart setzt zurück) | bekannt, eine Instanz betreiben | Niedrig | nein | – |
+| Absichtliche Kontosperre durch Fehlversuche (Folge der neuen Begrenzung je Adresse) | bewusster Kompromiss, höchstens ein Zeitfenster | Niedrig | – | `rate-limit-email.test.ts` |

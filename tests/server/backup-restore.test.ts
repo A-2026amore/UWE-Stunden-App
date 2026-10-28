@@ -69,14 +69,21 @@ describe("backup with passphrase", () => {
 
   it("writes an encrypted archive with checksum – no plain data on disk", async () => {
     const out = join(work, "sym");
-    const r = await sh(BACKUP, ["--url", sourceUrl, "--out", out], { BACKUP_PASSPHRASE_FILE: join(work, "pass") });
+    const status = join(work, "letzte-sicherung");
+    const r = await sh(BACKUP, ["--url", sourceUrl, "--out", out], {
+      BACKUP_PASSPHRASE_FILE: join(work, "pass"), BACKUP_STATUS_FILE: status,
+      // Hand-off hook (e.g. restic): receives the archive and its checksum file.
+      BACKUP_HOOK: `printf '%s\\n' "$@" > ${join(work, "hook-args")}`,
+    });
     expect(r.out).toContain("fertig:");
     expect(r.code).toBe(0);
+    expect(readFileSync(status, "utf8")).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\n$/);
     archive = archiveIn(out);
     expect(readdirSync(out).sort()).toEqual([archive.split("/").pop(), `${archive.split("/").pop()}.sha256`]);
     const bytes = readFileSync(archive);
     expect(bytes.includes(Buffer.from("Demo Krankentransporte"))).toBe(false);
     expect(bytes.includes(Buffer.from("PGDMP"))).toBe(false);
+    expect(readFileSync(join(work, "hook-args"), "utf8")).toBe(`${archive}\n${archive}.sha256\n`);
     expect(readFileSync(`${archive}.sha256`, "utf8")).toMatch(/^[0-9a-f]{64} {2}stunden-test-\d{8}T\d{6}Z\.tar\.gpg\n$/);
   }, 120_000);
 

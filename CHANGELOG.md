@@ -5,6 +5,27 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Datenschutz, Sicherheit und Wiederherstellbarkeit (Branch `feature/sicherheit-dsgvo-backup`, Migration
+  `0016_privacy.sql`, Doku `docs/datenschutz.md` – Entwurf, rechtlich prüfen):
+  - Datenauskunft (Art. 15/20 DSGVO): Mitarbeiter-App → Einstellungen → „Meine Daten“ (CSV oder JSON, inkl.
+    Anmeldesitzungen und 2FA-Status); der Inhaber erstellt dieselbe Auskunft im Chef-Portal → „Datenschutz“.
+    Jeder Abruf wird protokolliert. API `GET /api/employees/:id/data-export[?format=csv]`.
+  - Anonymisierung ausgeschiedener Mitarbeitender nach einer vom Inhaber festgelegten Aufbewahrungsfrist
+    (1–600 Monate, ohne Frist keine Anonymisierung; keine Frist vorgegeben). Nur deaktivierte Personen, nach
+    Ablauf der Frist, mit Bestätigung der Personalnummer, protokolliert; Arbeitszeiten bleiben ohne Personenbezug
+    erhalten. API `PUT /api/tenants/:id/privacy`, `POST /api/employees/:id/anonymize`.
+  - Gesamtexport aller Firmendaten für den Inhaber (z. B. bei Kündigung), JSON und CSV.
+    API `GET /api/tenants/:id/data-export[?format=csv]`. Demo-Repository verhält sich gleich.
+  - Verschlüsselte Datenbank-Sicherung `deploy/backup.sh` (pg_dump Custom-Format, Rollen ohne Passwörter,
+    Manifest aus demselben Schnappschuss, GPG mit öffentlichem Schlüssel oder Passphrase, SHA-256, Übergabe an
+    restic per `BACKUP_HOOK`, `BACKUP_STATUS_FILE` für „Letzte Sicherung“) und Wiederherstellungsprobe
+    `deploy/restore-test.sh` (Wegwerf-Cluster/-Container, prüft Zeilenzahlen, Migrationsstand, RLS).
+    Anleitung `docs/betrieb.md` 5.1. Bestehende Server-Backup-Konfiguration unverändert.
+  - Testzugänge für die Testumgebung: `cli.ts seed-test-env --confirm-test-environment` (Testfirma Gratis und
+    Testfirma Zahlend mit Inhaber, Leitung, drei Mitarbeitenden, Super-Admin mit Pflicht-2FA; Zufallspasswörter
+    nur in der Konsole; verweigert bei echten Mandanten). Ablauf zum Aktualisieren von
+    `stunden-test.appzentrale24.de` in `deploy/README.md`.
+  - CI: Container-Job legt Testzugänge an, sichert per Compose und führt die Wiederherstellungsprobe aus.
 - Chef-Portal/Super-Admin Feinschliff (Branch `feature/chef-admin-feinschliff`):
   - Chef-Portal „Stundenübersicht“ (`#/stunden`): alle Mitarbeitenden eines Monats mit Summen und Nachweis-Status,
     Einzelansicht je Person mit Tagesliste, Summenzeile, Freigeben/Zurückgeben, PDF-Stundenzettel und CSV
@@ -94,6 +115,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Sicherheit (QA 2026-10-28)
+- Sicherheitsprüfung release/1.0 (Ergebnis `docs/security.md` Abschnitt 8): Fehlanmeldungen und Reset-Mails
+  werden zusätzlich je E-Mail-Adresse über alle IPs begrenzt (`RATE_LIMIT_LOGIN_PER_EMAIL`, Standard 30;
+  `RATE_LIMIT_RESET_PER_EMAIL`, Standard 10) – Schwere mittel, behoben. Neuer Test ruft **jede** registrierte
+  API-Route mit fremden Rollen auf (`tests/server/route-isolation.test.ts`; neue Routen ohne Einstufung lassen ihn
+  scheitern), Katalogprüfung aller Migrationen (`tests/db/security-catalog.test.ts`), Sichtbarkeit des
+  Mandanten-Protokolls für Plattformpersonal (`tests/server/platform-audit-visibility.test.ts`, keine Lücke).
 - B3: Firmenprofil (Branding, Kontakt, Einstellungen, Name) ändert nur noch der Inhaber. Plattformpersonal hat
   keinen Schreibzugriff mehr auf Mandantenzeilen, auch nicht mit Support-Freigabe; Statuswechsel nur über
   `set_tenant_status` (jetzt SECURITY DEFINER mit Super-Admin-Prüfung). Migration `0011_tenant_profile_owner_only.sql`.

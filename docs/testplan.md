@@ -280,3 +280,23 @@ mobile-android) 122/122, Full-Stack desktop-chromium 18/18 und mobile-android 18
 Nicht abgedeckt: echte Authenticator-Apps auf echten Geräten (nur berechnete Codes; QR-Code einmalig mit OpenCV
 dekodiert), WebKit/iPhone, Betrieb mehrerer API-Instanzen (Rate-Limits im Prozessspeicher), Zurücksetzen durch den
 Betrieb per SQL (nur dokumentiert, nicht automatisch getestet).
+
+## 11. Sicherheit, Datenschutz, Backups (28.10.2026)
+
+Lokal ausgeführt (nur Chromium; Datenbank-Tests gegen Wegwerf-Cluster PostgreSQL 16).
+
+| Datei | Abgedeckt |
+|---|---|
+| `tests/server/route-isolation.test.ts` (7) | liest alle Routen aus dem Router; jede Route braucht eine Einstufung; ruft jede Mandanten-Route mit fremdem Inhaber, fremdem Mitarbeiter, Mitarbeiter und Leitung desselben Mandanten und Support ohne Freigabe auf → 403/404 ohne fremde Daten (Markierungen), keine Änderung (Prüfsumme der Daten), Sitzungen bleiben gültig, ohne Sitzung 401 |
+| `tests/server/platform-audit-visibility.test.ts` (3) | Super-Admin/Support sehen ohne Freigabe nur Plattform-Ereignisse eines Mandanten, mit Freigabe alles dieses Mandanten, nach Widerruf wieder nicht |
+| `tests/server/rate-limit-email.test.ts` (4) | Begrenzung je E-Mail über wechselnde IPs (Anmeldung und Reset), unbekannte Adressen gleich behandelt |
+| `tests/db/security-catalog.test.ts` (11) | DEFINER-Funktionen mit `search_path=''`, RLS überall, Views `security_invoker`, keine PUBLIC-Rechte, `app_anon` nur drei Funktionen, kein DELETE für Anfragerollen, `app_api` ohne BYPASSRLS |
+| `tests/db/privacy.test.ts` (13), `tests/server/privacy.test.ts` (8) | Datenauskunft (Rechte, Inhalt, Audit, CSV mit BOM und Formel-Schutz), Gesamtexport, Frist, Anonymisierung (Voraussetzungen, Schwärzung in Protokoll/Verlauf/Korrekturen, Konto entfernt, endgültig), Unveränderlichkeit außerhalb der Anonymisierung |
+| `platform/src/core/privacy.test.ts` (7), `platform/src/data/demo-privacy.test.ts` (4) | CSV-Aufbau, Fristende; Demo-Repository verhält sich wie die API |
+| `tests/server/backup-restore.test.ts` (5) | `backup.sh --url` → verschlüsseltes Archiv (kein Klartext), Prüfsumme, Hook, Statusdatei; `restore-test.sh` (lokal `--local`, CI `--server-url`) mit allen Prüfungen; manipuliertes Archiv, falsche Passphrase, fehlende Verschlüsselung abgelehnt; öffentlicher GPG-Schlüssel |
+| `tests/server/testenv.test.ts` (2) | Testzugänge: zwei Testfirmen, 11 Konten mit gültigen Zufallspasswörtern nur auf stdout, Super-Admin mit Pflicht-2FA, kein Überschreiben, Verweigerung ohne Bestätigung und bei echten Mandanten |
+| `tests/e2e/platform/privacy.spec.ts` (3 × 2 Projekte) | Demo-Build: Datenschutz-Seite (Frist, Auskunft, Anonymisierung mit Frist/Bestätigung, Firmenexport), Leitung ohne Funktionen, „Meine Daten“ |
+| `tests/e2e/fullstack/privacy.fullstack.ts` (2 × 2 Projekte) | echte API: „Meine Daten“ (JSON), Firmenexport CSV, Leitung ohne Funktionen |
+
+Nicht lokal ausgeführt: `backup.sh --compose` und `restore-test.sh --docker` (kein Docker-Daemon; laufen im CI-Job
+„Container-Image (Bau + Start)“), Wiederherstellung eines echten Archivs aus der Hetzner Storage Box.
