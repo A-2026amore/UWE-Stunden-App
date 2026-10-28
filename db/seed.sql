@@ -92,6 +92,10 @@ update public.employee_status_history set valid_from = '2026-09-01 00:00 Europe/
  where tenant_id = '11111111-1111-4111-8111-111111111111';
 update public.employee_status_history set valid_from = '2026-10-01 00:00 Europe/Berlin'
  where tenant_id = '22222222-2222-4222-8222-222222222222';
+-- Tenant status history (0018) from the tenant start as well.
+update public.tenant_status_history h set valid_from = t.created_at
+  from public.tenants t where t.id = h.tenant_id and h.valid_to is null
+   and t.id in ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222');
 
 -- Open invitation for Dana (token "demo-einladung-nur-fuer-tests", only its hash is stored).
 insert into public.invitations (id, tenant_id, employee_id, email, created_by, expires_at) values

@@ -6,6 +6,7 @@ import { errorText, useAsync } from "../../shared/hooks";
 import { dateTimeDE, monthLabelDE } from "../../shared/format";
 import { CORRECTION_KIND_LABEL, REVISION_LABEL, changedFields, requestDate, valuesLabel } from "../../shared/corrections";
 import { useChef } from "../context";
+import { useReopenStatement } from "../StatementHistory";
 
 type Filter = "open" | "all";
 
@@ -14,6 +15,7 @@ export function CorrectionsPage() {
   const { repo, tenant, me, session, version, changed } = useChef();
   const toast = useToast();
   const dialogs = useDialogs();
+  const reopenStatement = useReopenStatement();
   const [filter, setFilter] = useState<Filter>("open");
   const [history, setHistory] = useState<{ employeeId: string; entryId: string; title: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -37,15 +39,23 @@ export function CorrectionsPage() {
   const accept = async (r: CorrectionRequest) => {
     const emp = byId.get(r.employeeId);
     const st = statementOf(r);
+    // Decision 28.10.2026: an approved month must be re-opened (reason, history) before a correction.
+    if (st?.status === "approved") {
+      const go = await dialogs.confirm({
+        title: "Monat ist freigegeben",
+        message: <p>Der Monat {st.month.slice(5, 7)}/{st.month.slice(0, 4)} von {emp?.displayName} ist freigegeben. Korrekturen sind erst nach einer dokumentierten Wiederöffnung möglich; danach bitte erneut freigeben.</p>,
+        confirmLabel: "Monat wieder öffnen",
+      });
+      if (!go || !(await reopenStatement(emp ?? { displayName: "" }, st))) return;
+    }
     const ok = await dialogs.confirm({
       title: "Korrekturanfrage annehmen?",
       message: (
         <>
           <p>{emp?.displayName}: {CORRECTION_KIND_LABEL[r.kind]} – {r.kind === "delete" ? valuesLabel(r.before) : valuesLabel(r.proposed)}.</p>
           <p>Die Änderung wird als Korrektur mit der Begründung gespeichert; der ursprüngliche Eintrag bleibt im Verlauf erhalten.</p>
-          {st?.status === "approved" && (
-            <p><strong>Der Monat ist bereits freigegeben.</strong> Die Zahlen des freigegebenen Nachweises werden nicht automatisch angepasst;
-              der Nachweis wird als „nach Freigabe korrigiert“ gekennzeichnet.</p>
+          {(st?.status === "approved" || st?.status === "reopened") && (
+            <p><strong>Der Monat ist wieder geöffnet.</strong> Nach den Korrekturen bitte den Monatsnachweis erneut freigeben – die Zahlen werden dabei neu berechnet.</p>
           )}
         </>
       ),

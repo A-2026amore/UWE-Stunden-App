@@ -11,7 +11,8 @@
  *  - Invited persons who were never active are never billable.
  */
 import type {
-  BillableReason, BillingCondition, EmployeeStatus, ISODate, ISOMonth, License, PlatformRevenue, PlatformRevenueRow, TenantRole,
+  BillableReason, BillingCondition, EmployeeStatus, ISODate, ISOMonth, License, PlatformRevenue, PlatformRevenueRow, TenantBlock, TenantRole,
+  TenantStatus,
 } from "./types";
 
 /** Platform default: 5,00 € net per billable employee and month. */
@@ -25,6 +26,8 @@ export const BILLING_CONDITION_LABEL: Record<BillingCondition, string> = {
   special: "Sonderpreis",
   free: "Kostenloses Konto",
   pilot_free: "Kostenlos – Pilot",
+  tenant_suspended: "Firma gesperrt – nicht berechnet",
+  tenant_deactivated: "Firma deaktiviert – nicht berechnet",
 };
 
 export const BILLING_STATUS_LABEL: Record<string, string> = {
@@ -128,6 +131,29 @@ export function billableReason(periods: StatusPeriod[], ownEntryDates: readonly 
   return ownEntryDates.some((d) => d >= b.firstDay && d <= b.lastDay) ? "leader_with_time" : null;
 }
 
+/** One validity period of the status of a tenant (tenant_status_history, migration 0018). */
+export interface TenantStatusPeriod {
+  status: TenantStatus;
+  from: string;
+  to: string | null;
+  reason?: string | null;
+}
+
+/**
+ * Block of a tenant covering the WHOLE month (decision 28.10.2026): every status period
+ * that overlaps the month is "suspended" or "deactivated". The month of the block itself
+ * is still billed (block on 10.11. → November billed, December not); a reactivation in a
+ * month makes that month billable again. Same rule as private.tenant_block in the database.
+ */
+export function tenantBlockFor(periods: readonly TenantStatusPeriod[], month: ISOMonth): (TenantBlock & { reason: string | null }) | null {
+  const b = monthBounds(month);
+  const ov = periods.filter((p) => Date.parse(p.from) < b.end && (p.to === null || Date.parse(p.to) > b.start))
+    .sort((x, y) => x.from.localeCompare(y.from));
+  if (!ov.length || ov.some((p) => p.status !== "suspended" && p.status !== "deactivated")) return null;
+  const last = ov[ov.length - 1]!;
+  return { status: last.status as TenantBlock["status"], since: last.from, reason: last.reason ?? null };
+}
+
 export type LicenseCondition = Pick<License, "plan" | "status" | "employeePriceCents" | "freeOfCharge" | "conditionValidFrom" | "conditionValidUntil">;
 
 /**
@@ -135,8 +161,9 @@ export type LicenseCondition = Pick<License, "plan" | "status" | "employeePriceC
  * (free of charge or own price) applies when its validity overlaps the month;
  * otherwise (or without active licence) the platform default price.
  */
-export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth): { condition: BillingCondition; unitPriceCents: number } {
+export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null): { condition: BillingCondition; unitPriceCents: number } {
   const b = monthBounds(month);
+  if (block) return { condition: block.status === "suspended" ? "tenant_suspended" : "tenant_deactivated", unitPriceCents: 0 };
   if (!license || license.status !== "active") return { condition: "standard", unitPriceCents: defaultPriceCents };
   if (license.plan === "pilot_free") return { condition: "pilot_free", unitPriceCents: 0 };
   const applies = (license.conditionValidFrom === null || license.conditionValidFrom <= b.lastDay)

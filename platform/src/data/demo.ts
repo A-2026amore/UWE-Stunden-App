@@ -24,19 +24,24 @@
 import type {
   AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingStatus, Branding, CompanyContact, CorrectionRequest,
   Employee, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, Tenant,
-  TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
+  StatementEvent, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import {
-  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMonthOf, monthsBack, revenueTotals,
+  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
+  tenantBlockFor, type TenantStatusPeriod,
   type StatusPeriod,
 } from "../core/billing";
 import { activeShifts, addDays, findOverlapAcrossDays, grossMinutes, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
+import {
+  DEFAULT_INVOICE_PREFIX, DEFAULT_PAYMENT_TERMS_DAYS, DEFAULT_VAT_RATE_PERCENT, addDaysISO, formatInvoiceNumber, invoiceTotals, missingIssuerData,
+  type Invoice, type InvoiceDraft, type InvoiceSettings,
+} from "../core/invoice";
 import { retentionEndsAt, type ExportPerson, type ExportRecords, type ExportTimeEntry, type PersonalDataExport, type TenantDataExport } from "../core/privacy";
 import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validateBreakPolicy } from "../core/breaks";
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
+  type BillingApi, type InvoiceApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
   type Session, type SystemOverview, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
@@ -171,10 +176,18 @@ interface DemoDb {
   statusHistory?: DemoStatusPeriod[];
   defaultPriceCents?: number;
   billingPeriods?: DemoBillingPeriod[];
+  /** Added with the re-opening of statements (0017): history of every statement. */
+  statementEvents?: Array<StatementEvent & { statementId: UUID; tenantId: UUID; employeeId: UUID; actorId?: UUID | null }>;
+  /** Added with the tenant status history (0018). */
+  tenantStatusHistory?: Array<TenantStatusPeriod & { tenantId: UUID }>;
+  /** Added with invoices (0019). */
+  invoiceSettings?: Omit<InvoiceSettings, "missing">;
+  invoiceCounters?: Record<string, number>;
+  invoices?: Invoice[];
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi {
+export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi {
   /**
    * Demo only: current 6-digit code of the account that is signing in
    * (second step) or signed in – so 2FA can be tried without an app.
@@ -523,7 +536,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (db && db.schema === 1) return upgrade(db);
       } catch { /* re-seed below */ }
     }
-    const db = seedDb(seedNow());
+    const db = upgrade(seedDb(seedNow()));
     save(db);
     return db;
   }
@@ -532,6 +545,24 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     db.statusHistory ??= db.employees.map((e) => ({ employeeId: e.id, tenantId: e.tenantId, status: e.status, role: e.role, from: e.createdAt, to: null }));
     db.defaultPriceCents ??= DEFAULT_EMPLOYEE_PRICE_CENTS;
     db.billingPeriods ??= [];
+    db.statementEvents ??= db.statements.filter((x) => x.status !== "draft").map((x) => ({
+      statementId: x.id, tenantId: x.tenantId, employeeId: x.employeeId,
+      action: x.status === "approved" ? "approve" as const : x.status === "returned" ? "return" as const : x.status === "reopened" ? "reopen" as const : "submit" as const,
+      at: x.reviewedAt ?? x.submittedAt ?? db.seededAt, actorName: null, reason: x.status === "returned" || x.status === "reopened" ? x.reviewNote : null,
+      workedMinutes: x.workedMinutes, allocatedMinutes: x.allocatedMinutes, billingMinutes: x.billingMinutes,
+    }));
+    db.tenantStatusHistory ??= db.tenants.map((t) => ({
+      tenantId: t.id, status: t.status, reason: null,
+      from: (db.statusHistory ?? []).filter((h) => h.tenantId === t.id).map((h) => h.from).sort()[0] ?? db.seededAt, to: null,
+    }));
+    db.invoiceSettings ??= {
+      issuerName: "Stundenwerk Demo GmbH (Testdaten)", issuerStreet: "Beispielstraße 1", issuerPostalCode: "12345", issuerCity: "Musterstadt",
+      issuerCountry: "Deutschland", issuerEmail: "rechnung@plattform.example", issuerPhone: null, taxNumber: "000/000/00000 (Demo)", vatId: null,
+      paymentDetails: "Demo: keine echte Bankverbindung.", vatRatePercent: DEFAULT_VAT_RATE_PERCENT, vatRateConfirmed: false,
+      paymentTermsDays: DEFAULT_PAYMENT_TERMS_DAYS, numberPrefix: DEFAULT_INVOICE_PREFIX, updatedAt: null,
+    };
+    db.invoiceCounters ??= {};
+    db.invoices ??= [];
     for (const l of db.licenses) {
       l.employeePriceCents ??= null;
       l.freeOfCharge ??= l.plan === "pilot_free";
@@ -722,13 +753,30 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
 
   /** Employees cannot change months that are submitted or approved. */
   function assertMonthOpen(db: DemoDb, s: Session, employeeId: UUID, month: ISOMonth) {
-    if (isManager(s) && s.employeeId !== employeeId) return; // managers correct with reason
     const st = statementOf(db, employeeId, month);
-    if (st && (st.status === "submitted" || st.status === "approved")) {
-      throw new Error(st.status === "approved"
-        ? "Dieser Monat ist bereits freigegeben und kann nicht mehr geändert werden. Bitte wende dich an deine Vorgesetzten."
+    // Decision 28.10.2026 (migration 0017): an approved month changes for nobody – first "Monat wieder öffnen".
+    if (st?.status === "approved") {
+      throw new Error(isManager(s)
+        ? `Der Monat ${month.slice(5, 7)}/${month.slice(0, 4)} ist freigegeben. Korrekturen sind erst möglich, nachdem die Leitung den Monatsnachweis mit Begründung wieder geöffnet hat.`
+        : "Dieser Monat ist bereits freigegeben und kann nicht mehr geändert werden. Bitte wende dich an deine Vorgesetzten.");
+    }
+    if (isManager(s)) {
+      if (s.employeeId !== employeeId || st?.status === "reopened") return; // managers correct with reason
+    }
+    if (st && (st.status === "submitted" || st.status === "reopened")) {
+      throw new Error(st.status === "reopened"
+        ? "Der Monat wurde von deiner Leitung wieder geöffnet. Änderungen bitte per Korrekturanfrage."
         : "Der Monatsnachweis ist eingereicht. Änderungen sind erst nach Rückgabe möglich.");
     }
+  }
+
+  /** monthly_statement_events (0017). */
+  function recordStatementEvent(db: DemoDb, s: Session, st: MonthlyStatement, action: StatementEvent["action"], reason: string | null) {
+    (db.statementEvents ??= []).push({
+      statementId: st.id, tenantId: st.tenantId, employeeId: st.employeeId, action, at: new Date().toISOString(),
+      actorId: s.employeeId, actorName: null, reason,
+      workedMinutes: st.workedMinutes, allocatedMinutes: st.allocatedMinutes, billingMinutes: st.billingMinutes,
+    });
   }
 
   function validateEntry(db: DemoDb, tenant: Tenant, employeeId: UUID, candidate: { id: string; date: string; start: string; end: string; pauseMinutes: number; note: string }) {
@@ -800,11 +848,39 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       return { month, status: p.status, final: true, ...numbers, note: p.note, closedAt: p.closedAt, lines };
     }
     const lic = db.licenses.find((l) => l.tenantId === tenantId) ?? null;
-    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month);
+    const block = tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === tenantId), month);
+    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block);
     const lines = billingLines(db, tenantId, month);
     return {
       month, status: "open", final: false, condition, plan: lic?.plan ?? null, unitPriceCents,
       billableCount: lines.length, amountCents: billingAmount(lines.length, unitPriceCents), note: p?.note ?? null, closedAt: null, lines,
+    };
+  }
+  function invoiceSettingsOf(db: DemoDb): InvoiceSettings {
+    const st = db.invoiceSettings!;
+    return { ...st, missing: missingIssuerData(st) };
+  }
+  /** Like private.invoice_build (0019): numbers of the billing month, issuer, recipient from the company profile. */
+  function invoiceDraft(db: DemoDb, tenantId: UUID, month: ISOMonth): InvoiceDraft {
+    const t = tenantById(db, tenantId);
+    const st = invoiceSettingsOf(db);
+    const m = billingMonth(db, tenantId, month);
+    const b = monthBounds(month);
+    const today = localISODate(new Date());
+    const missing = [...st.missing];
+    if (!t.contact.street.trim() || !t.contact.postalCode.trim() || !t.contact.city.trim()) missing.push("Anschrift des Kunden (Firmenprofil)");
+    const lines = [{ description: `Zeiterfassung – abrechenbare Mitarbeitende ${month.slice(5, 7)}/${month.slice(0, 4)}${m.condition === "special" ? " (Sonderpreis)" : ""}`,
+      quantity: m.billableCount, unitPriceCents: m.unitPriceCents, amountCents: m.amountCents }];
+    const totals = invoiceTotals(lines, st.vatRatePercent);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { missing: _m, updatedAt: _u, vatRatePercent: _v, vatRateConfirmed: _c, paymentTermsDays: _p, numberPrefix: _n, ...issuer } = st;
+    return {
+      draft: true, number: null, tenantId, month, billingStatus: m.status, final: m.final, condition: m.condition,
+      issueDate: today, servicePeriodStart: b.firstDay, servicePeriodEnd: b.lastDay, paymentTermsDays: st.paymentTermsDays,
+      dueDate: addDaysISO(today, st.paymentTermsDays), issuer,
+      recipient: { name: t.contact.legalName || t.name, street: t.contact.street, postalCode: t.contact.postalCode, city: t.contact.city,
+        contactPerson: t.contact.contactPerson ?? null, customerNumber: t.slug },
+      lines, ...totals, vatRatePercent: st.vatRatePercent, vatRateConfirmed: st.vatRateConfirmed, currency: "EUR", missing,
     };
   }
   const summaryOf = (m: BillingMonthSummary): BillingMonthSummary => ({
@@ -1297,6 +1373,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (!isValidMonth(month)) throw new Error("Bitte gültigen Monat wählen.");
         const st = statementOf(db, employeeId, month);
         if (st && st.status === "approved") throw new Error("Der Monat ist bereits freigegeben. Die Aufteilung kann nicht mehr geändert werden.");
+        if (st && st.status === "reopened") throw new Error("Der Monat wurde wieder geöffnet. Die Aufteilung prüft jetzt deine Leitung.");
         const tenant = tenantById(db, emp.tenantId);
         const entries = activeShifts(db.entries.filter((e) => e.employeeId === employeeId));
         const others = db.allocations.filter((a) => a.employeeId === employeeId && a.month !== month);
@@ -1321,6 +1398,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         assertManager(s, emp.tenantId);
         const alloc = db.allocations.find((a) => a.employeeId === employeeId && a.month === month);
         if (!alloc) throw new Error("Für diesen Monat liegt keine Aufteilung vor.");
+        if (statementOf(db, employeeId, month)?.status === "approved") throw new Error("Der Monat ist freigegeben. Bitte zuerst „Monat wieder öffnen“.");
         const r = decision === "rejected" ? requireReason(reason, "Bitte begründen, warum die Aufteilung abgelehnt wird.") : (reason?.trim() || null);
         const before = clone(alloc);
         alloc.status = decision;
@@ -1371,6 +1449,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         }
         Object.assign(st, { status: "submitted", submittedAt: now, reviewedAt: null, reviewedBy: null, workedMinutes: sum.worked, allocatedMinutes: sum.allocated, billingMinutes: sum.billing });
         addAudit(db, s, { tenantId: emp.tenantId, action: "statement.submitted", entity: "statement", entityId: st.id, before, after: clone(st), reason: null });
+        recordStatementEvent(db, s, st, "submit", null);
         return st;
       });
     },
@@ -1379,10 +1458,16 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const st = db.statements.find((x) => x.id === statementId);
         if (!st) throw new AccessDeniedError();
         assertManager(s, st.tenantId);
-        if (st.status !== "submitted") throw new Error("Nur eingereichte Monatsnachweise können freigegeben werden.");
+        if (st.status !== "submitted" && st.status !== "reopened") throw new Error("Nur eingereichte oder wieder geöffnete Monatsnachweise können freigegeben werden.");
+        if (st.employeeId === s.employeeId && s.role !== "owner") throw new AccessDeniedError("Die eigene Monatsabrechnung darf nicht selbst freigegeben werden.");
         const before = clone(st);
-        Object.assign(st, { status: "approved", reviewedAt: new Date().toISOString(), reviewedBy: s.employeeId, reviewNote: null });
+        // Figures are recalculated and stored with every approval (also the re-approval).
+        const tenant = tenantById(db, st.tenantId);
+        const sum = safeSummary(db.entries.filter((e) => e.employeeId === st.employeeId && !e.deletedAt), db.allocations.filter((a) => a.employeeId === st.employeeId), st.month, tenant.settings.workAccount);
+        Object.assign(st, { status: "approved", reviewedAt: new Date().toISOString(), reviewedBy: s.employeeId, reviewNote: null,
+          workedMinutes: sum.worked, allocatedMinutes: sum.allocated, billingMinutes: sum.billing });
         addAudit(db, s, { tenantId: st.tenantId, action: "statement.approved", entity: "statement", entityId: st.id, before, after: clone(st), reason: null });
+        recordStatementEvent(db, s, st, "approve", null);
         return st;
       });
     },
@@ -1392,11 +1477,40 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (!st) throw new AccessDeniedError();
         assertManager(s, st.tenantId);
         const r = requireReason(reason, "Bitte begründen, warum der Monatsnachweis zurückgegeben wird.");
-        if (st.status !== "submitted" && st.status !== "approved") throw new Error("Dieser Monatsnachweis ist nicht eingereicht.");
+        if (st.status === "approved") throw new Error("Freigegebene Monate bitte über „Monat wieder öffnen“ (mit Begründung) öffnen.");
+        if (st.status !== "submitted" && st.status !== "reopened") throw new Error("Dieser Monatsnachweis ist nicht eingereicht.");
         const before = clone(st);
         Object.assign(st, { status: "returned", reviewedAt: new Date().toISOString(), reviewedBy: s.employeeId, reviewNote: r });
         addAudit(db, s, { tenantId: st.tenantId, action: "statement.returned", entity: "statement", entityId: st.id, before, after: clone(st), reason: r });
+        recordStatementEvent(db, s, st, "return", r);
         return st;
+      });
+    },
+    async reopenStatement(statementId, reason) {
+      return tx((db, s) => {
+        const st = db.statements.find((x) => x.id === statementId);
+        if (!st) throw new AccessDeniedError();
+        assertManager(s, st.tenantId);
+        if (st.employeeId === s.employeeId && s.role !== "owner") throw new AccessDeniedError("Den eigenen Monatsnachweis kann nur der Inhaber wieder öffnen.");
+        const r = (reason ?? "").trim();
+        if (r.length < 5) throw new Error("Bitte begründen, warum der freigegebene Monat wieder geöffnet wird (mind. 5 Zeichen).");
+        if (r.length > 1000) throw new Error("Die Begründung ist zu lang (max. 1000 Zeichen).");
+        if (st.status !== "approved") throw new Error("Nur freigegebene Monatsnachweise können wieder geöffnet werden.");
+        const before = clone(st);
+        Object.assign(st, { status: "reopened", reviewNote: r, reopenedAt: new Date().toISOString() });
+        addAudit(db, s, { tenantId: st.tenantId, action: "statement.reopen", entity: "statement", entityId: st.id, before, after: clone(st), reason: r });
+        recordStatementEvent(db, s, st, "reopen", r);
+        return withCorrectionFlag(db, st);
+      });
+    },
+    async listStatementEvents(statementId) {
+      return read((db, s) => {
+        const st = db.statements.find((x) => x.id === statementId);
+        if (!st) throw new AccessDeniedError();
+        assertEmployeeRead(db, s, st.employeeId);
+        return (db.statementEvents ?? []).filter((e) => e.statementId === statementId).sort((a, b) => a.at.localeCompare(b.at))
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          .map(({ statementId: _s, tenantId: _t, employeeId: _e, actorId, ...ev }) => ({ ...ev, actorName: visibleName(db, s, actorId ?? null) }));
       });
     },
 
@@ -1479,6 +1593,10 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           Object.assign(req, { status: "rejected", decidedAt: now, decidedBy: s.employeeId, decisionNote: r });
           addAudit(db, s, { tenantId: req.tenantId, action: "correction_request.rejected", entity: "correction_request", entityId: req.id, before, after: clone(req), reason: r });
           return publicCorrection(db, s, req);
+        }
+        const months = [req.proposed?.date, req.before?.date].filter((d): d is string => !!d).map(monthOf);
+        if (months.some((m) => statementOf(db, req.employeeId, m)?.status === "approved")) {
+          throw new Error("Der Monat ist freigegeben. Bitte zuerst den Monatsnachweis mit Begründung wieder öffnen („Monat wieder öffnen“), dann die Anfrage annehmen.");
         }
         const answer = note?.trim() || null;
         const reason = `Korrekturanfrage: ${req.reason}${answer ? ` – Leitung: ${answer}` : ""}`.slice(0, 1000);
@@ -1659,7 +1777,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         assertPlatform(s);
         return db.audit
           .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant"
-            || e.entity === "billing_period" || e.entity === "billing_settings")
+            || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, limit);
       });
@@ -1730,6 +1848,13 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const r = requireReason(reason);
         const t = tenantById(db, tenantId);
         const before = { status: t.status };
+        if (t.status !== status) {
+          const hist = (db.tenantStatusHistory ??= []);
+          const now = new Date().toISOString();
+          const open = hist.find((h) => h.tenantId === tenantId && h.to === null);
+          if (open) open.to = now;
+          hist.push({ tenantId, status, from: now, to: null, reason: r });
+        }
         t.status = status;
         addAudit(db, s, { tenantId, action: `tenant.status_${status}`, entity: "tenant", entityId: tenantId, before, after: { status }, reason: r });
         return t;
@@ -1831,6 +1956,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
             return e ? [{ employeeId: e.id, displayName: e.displayName, personnelNumber: e.personnelNumber, role: e.role, status: e.status, reason: l.reason }] : [];
           }).sort((a, b) => a.displayName.localeCompare(b.displayName, "de")),
         };
+        const block = tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === tenantId), month);
+        result.tenantBlock = m.condition.startsWith("tenant_") && block ? { status: block.status, since: block.since } : null;
         return result;
       });
     },
@@ -1851,7 +1978,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           .map((t) => {
             const m = billingMonth(db, t.id, month);
             // Numbers only – never names or billable persons.
-            return { ...summaryOf(m), tenantId: t.id, tenantName: t.name, slug: t.slug, isDemo: t.isDemo, tenantStatus: t.status, plan: m.plan, note: m.note, closedAt: m.closedAt };
+            const block = m.condition.startsWith("tenant_") ? tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === t.id), month) : null;
+            return { ...summaryOf(m), tenantId: t.id, tenantName: t.name, slug: t.slug, isDemo: t.isDemo, tenantStatus: t.status, plan: m.plan, note: m.note, closedAt: m.closedAt,
+              blockSince: block?.since ?? null, blockReason: block?.reason ?? null };
           });
         return { month, defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, rows, totals: revenueTotals(rows), paymentProvider: "none" as const };
       });
@@ -1910,8 +2039,111 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       });
     },
 
+    // ------------------------------------------------ invoices (like migration 0019)
+    async getInvoiceSettings() {
+      return read((db, s) => {
+        assertPlatform(s);
+        return invoiceSettingsOf(db);
+      });
+    },
+    async updateInvoiceSettings(patch, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(reason, "Bitte einen Grund für die Änderung angeben.");
+        const cur = invoiceSettingsOf(db);
+        const next = { ...cur, ...patch };
+        if (!/^[A-Z]{1,6}$/.test(next.numberPrefix)) throw new Error("Präfix: 1–6 Großbuchstaben, z. B. SW.");
+        if (!(next.vatRatePercent >= 0 && next.vatRatePercent <= 100)) throw new Error("Der USt-Satz muss zwischen 0 und 100 % liegen.");
+        if (!Number.isInteger(next.paymentTermsDays) || next.paymentTermsDays < 0 || next.paymentTermsDays > 120) throw new Error("Zahlungsziel: 0 bis 120 Tage.");
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { missing: _m, ...stored } = next;
+        db.invoiceSettings = { ...stored, updatedAt: new Date().toISOString() };
+        addAudit(db, s, { tenantId: null, action: "invoice_settings.update", entity: "invoice_settings", entityId: "default", before: cur, after: next, reason: r });
+        return invoiceSettingsOf(db);
+      });
+    },
+    async listInvoices(filter = {}) {
+      return read((db, s) => {
+        assertPlatform(s);
+        return (db.invoices ?? []).filter((i) => (!filter.tenantId || i.tenantId === filter.tenantId) && (!filter.month || i.month === filter.month))
+          .slice().sort((a, b) => b.number.localeCompare(a.number));
+      });
+    },
+    async listTenantInvoices(tenantId) {
+      return read((db, s) => {
+        assertOwner(s, tenantId, "Rechnungen sieht nur der Inhaber des Mandanten.");
+        return (db.invoices ?? []).filter((i) => i.tenantId === tenantId).slice().sort((a, b) => b.number.localeCompare(a.number));
+      });
+    },
+    async getInvoiceDraft(tenantId, month) {
+      return read((db, s) => {
+        assertPlatform(s);
+        assertBillingMonth(month);
+        return invoiceDraft(db, tenantId, month);
+      });
+    },
+    async issueInvoice(tenantId, month) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        if (!isValidMonth(month)) throw new Error("Bitte einen gültigen Monat (JJJJ-MM) angeben.");
+        if (month >= currentBillingMonth()) throw new Error("Rechnungen erst nach Monatsende: Der laufende Monat ist eine Vorschau.");
+        const existing = (db.invoices ?? []).find((i) => i.tenantId === tenantId && i.month === month && i.kind === "invoice" && !i.cancelledAt);
+        if (existing) throw new Error(`Für diesen Monat besteht bereits die Rechnung ${existing.number}.`);
+        let d = invoiceDraft(db, tenantId, month);
+        if (d.missing.length) throw new Error(`Pflichtangaben fehlen: ${d.missing.join(", ")}. Nur ein Entwurf ist möglich.`);
+        const p = billingPeriod(db, tenantId, month);
+        if (p?.status === "waived") throw new Error("Der Monat ist erlassen – keine Rechnung.");
+        if (d.netCents <= 0) throw new Error("Kein Rechnungsbetrag für diesen Monat (0,00 €).");
+        const year = Number(d.issueDate.slice(0, 4));
+        const seq = ((db.invoiceCounters ??= {})[year] ?? 0) + 1;
+        db.invoiceCounters[year] = seq;
+        const number = formatInvoiceNumber(invoiceSettingsOf(db).numberPrefix, year, seq);
+        if (!p || p.status === "open") {
+          // freeze the month as "invoiced" (like platform_set_billing_status)
+          const m = billingMonth(db, tenantId, month);
+          const period = p ?? { tenantId, month, status: "open" as BillingStatus, note: null, closedAt: null, snapshot: null };
+          if (!p) (db.billingPeriods ??= []).push(period);
+          Object.assign(period, { status: "invoiced", note: `Rechnung ${number}`, closedAt: new Date().toISOString(),
+            snapshot: { condition: m.condition, plan: m.plan, unitPriceCents: m.unitPriceCents, billableCount: m.billableCount, amountCents: m.amountCents, lines: m.lines } });
+          d = invoiceDraft(db, tenantId, month);
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { draft: _d, number: _n, billingStatus: _b, final: _f, condition: _c, missing: _m, ...data } = d;
+        const inv: Invoice = { ...data, id: uuid(), kind: "invoice", number, tenantName: tenantById(db, tenantId).name, cancelsInvoiceId: null, cancelsInvoiceNumber: null,
+          cancelReason: null, cancelledAt: null, cancelledByInvoiceId: null, createdAt: new Date().toISOString() };
+        (db.invoices ??= []).push(inv);
+        addAudit(db, s, { tenantId, action: "invoice.issue", entity: "invoice", entityId: inv.id, before: null, after: { number, month, netCents: inv.netCents, grossCents: inv.grossCents }, reason: null });
+        return inv;
+      });
+    },
+    async cancelInvoice(invoiceId, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = (reason ?? "").trim();
+        if (r.length < 5) throw new Error("Bitte einen Grund für das Storno angeben (mind. 5 Zeichen).");
+        const orig = (db.invoices ?? []).find((i) => i.id === invoiceId);
+        if (!orig) throw new AccessDeniedError("Rechnung nicht gefunden.");
+        if (orig.kind !== "invoice") throw new Error("Eine Stornorechnung kann nicht storniert werden.");
+        if (orig.cancelledAt) throw new Error("Die Rechnung ist bereits storniert.");
+        const today = localISODate(new Date());
+        const year = Number(today.slice(0, 4));
+        const seq = ((db.invoiceCounters ??= {})[year] ?? 0) + 1;
+        db.invoiceCounters[year] = seq;
+        const c: Invoice = {
+          ...orig, id: uuid(), kind: "cancellation", number: formatInvoiceNumber(invoiceSettingsOf(db).numberPrefix, year, seq), issueDate: today,
+          dueDate: today, paymentTermsDays: 0, lines: orig.lines.map((l) => ({ ...l, unitPriceCents: -l.unitPriceCents, amountCents: -l.amountCents })),
+          netCents: -orig.netCents, vatCents: -orig.vatCents, grossCents: -orig.grossCents, cancelsInvoiceId: orig.id, cancelsInvoiceNumber: orig.number,
+          cancelReason: r, cancelledAt: null, cancelledByInvoiceId: null, createdAt: new Date().toISOString(),
+        };
+        db.invoices!.push(c);
+        Object.assign(orig, { cancelledAt: c.createdAt, cancelledByInvoiceId: c.id, cancelReason: r });
+        addAudit(db, s, { tenantId: orig.tenantId, action: "invoice.cancel", entity: "invoice", entityId: orig.id, before: { number: orig.number }, after: { number: orig.number, cancellationNumber: c.number }, reason: r });
+        return c;
+      });
+    },
+
     resetDemoData() {
-      save(seedDb(new Date()));
+      save(upgrade(seedDb(new Date())));
     },
   };
   return repo;

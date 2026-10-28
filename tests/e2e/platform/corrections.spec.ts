@@ -69,8 +69,14 @@ test("correction request in an approved month: employee asks, chef accepts one a
   await expect(accepted).toContainText("Monat freigegeben");
   await expect(accepted).toContainText(`${change.start}–${change.end}`);
   await expect(accepted).toContainText(`${change.start}–${newEnd}`);
+  // decision 28.10.2026: an approved month is re-opened first (mandatory reason), then corrected
   await accepted.getByRole("button", { name: "Anfrage von Anna Beispiel annehmen" }).click();
-  await expect(page.getByRole("dialog")).toContainText("Der Monat ist bereits freigegeben.");
+  await expect(page.getByRole("dialog")).toContainText("erst nach einer dokumentierten Wiederöffnung");
+  await page.getByRole("dialog", { name: "Monat ist freigegeben" }).getByRole("button", { name: "Monat wieder öffnen", exact: true }).click();
+  const reopen = page.getByRole("dialog", { name: "Monat wieder öffnen" });
+  await reopen.getByLabel("Begründung (Pflicht, mind. 5 Zeichen)").fill("Korrekturanfrage Fahrtenbuch");
+  await reopen.getByRole("button", { name: "Wieder öffnen", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Korrekturanfrage annehmen?" })).toContainText("Der Monat ist wieder geöffnet.");
   await confirmDialog(page, "Annehmen");
   await expect(page.locator(".correction-request").filter({ hasText: "Ende laut Fahrtenbuch" })).toHaveCount(0);
   expect((await dbEntries(page, { employeeId: ANNA_ID })).find((e) => e.id === change.id)).toMatchObject({ end: newEnd, source: "correction", version: change.version + 1 });
@@ -95,24 +101,34 @@ test("correction request in an approved month: employee asks, chef accepts one a
   await expect(history).toContainText("Korrekturanfrage: Ende laut Fahrtenbuch korrigiert");
   await history.getByRole("button", { name: "Schließen", exact: true }).click();
 
-  // approved statement is marked, its figures stay
+  // re-opened statement: approve again (figures recalculated), history visible
   await go(page, "#/nachweise");
   const row = page.getByRole("row", { name: /Anna Beispiel/ });
+  await expect(row).toContainText("Wieder geöffnet");
+  await expect(row).toContainText("Korrekturanfrage Fahrtenbuch");
+  await row.getByRole("button", { name: "Nachweis von Anna Beispiel erneut freigeben" }).click();
+  await confirmDialog(page, "Freigeben");
   await expect(row).toContainText("Freigegeben");
-  await expect(row).toContainText("nach Freigabe korrigiert");
-  await expect(row).toContainText("aktuell");
+  await expect(row.getByRole("button", { name: "Monat von Anna Beispiel wieder öffnen" })).toBeVisible();
+  await row.getByRole("button", { name: "Verlauf des Nachweises von Anna Beispiel" }).click();
+  const events = page.getByRole("dialog", { name: /^Verlauf – Anna Beispiel/ });
+  await expect(events).toContainText("Wieder geöffnet");
+  await expect(events).toContainText("Korrekturanfrage Fahrtenbuch");
+  await expect(events.getByText("Freigegeben", { exact: true })).toHaveCount(2);
+  await events.getByRole("button", { name: "Dialog schließen" }).click();
 
   // the audit log has the request and the decision
   await go(page, "#/protokoll");
   await expect(page.getByRole("table", { name: "Änderungsprotokoll" })).toContainText("Korrekturanfrage angenommen");
   await expect(page.getByRole("table", { name: "Änderungsprotokoll" })).toContainText("Korrekturanfrage abgelehnt");
+  await expect(page.getByRole("table", { name: "Änderungsprotokoll" })).toContainText("Monatsnachweis wieder geöffnet");
 
   // employee sees status and answers
   await page.goto(`${APP}#/monat?m=${MONTH}`);
   const mine = page.getByRole("region", { name: "Korrekturanfragen" });
   await expect(mine.locator(".correction-request").filter({ hasText: "Ende laut Fahrtenbuch" })).toContainText("Angenommen");
   await expect(mine.locator(".correction-request").filter({ hasText: "Doppelt erfasst" })).toContainText("Einsatz ist im Fahrtenbuch belegt");
-  await expect(page.getByText("Nach Freigabe korrigiert")).toBeVisible();
+  await expect(page.getByText("Dieser Monat ist freigegeben.")).toBeVisible();
   await expect(page.locator(".shift").filter({ hasText: `${change.start}–${newEnd} Uhr` })).toContainText("korrigiert durch Vorgesetzte");
 });
 

@@ -7,6 +7,7 @@ import { Alert, Card, SelectField, StatTile, StatusPill, Table } from "../../../
 import { useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, currentMonth, dateTimeDE, monthLabelDE } from "../../shared/format";
 import { useChef } from "../context";
+import { TenantInvoices } from "../TenantInvoices";
 
 /** Chef-Portal: own billing per month (price model 2026-10-28). Owner and managers only. */
 export function BillingPage() {
@@ -44,6 +45,12 @@ export function BillingPage() {
             <StatTile label="Summe netto" value={formatEuro(b.amountCents)} hint={VAT_NOTE} tone="brand" />
             <StatTile label="Status" value={<StatusPill status={b.status} />} />
           </div>
+          {b.tenantBlock && (
+            <Alert tone="info" title={BILLING_CONDITION_LABEL[b.condition]}>
+              <p>Der Firmenzugang war den ganzen Monat {b.tenantBlock.status === "suspended" ? "gesperrt" : "deaktiviert"} (seit {dateTimeDE(b.tenantBlock.since)}).
+                Ab dem Monat nach einer Sperre wird nichts berechnet; der Monat der Sperre selbst wird noch berechnet.</p>
+            </Alert>
+          )}
           {(b.condition === "free" || b.condition === "pilot_free") && (
             <Alert tone="success" title={BILLING_CONDITION_LABEL[b.condition]}><p>Das Konto ist kostenlos. Die Anzahl wird nur zur Information angezeigt.</p></Alert>
           )}
@@ -83,11 +90,13 @@ export function BillingPage() {
         />
         <p class="small muted" style={{ marginTop: "var(--space-3)" }}>Alle Beträge netto, {VAT_NOTE}</p>
       </Card>
+      <TenantInvoices />
       <Card title="So wird gezählt" muted>
         <ul class="stack-sm" style={{ margin: 0, paddingLeft: "1.3em" }}>
           <li>Abrechenbar ist jede Person mit der Rolle Mitarbeiter/in, die im Monat mindestens zeitweise aktiv war.</li>
           <li>Gesperrte oder deaktivierte Personen werden ab dem folgenden Monat nicht mehr berechnet (Sperre am 10.11. → November wird noch berechnet, Dezember nicht).</li>
           <li>Nur eingeladene Personen, die nie aktiv waren, werden nicht berechnet.</li>
+          <li>Ist der Firmenzugang gesperrt oder deaktiviert, wird ab dem folgenden Monat nichts berechnet.</li>
           <li>Inhaber und Vorgesetzte sind kostenlos, solange sie im Monat keine eigenen Arbeitszeiten erfassen.</li>
         </ul>
       </Card>

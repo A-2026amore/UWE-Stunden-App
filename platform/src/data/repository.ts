@@ -20,6 +20,8 @@ import type {
   TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
+import type { Invoice, InvoiceDraft, InvoiceSettings, InvoiceSettingsPatch } from "../core/invoice";
+import type { StatementEvent } from "../core/types";
 
 export class AccessDeniedError extends Error {
   constructor(message = "Kein Zugriff auf diese Daten.") {
@@ -299,4 +301,35 @@ export interface BillingApi {
    * the month; "waived" and reopening ("open") need a note.
    */
   setBillingStatus(tenantId: UUID, month: ISOMonth, status: BillingStatus, note?: string): Promise<BillingMonthSummary>;
+}
+
+/**
+ * Decision of 28.10.2026: an approved month is changed only after a documented
+ * re-opening (reason, audit) and a new approval (migration 0017).
+ */
+export interface StatementReviewApi {
+  /** Leadership: approved → reopened (reason ≥ 5 characters). The own statement only the owner. */
+  reopenStatement(statementId: UUID, reason: string): Promise<MonthlyStatement>;
+  /** Submissions, approvals, returns and re-openings of one statement (oldest first). */
+  listStatementEvents(statementId: UUID): Promise<StatementEvent[]>;
+}
+
+/**
+ * Invoices (migration 0019). Platform staff: all customers; the owner: own invoices.
+ * Nothing is sent and nothing is charged – the PDF is generated in the app.
+ */
+export interface InvoiceApi {
+  getInvoiceSettings(): Promise<InvoiceSettings>;
+  /** super_admin, reason required. */
+  updateInvoiceSettings(patch: InvoiceSettingsPatch, reason: string): Promise<InvoiceSettings>;
+  /** Platform staff: invoices of all customers (optionally one customer / month), newest first. */
+  listInvoices(filter?: { tenantId?: UUID; month?: ISOMonth }): Promise<Invoice[]>;
+  /** Owner: invoices of the own tenant. */
+  listTenantInvoices(tenantId: UUID): Promise<Invoice[]>;
+  /** Preview without number; `missing` lists absent mandatory data (then only a draft PDF is possible). */
+  getInvoiceDraft(tenantId: UUID, month: ISOMonth): Promise<InvoiceDraft>;
+  /** super_admin: issues the invoice of a past billing month (freezes an open month as "invoiced"). */
+  issueInvoice(tenantId: UUID, month: ISOMonth): Promise<Invoice>;
+  /** super_admin: cancellation document with its own number; the original stays. */
+  cancelInvoice(invoiceId: UUID, reason: string): Promise<Invoice>;
 }
