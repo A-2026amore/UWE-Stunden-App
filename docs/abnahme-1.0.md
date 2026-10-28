@@ -24,7 +24,7 @@ Hetzner Storage Box.
 ## 3. Offen vor dem Verkauf
 
 ### Entscheidungen des Auftraggebers
-1. Pausenschwelle: „mehr als 6/9 h“ (Gesetz) oder „ab genau 6/9 h“ – Empfehlung: neue Firmen gesetzlich, UWE streng.
+1. ~~Pausenschwelle~~ – entschieden 28.10.2026: neue Firmen gesetzlich (mehr als 6/9 h), UWE streng (ab genau 6/9 h). Umgesetzt.
 2. Korrektur nach Freigabe (N1): freigegebenen Monat neu berechnen, nur kennzeichnen (heute) oder sperren.
 3. Gesperrte/deaktivierte Firmen: weiter berechnen (heute) oder automatisch kostenfrei.
 4. Rechnungen: Nummernkreis, Rechnungs-PDF, Versand; Auswahl eines Zahlungsdienstleisters (Kosten, Vertrag).

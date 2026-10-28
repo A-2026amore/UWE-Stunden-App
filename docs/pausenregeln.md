@@ -34,7 +34,7 @@ Schwellen in `settings.breakPolicy.thresholds` sind inklusiv (`Einsatzzeit ≥ m
 
 | Regel | Schwellen | Text in App, Chef-Portal | Wer |
 |---|---|---|---|
-| Gesetzlich (`statutory`) | 361 → 30, 541 → 45 | „mehr als 6 Stunden“ / „mehr als 9 Stunden“ | Standard für neue Mandanten (Empfehlung; Entscheidung des Auftraggebers steht aus) |
+| Gesetzlich (`statutory`) | 361 → 30, 541 → 45 | „mehr als 6 Stunden“ / „mehr als 9 Stunden“ | Standard für neue Mandanten (Entscheidung des Auftraggebers vom 28.10.2026) |
 | Streng (`strict`) | 360 → 30, 540 → 45 | „ab 6 Stunden“ / „ab 9 Stunden“ | UWE (Mandant `demo-krankentransporte` in Seed und Demo, Alt-App) |
 
 Beispiele: genau 6:00 h ohne Pause ist bei der gesetzlichen Regel gültig, bei der strengen nicht;

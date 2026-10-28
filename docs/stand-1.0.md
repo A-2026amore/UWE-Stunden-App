@@ -27,7 +27,7 @@ Feature-Branches gehen per Draft-PR nach `release/1.0`. Nichts geht ohne Freigab
 - Bisherige Stunden müssen nicht übernommen werden; produktive Daten nie löschen oder ändern.
 
 ## Offene Entscheidungen
-- Pausenschwelle „ab genau 6/9 h“ (UWE heute) vs. gesetzlich „mehr als 6/9 h“ (Empfehlung: neue Mandanten gesetzlich, UWE streng).
+- Pausenschwelle: entschieden 28.10.2026 – neue Mandanten gesetzlich, UWE streng (umgesetzt).
 - N1: Korrektur in freigegebenem Monat ändert Abrechnungszahlen nicht (siehe PR #4).
 - PR #2 (Version 28 der Alt-App) wartet auf Freigabe.
 
