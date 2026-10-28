@@ -27,9 +27,10 @@ import type {
   LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry,
   TimeEntryRevision, UUID,
 } from "../core/types";
+import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type LicensePatch, type NewCorrectionRequest, type NewTimeEntry, type Repository, type Session, type TenantOverview,
+  type BillingApi, type LicensePatch, type PrivacyApi, type NewCorrectionRequest, type NewTimeEntry, type Repository, type Session, type TenantOverview,
   type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
 } from "./repository";
@@ -97,7 +98,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi, BillingApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -352,6 +353,20 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     },
     listPlatformAudit(limit) {
       return request<AuditEvent[]>("GET", `/api/platform/audit${limit ? `?limit=${limit}` : ""}`);
+    },
+
+    // ---- data protection (0016)
+    exportPersonalData(employeeId) {
+      return request<PersonalDataExport>("GET", `/api/employees/${enc(employeeId)}/data-export`);
+    },
+    exportTenantData(tenantId) {
+      return request<TenantDataExport>("GET", `/api/tenants/${enc(tenantId)}/data-export`);
+    },
+    setRetentionPolicy(tenantId, months) {
+      return request<Tenant>("PUT", `/api/tenants/${enc(tenantId)}/privacy`, { retentionMonthsAfterExit: months });
+    },
+    anonymizeEmployee(employeeId, confirmPersonnelNumber) {
+      return request<Employee>("POST", `/api/employees/${enc(employeeId)}/anonymize`, { confirmPersonnelNumber });
     },
 
     // ---- platform administration

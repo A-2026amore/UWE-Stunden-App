@@ -19,6 +19,7 @@ import type {
   Employee, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
   TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
+import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 
 export class AccessDeniedError extends Error {
   constructor(message = "Kein Zugriff auf diese Daten.") {
@@ -199,6 +200,24 @@ export type LicensePatch = Partial<Pick<License,
   /** Optional reason for the audit log. */
   reason?: string;
 };
+
+/**
+ * Data protection (GDPR, migration 0016, docs/datenschutz.md). Access and audit
+ * are enforced by the database; legal periods are tenant settings, not code.
+ */
+export interface PrivacyApi {
+  /** Everything stored about one person in the tenant – for the person themself or the owner. */
+  exportPersonalData(employeeId: UUID): Promise<PersonalDataExport>;
+  /** Owner: all data of the tenant (e.g. on termination). */
+  exportTenantData(tenantId: UUID): Promise<TenantDataExport>;
+  /** Owner: retention period after an employee left, in months (1–600); null = not configured. */
+  setRetentionPolicy(tenantId: UUID, months: number | null): Promise<Tenant>;
+  /**
+   * Owner: anonymise a deactivated employee after the retention period. The personnel number
+   * must be repeated as confirmation. Working times stay (anonymised); cannot be undone.
+   */
+  anonymizeEmployee(employeeId: UUID, confirmPersonnelNumber: string): Promise<Employee>;
+}
 
 /**
  * Price model (2026-10-28): billing views. Owner/manager see their own tenant

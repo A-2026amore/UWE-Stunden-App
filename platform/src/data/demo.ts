@@ -30,12 +30,13 @@ import {
   DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMonthOf, monthsBack, revenueTotals,
   type StatusPeriod,
 } from "../core/billing";
-import { activeShifts, addDays, findOverlapAcrossDays, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
+import { activeShifts, addDays, findOverlapAcrossDays, grossMinutes, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
+import { retentionEndsAt, type ExportPerson, type ExportRecords, type ExportTimeEntry, type PersonalDataExport, type TenantDataExport } from "../core/privacy";
 import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validateBreakPolicy } from "../core/breaks";
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type BillingApi, type NewTimeEntry, type PrivacyApi, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
   base32Decode, base32Encode, generateRecoveryCode, matchTotpStep, normalizeRecoveryCode, normalizeTotpCode, otpauthUri,
@@ -171,7 +172,7 @@ interface DemoDb {
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository, TwoFactorApi, BillingApi {
+export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi {
   /**
    * Demo only: current 6-digit code of the account that is signing in
    * (second step) or signed in – so 2FA can be tried without an app.
@@ -195,6 +196,8 @@ export interface DemoOptions {
 }
 
 // ------------------------------------------------------------------ helpers
+
+const ANONYMIZED_FINAL = "Dieser Datensatz ist anonymisiert und kann nicht mehr geändert werden.";
 
 function uuid(): string {
   const c = globalThis.crypto as Crypto | undefined;
@@ -784,6 +787,55 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     billableCount: m.billableCount, amountCents: m.amountCents,
   });
 
+  // ---- data protection (like migration 0016)
+  function exportPerson(e: Employee): ExportPerson {
+    return { id: e.id, personnelNumber: e.personnelNumber, displayName: e.displayName, email: e.email, role: e.role,
+      status: e.status, createdAt: e.createdAt, anonymizedAt: e.anonymizedAt ?? null };
+  }
+  function exportEntry(t: TimeEntry): ExportTimeEntry {
+    return { id: t.id, employeeId: t.employeeId, date: t.date, start: t.start, end: t.end, pauseMinutes: t.pauseMinutes,
+      durationMinutes: grossMinutes({ start: t.start, end: t.end }), note: t.note, source: t.source, version: t.version,
+      createdAt: t.createdAt, updatedAt: t.updatedAt, deletedAt: t.deletedAt };
+  }
+  function employeeAudit(db: DemoDb, e: Employee): AuditEvent[] {
+    const ids = new Set([e.id, ...(db.correctionRequests ?? []).filter((r) => r.employeeId === e.id).map((r) => r.id)]);
+    const has = (v: unknown) => !!v && typeof v === "object" && (v as { employeeId?: unknown }).employeeId === e.id;
+    return db.audit.filter((a) => a.tenantId === e.tenantId
+      && ((a.entityId !== null && (ids.has(a.entityId) || a.entityId.startsWith(`${e.id}/`))) || has(a.before) || has(a.after)));
+  }
+  function employeeRecords(db: DemoDb, e: Employee): ExportRecords {
+    const nameOf = (id: UUID | null) => (id ? db.employees.find((x) => x.id === id && x.tenantId === e.tenantId)?.displayName ?? null : null);
+    return {
+      statusHistory: (db.statusHistory ?? []).filter((h) => h.employeeId === e.id)
+        .map((h) => ({ status: h.status, role: h.role, validFrom: h.from, validTo: h.to })),
+      timeEntries: db.entries.filter((t) => t.employeeId === e.id)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.id.localeCompare(b.id)).map(exportEntry),
+      revisions: (db.revisions ?? []).filter((r) => r.employeeId === e.id).map((r) => ({
+        entryId: r.entryId, version: r.version, operation: r.operation, isCorrection: r.isCorrection, changedAt: r.changedAt,
+        changedBy: r.changedBy, changedByName: nameOf(r.changedBy), reason: r.reason, snapshot: { ...r.values, deleted: r.deleted, source: r.source },
+      })),
+      allocations: db.allocations.filter((a) => a.employeeId === e.id).sort((a, b) => a.month.localeCompare(b.month))
+        .map((a) => ({ month: a.month, minutes: a.minutes, status: a.status, reviewedAt: null, reviewNote: a.reviewNote })),
+      statements: db.statements.filter((x) => x.employeeId === e.id).sort((a, b) => a.month.localeCompare(b.month))
+        .map((x) => ({ month: x.month, status: x.status, submittedAt: x.submittedAt, reviewedAt: x.reviewedAt, reviewNote: x.reviewNote,
+          workedMinutes: x.workedMinutes, allocatedMinutes: x.allocatedMinutes, billingMinutes: x.billingMinutes })),
+      correctionRequests: (db.correctionRequests ?? []).filter((r) => r.employeeId === e.id).map((r) => ({
+        id: r.id, kind: r.kind, entryId: r.entryId, before: r.before, proposed: r.proposed, reason: r.reason, status: r.status,
+        createdAt: r.createdAt, decidedAt: r.decidedAt, decisionNote: r.decisionNote,
+      })),
+      invitations: [],
+      billingMonths: [],
+    };
+  }
+  const REDACT_KEYS = new Set(["displayName", "display_name", "email", "personnelNumber", "personnel_number", "note", "reason", "reviewNote", "decisionNote"]);
+  function redact(v: unknown): unknown {
+    if (Array.isArray(v)) return v.map(redact);
+    if (v && typeof v === "object") {
+      return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, REDACT_KEYS.has(k) && typeof x === "string" && x !== "" ? "[anonymisiert]" : redact(x)]));
+    }
+    return v;
+  }
+
   const repo: DemoRepository = {
     // ------------------------------------------------ auth
     async signIn(email, password) {
@@ -1037,6 +1089,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const emp = db.employees.find((e) => e.id === employeeId);
         if (!emp) throw new AccessDeniedError();
         assertManager(s, emp.tenantId);
+        if (emp.anonymizedAt) throw new AccessDeniedError(ANONYMIZED_FINAL);
         if (patch.role && patch.role !== emp.role && s.role !== "owner") throw new AccessDeniedError("Rollen darf nur der Inhaber ändern.");
         if (patch.role && emp.id === s.employeeId && patch.role !== emp.role) throw new Error("Die eigene Rolle kann nicht geändert werden.");
         if (patch.personnelNumber !== undefined) {
@@ -1067,6 +1120,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const emp = db.employees.find((e) => e.id === employeeId);
         if (!emp) throw new AccessDeniedError();
         assertManager(s, emp.tenantId);
+        if (emp.anonymizedAt) throw new AccessDeniedError(ANONYMIZED_FINAL);
         const r = requireReason(reason);
         if (emp.id === s.employeeId) throw new Error(status === "locked" ? "Du kannst dich nicht selbst sperren." : "Du kannst dich nicht selbst deaktivieren.");
         if (emp.role !== "employee" && s.role !== "owner") throw new AccessDeniedError("Leitungspersonen kann nur der Inhaber sperren oder deaktivieren.");
@@ -1429,6 +1483,110 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           });
         }
         return list;
+      });
+    },
+
+    // ------------------------------------------------ data protection
+    async exportPersonalData(employeeId) {
+      return tx((db, s) => {
+        const emp = db.employees.find((e) => e.id === employeeId);
+        const self = !!emp && s.tenantId === emp.tenantId && s.employeeId === emp.id;
+        if (!emp || (!self && !(s.tenantId === emp.tenantId && s.role === "owner"))) {
+          throw new AccessDeniedError("Die Datenauskunft erhalten nur die Person selbst und der Inhaber.");
+        }
+        const tenant = tenantById(db, emp.tenantId);
+        const acc = db.accounts.find((a) => a.employeeId === emp.id) ?? null;
+        addAudit(db, s, { tenantId: emp.tenantId, action: "employee.data_export", entity: "employee", entityId: emp.id, before: null,
+          after: { requestedBy: self ? "self" : "owner" }, reason: null });
+        const out: PersonalDataExport = {
+          format: "stundenwerk.personal-data.v1", generatedAt: new Date().toISOString(), requestedBy: self ? "self" : "owner",
+          tenant: { id: tenant.id, name: tenant.name, legalName: tenant.contact.legalName || null },
+          person: exportPerson(emp),
+          account: self && acc ? { email: acc.email, createdAt: emp.createdAt, twoFactorEnabled: enrolled(db, acc.userId), sessions: [] } : null,
+          ...employeeRecords(db, emp),
+          auditLog: employeeAudit(db, emp).map((a) => ({ ...a, entityId: a.entityId })),
+        };
+        return out;
+      });
+    },
+    async exportTenantData(tenantId) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Den Datenexport der Firma erhält nur der Inhaber.");
+        const t = tenantById(db, tenantId);
+        addAudit(db, s, { tenantId, action: "tenant.data_export", entity: "tenant", entityId: tenantId, before: null, after: null, reason: null });
+        const out: TenantDataExport = {
+          format: "stundenwerk.tenant-data.v1", generatedAt: new Date().toISOString(),
+          tenant: { ...t },
+          licenses: db.licenses.filter((l) => l.tenantId === tenantId),
+          billingPeriods: (db.billingPeriods ?? []).filter((b) => b.tenantId === tenantId),
+          supportGrants: db.supportGrants.filter((g) => g.tenantId === tenantId),
+          employees: db.employees.filter((e) => e.tenantId === tenantId)
+            .sort((a, b) => a.personnelNumber.localeCompare(b.personnelNumber))
+            .map((e) => ({ ...exportPerson(e), ...employeeRecords(db, e) })),
+          auditLog: db.audit.filter((a) => a.tenantId === tenantId),
+        };
+        return out;
+      });
+    },
+    async setRetentionPolicy(tenantId, months) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Die Aufbewahrungsfrist legt nur der Inhaber fest.");
+        if (months !== null && (!Number.isInteger(months) || months < 1 || months > 600)) {
+          throw new Error("Aufbewahrungsfrist (Monate): bitte eine ganze Zahl von 1 bis 600 angeben.");
+        }
+        const t = tenantById(db, tenantId);
+        const before = { retentionMonthsAfterExit: t.retentionMonthsAfterExit ?? null };
+        t.retentionMonthsAfterExit = months;
+        addAudit(db, s, { tenantId, action: "tenant.update", entity: "tenant", entityId: tenantId, before, after: { retentionMonthsAfterExit: months }, reason: null });
+        return t;
+      });
+    },
+    async anonymizeEmployee(employeeId, confirmPersonnelNumber) {
+      return tx((db, s) => {
+        const emp = db.employees.find((e) => e.id === employeeId);
+        if (!emp || s.tenantId !== emp.tenantId || s.role !== "owner") throw new AccessDeniedError("Anonymisieren darf nur der Inhaber.");
+        if (emp.anonymizedAt) throw new Error("Diese Person ist bereits anonymisiert.");
+        if (emp.status !== "deactivated") throw new Error("Nur deaktivierte (ausgeschiedene) Mitarbeitende können anonymisiert werden.");
+        if (confirmPersonnelNumber !== emp.personnelNumber) throw new Error("Zur Bestätigung bitte die Personalnummer der Person eingeben.");
+        const tenant = tenantById(db, emp.tenantId);
+        const months = tenant.retentionMonthsAfterExit ?? null;
+        if (months === null) throw new Error("Bitte zuerst die Aufbewahrungsfrist nach dem Austritt festlegen (Datenschutz-Einstellungen, rechtlich prüfen).");
+        const exit = (db.statusHistory ?? []).find((h) => h.employeeId === emp.id && h.to === null && h.status === "deactivated")?.from ?? emp.createdAt;
+        const until = retentionEndsAt(exit, months)!;
+        if (Date.now() < until.getTime()) {
+          throw new Error(`Die Aufbewahrungsfrist läuft noch bis zum ${until.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" })}.`);
+        }
+        const tag = emp.id.replace(/-/g, "").slice(0, 8).toUpperCase();
+        emp.displayName = `Anonymisiert ${tag}`;
+        emp.personnelNumber = `ANON-${emp.id.replace(/-/g, "").slice(-24).toUpperCase()}`;
+        emp.email = null;
+        emp.anonymizedAt = new Date().toISOString();
+        db.accounts = db.accounts.filter((a) => a.employeeId !== emp.id);
+        for (const t of db.entries) if (t.employeeId === emp.id) t.note = "";
+        for (const r of db.revisions ?? []) {
+          if (r.employeeId !== emp.id) continue;
+          r.values = { ...r.values, note: r.values.note ? "[anonymisiert]" : "" };
+          if (r.reason) r.reason = "[anonymisiert]";
+        }
+        for (const r of db.correctionRequests ?? []) {
+          if (r.employeeId !== emp.id) continue;
+          r.reason = "[anonymisiert]";
+          if (r.decisionNote) r.decisionNote = "[anonymisiert]";
+          r.before = redact(r.before) as typeof r.before;
+          r.proposed = redact(r.proposed) as typeof r.proposed;
+        }
+        for (const x of db.statements) if (x.employeeId === emp.id && x.reviewNote) x.reviewNote = "[anonymisiert]";
+        for (const a of db.allocations) if (a.employeeId === emp.id && a.reviewNote) a.reviewNote = "[anonymisiert]";
+        let redacted = 0;
+        for (const a of employeeAudit(db, emp)) {
+          a.before = redact(a.before);
+          a.after = redact(a.after);
+          if (a.reason) a.reason = "[anonymisiert]";
+          redacted++;
+        }
+        addAudit(db, s, { tenantId: emp.tenantId, action: "employee.anonymize", entity: "employee", entityId: emp.id, before: null,
+          after: { exitAt: exit, retentionMonths: months, auditEntriesRedacted: redacted }, reason: "Anonymisierung nach Ablauf der Aufbewahrungsfrist" });
+        return emp;
       });
     },
 
