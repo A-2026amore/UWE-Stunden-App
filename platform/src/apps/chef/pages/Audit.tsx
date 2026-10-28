@@ -8,6 +8,8 @@ const STATUS_DE: Record<string, string> = { active: "aktiv", deactivated: "deakt
 const de = (v: unknown) => STATUS_DE[String(v)] ?? String(v ?? "—");
 import { useChef } from "../context";
 import { ACTION_LABEL } from "../../shared/audit";
+import { CORRECTION_KIND_LABEL, CORRECTION_STATUS_LABEL, valuesLabel } from "../../shared/corrections";
+import type { CorrectionKind, CorrectionStatus, EntryValues } from "../../../core/types";
 
 
 type Shift = { date?: string; start?: string; end?: string; pauseMinutes?: number; note?: string };
@@ -20,6 +22,12 @@ function describe(e: AuditEvent): string {
     if (e.action === "time_entry.deleted") return `Gelöscht: ${fmt(b)}`;
     if (!e.before) return `Neu: ${fmt(a)}`;
     return `Vorher: ${fmt(b)} → Nachher: ${fmt(a)}`;
+  }
+  if (e.entity === "correction_request") {
+    const kind = CORRECTION_KIND_LABEL[a.kind as CorrectionKind] ?? "";
+    const status = CORRECTION_STATUS_LABEL[a.status as CorrectionStatus] ?? "";
+    const target = (a.proposed ?? a.before) as EntryValues | null | undefined;
+    return `${kind}${target ? `: ${valuesLabel(target)}` : ""} (${status})`;
   }
   if (e.entity === "employee" && "status" in a) return `Status: ${de(b.status)} → ${de(a.status)}`;
   if (e.entity === "allocation") return `${monthLabelDE(String(a.month ?? ""))}: ${hoursLabel(Number(a.minutes ?? 0))} (${de(a.status)})`;
@@ -40,8 +48,8 @@ export function AuditPage() {
   const name = (id: string | null) => (id ? q.data?.names.get(id) ?? (id.startsWith("u-admin") ? "Plattform-Admin" : "System") : "System");
   const subject = (e: AuditEvent) => {
     if (e.entity === "employee") return name(e.entityId);
-    const a = (e.after ?? e.before ?? {}) as { employeeId?: string };
-    if (a.employeeId) return name(a.employeeId);
+    const a = (e.after ?? e.before ?? {}) as { employeeId?: string; employee_id?: string };
+    if (a.employeeId ?? a.employee_id) return name((a.employeeId ?? a.employee_id)!);
     if (e.entity === "allocation" && e.entityId) return name(e.entityId.split(":")[0] ?? null);
     return "—";
   };
@@ -54,7 +62,7 @@ export function AuditPage() {
         <div class="toolbar">
           <SelectField label="Bereich" value={filter} onValue={setFilter} options={[
             { value: "all", label: "Alle Ereignisse" }, { value: "time_entry", label: "Arbeitszeiten" }, { value: "employee", label: "Mitarbeiter" },
-            { value: "statement", label: "Monatsnachweise" }, { value: "allocation", label: "Arbeitszeitkonto" }, { value: "tenant", label: "Firma & Einstellungen" },
+            { value: "statement", label: "Monatsnachweise" }, { value: "allocation", label: "Arbeitszeitkonto" }, { value: "correction_request", label: "Korrekturanfragen" }, { value: "tenant", label: "Firma & Einstellungen" },
             { value: "license", label: "Lizenz" }, { value: "support_grant", label: "Supportzugriff" },
           ]} />
           <p class="muted small mb-0">{events.length} Einträge</p>

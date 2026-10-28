@@ -23,12 +23,12 @@
  * `Content-Type: application/json` as required by the server's CSRF check.
  */
 import type {
-  AuditEvent, Branding, CompanyContact, Employee, ISOMonth, License, LicensePlan,
-  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID,
+  AuditEvent, Branding, CompanyContact, CorrectionRequest, Employee, ISOMonth, License, LicensePlan,
+  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type NewCorrectionRequest, type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
 } from "./repository";
 
@@ -321,6 +321,27 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     },
     returnStatement(statementId, reason) {
       return request<MonthlyStatement>("POST", `/api/statements/${enc(statementId)}/return`, { reason });
+    },
+
+    // ---- correction requests
+    listCorrectionRequests(tenantId, filter = {}) {
+      const qs = new URLSearchParams();
+      if (filter.employeeId) qs.set("employeeId", filter.employeeId);
+      if (filter.status) qs.set("status", filter.status);
+      const query = qs.toString();
+      return request<CorrectionRequest[]>("GET", `/api/tenants/${enc(tenantId)}/correction-requests${query ? `?${query}` : ""}`);
+    },
+    createCorrectionRequest(employeeId, input: NewCorrectionRequest) {
+      return request<CorrectionRequest>("POST", `/api/employees/${enc(employeeId)}/correction-requests`, input);
+    },
+    withdrawCorrectionRequest(requestId) {
+      return request<CorrectionRequest>("POST", `/api/correction-requests/${enc(requestId)}/withdraw`, {});
+    },
+    decideCorrectionRequest(requestId, decision, note) {
+      return request<CorrectionRequest>("POST", `/api/correction-requests/${enc(requestId)}/decide`, note === undefined ? { decision } : { decision, note });
+    },
+    listTimeEntryRevisions(employeeId, entryId) {
+      return request<TimeEntryRevision[]>("GET", `/api/employees/${enc(employeeId)}/time-entries/${enc(entryId)}/revisions`);
     },
 
     // ---- audit

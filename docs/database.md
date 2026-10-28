@@ -17,6 +17,7 @@ Kein Supabase, kein PostgREST: Davor sitzt eine eigene Node-API (siehe `docs/api
 | `0009_two_factor.sql` | Zwei-Faktor-Anmeldung (TOTP), Wiederherstellungscodes, Pflicht für Leitung/Plattform |
 | `0010_operator_invitation.sql` | `auth.operator_create_invitation` für den Betreiberbefehl `invite-link` (nur `app_auth`) |
 | `0011_tenant_profile_owner_only.sql` | `tenants_update` nur noch für den Inhaber; `set_tenant_status` als SECURITY DEFINER (nur Super-Admin); `tenants_guard` ohne Ausnahme für Plattformpersonal |
+| `0013_correction_requests.sql` | Korrekturanfragen der Mitarbeitenden (`correction_requests`, RPCs anlegen/zurückziehen/entscheiden), Sicht `statement_correction_flags` („nach Freigabe korrigiert“) |
 | `0014_break_policy_statutory.sql` | CHECK `tenants_break_policy_statutory`: Pausenregel eines Mandanten nie laxer als § 4 ArbZG (`private.break_policy_meets_statute`), siehe [pausenregeln.md](pausenregeln.md) |
 
 Anwenden (als Superuser bzw. Datenbankeigentümer, in Dateireihenfolge):
@@ -45,6 +46,7 @@ public.tenants ─┬─< licenses            (max. 1 aktive je Mandant)
                 └─< employees ─┬─< invitations
                                ├─< time_entries ─< time_entry_revisions
                                ├─< work_account_allocations
+                               ├─< correction_requests  (entry_id → time_entries.id, ohne FK)
                                └─< monthly_statements
 public.audit_log   (tenant_id ohne FK – bleibt erhalten)
 ```
@@ -66,6 +68,8 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 | `time_entry_revisions` | Vollständige Historie: je Insert/Update ein Schnappschuss (per Trigger), mit `operation` insert/update/delete/restore, `is_correction`, `reason`, `changed_by`. Unveränderlich. |
 | `work_account_allocations` | Zuweisung ins Arbeitszeitkonto je Mitarbeiter und Monat (`YYYY-MM`), `minutes ≥ 0`, `status` proposed/approved/rejected (Ablehnung braucht Begründung). Nur wenn `settings.workAccount.enabled` und Monat ≥ `startMonth`. Migrierte Zuweisungen kommen mit `proposed`. |
 | `monthly_statements` | Monatsabschluss draft/submitted/approved/returned; Zahlen (`worked/allocated/billing_minutes`) berechnet die DB. `returned` ⇒ `review_note` Pflicht (CHECK). |
+| `correction_requests` | Korrekturanfrage (seit 0013): `kind` change/delete/add, `entry_id` + `entry_version` (change/delete), `before`/`proposed` als `{date,start,end,pauseMinutes,note}`, `reason` (5–1000 Zeichen, Pflicht), `status` open/accepted/rejected/withdrawn, `decided_at`/`decided_by`/`decision_note` (Pflicht bei Ablehnung), `applied_entry_id`/`applied_version`. Höchstens eine offene Anfrage je Eintrag. Schreiben nur über die RPCs; entschiedene Anfragen sind unveränderlich (Trigger, auch für Wartungscode). |
+| `statement_correction_flags` (Sicht) | Freigegebene Monatsabschlüsse, deren Monat **nach** `reviewed_at` korrigiert wurde (Revisionen mit `is_correction`, altes oder neues Datum im Monat): `corrections`, `last_corrected_at`. `security_invoker`: RLS der Abschlüsse und Revisionen gilt. |
 | `audit_log` | Nur Anfügen. UPDATE/DELETE/TRUNCATE werden für **alle** Rollen per Trigger abgelehnt. |
 | `auth.users`, `auth.sessions`, `auth.one_time_tokens` | Anmeldung: E-Mail (klein geschrieben, eindeutig), Passwort-Hash (scrypt aus der API), Sitzungen und Einmal-Tokens **nur als SHA-256-Hash**. Nur Rolle `app_auth` und SECURITY-DEFINER-Funktionen. |
 
@@ -136,12 +140,34 @@ eigene Mitarbeiterzeile. Plattformpersonal sieht weiterhin Metadaten (und mit ak
 | time_entry_revisions | L eigen | L | L | – | – | L |
 | work_account_allocations | L, A, Ä eigen (Status bleibt `proposed`) | L, A, Ä (prüfen) | L, A, Ä | – | – | L |
 | monthly_statements | L eigen (+ RPC einreichen) | L (+ RPC prüfen) | L (+ RPC, freigegebene wieder öffnen) | – | – | L |
+| correction_requests | L eigen (+ RPC anlegen, zurückziehen) | L (+ RPC entscheiden, nicht die eigene) | L (+ RPC entscheiden, auch die eigene) | – | – | L |
 | audit_log | – | L | L | L (Mandant/Lizenz/Freigabe-Ereignisse) | L (dto.) | L |
 | auth.* | – | – | – | – | – | – |
 
 Statuswechsel von Monatsabschlüssen, Prüfung von Zuweisungen, Einladungen, Support-Freigaben und
 Korrekturen laufen ausschließlich über SECURITY-DEFINER-Funktionen mit expliziter Rechteprüfung
 und `set search_path = ''`.
+
+## Korrekturanfragen (0013)
+
+| Funktion | Wer | Wirkung |
+|---|---|---|
+| `create_correction_request(employee_id, kind, entry_id, proposed, reason)` | nur für **eigene** Einträge (auch Leitung nur für sich selbst) | prüft Begründung (≥ 5 Zeichen), Werte (Datum, HH:MM, Beginn ≠ Ende, Mandantenhöchstdauer ≤ 12 h, Pause < Dauer), keine zweite offene Anfrage je Eintrag; speichert `before` aus dem aktuellen Eintrag; Audit `correction_request.create` |
+| `withdraw_correction_request(id)` | nur die Person selbst, nur offen | Status `withdrawn`; Audit |
+| `decide_correction_request(id, 'accepted' \| 'rejected', note)` | Leitung des Mandanten; die eigene Anfrage nur der Inhaber (Vier-Augen) | **Annehmen**: Eintrag unverändert seit der Anfrage (sonst `PT409`), dann `correct_time_entry` (Änderung/Löschung) bzw. Einfügen mit `source = 'correction'` und Kennung `kr-<Anfrage-ID>` (Nachtrag) – auch im gesperrten Monat; Revision mit `is_correction`, Begründung „Korrekturanfrage: … – Leitung: …“; Überschneidung `23P01`, 12 h `23514`. **Ablehnen**: Begründung ≥ 3 Zeichen Pflicht. Audit `correction_request.accept`/`.reject` |
+
+Plattformpersonal sieht Anfragen (wie alle personenbezogenen Daten) nur mit aktiver Support-Freigabe und kann nicht entscheiden.
+
+### Offene Entscheidung N1: Korrektur nach Freigabe
+
+Eine Korrektur in einem **freigegebenen** Monat (direkt durch die Leitung oder über eine angenommene Anfrage) ändert die
+Einträge, aber **nicht** die in `monthly_statements` gespeicherten Zahlen (`worked/allocated/billing_minutes` werden nur
+beim Einreichen und Freigeben berechnet). Der freigegebene Nachweis zeigt damit den Stand zur Freigabe. Bewusst nicht
+eigenmächtig geändert; stattdessen sichtbar gemacht: `statement_correction_flags` → Chef-Portal (Monatsnachweise,
+Dashboard) „nach Freigabe korrigiert“ mit den aktuellen Werten, Mitarbeiter-App Hinweis in der Monatsansicht.
+Möglichkeiten zur Entscheidung durch den Auftraggeber: (a) so lassen, der Inhaber gibt den Nachweis bei Bedarf zurück und
+lässt neu einreichen (heute schon möglich), (b) Zahlen bei jeder Korrektur automatisch neu berechnen (Abrechnung kann sich
+nachträglich ändern), (c) Korrektur im freigegebenen Monat nur nach Rückgabe erlauben.
 
 ## Tests
 

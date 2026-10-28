@@ -63,6 +63,9 @@ Unbekannte Schlüssel werden abgelehnt (`22023`). Zeiteinträge werden immer üb
 | `return_statement(statement_id, reason)` – Begründung Pflicht; freigegebene nur Inhaber | definer | `returnStatement` |
 | `set_employee_status(employee_id, 'active'/'deactivated', reason)` | invoker | `setEmployeeStatus` |
 | `create_invitation(employee_id, valid_days=7) → {invitationId, token, expiresAt}` | definer | `inviteEmployee` (nach Insert in `employees`) |
+| `create_correction_request(employee_id, kind, entry_id, proposed, reason) → correction_requests` – nur eigene Einträge | definer | `createCorrectionRequest` |
+| `withdraw_correction_request(id)` – eigene offene Anfrage | definer | `withdrawCorrectionRequest` |
+| `decide_correction_request(id, 'accepted'/'rejected', note?)` – Leitung, Vier-Augen; Annehmen wendet die Korrektur an | definer | `decideCorrectionRequest` |
 | `grant_support_access(tenant_id, hours, reason, grantee?)`, `revoke_support_access(grant_id)` | definer | Inhaber-Einstellungen |
 | `platform_list_tenants()` – nur Metadaten und Zahlen | definer | `listTenants` |
 | `create_tenant(name, slug, plan, is_demo, owner_email, owner_name?, contact?) → {tenantId, licenseId, ownerEmployeeId, invitationToken}` | definer | `createTenant` |
@@ -176,7 +179,12 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | `deleteTimeEntry` | `DELETE` (gleiche Pfade) – `{expectedVersion, reason?}` (Soft-Delete) |
 | `listAllocations` / `setAllocation` | `GET /api/employees/:id/allocations` · `PUT /api/employees/:id/allocations/:month` `{minutes}` |
 | `reviewAllocation` | `POST /api/employees/:id/allocations/:month/review` `{decision, reason}` |
-| `listStatements` / `getStatement` | `GET /api/tenants/:tenantId/statements?month=` · `GET /api/employees/:id/statements/:month` |
+| `listStatements` / `getStatement` | `GET /api/tenants/:tenantId/statements?month=` · `GET /api/employees/:id/statements/:month` – freigegebene Abschlüsse mit `correctedAfterApproval: {count, lastAt}` (sonst `null`), siehe N1 in `docs/database.md` |
+| `listCorrectionRequests` | `GET /api/tenants/:tenantId/correction-requests?employeeId=&status=` (RLS: Mitarbeitende nur eigene, Leitung den Mandanten, Plattform nur mit Freigabe; max. 500, neueste zuerst). `CorrectionRequest` enthält `before`/`proposed` (`{date,start,end,pauseMinutes,note}`), `status`, `decisionNote`, `decidedByName` (nur sichtbar, wenn die Person für den Aufrufer sichtbar ist) |
+| `createCorrectionRequest` | `POST /api/employees/:id/correction-requests` `{kind: "change"\|"delete"\|"add", entryId?, proposed?, reason}` → 201. Nur für das eigene Konto (sonst 403). `change`: geänderte Felder genügen; `add`: Datum, Beginn, Ende, Pause Pflicht. Vorab wie bei der Erfassung geprüft: Überschneidung (409 `overlap`), Pausenregeln (400 `break_rule`), 12 h/Pause (400); zweite offene Anfrage zum Eintrag 409 `invalid_state` |
+| `withdrawCorrectionRequest` | `POST /api/correction-requests/:id/withdraw` `{}` → 200 · 403 fremd · 409 nicht mehr offen |
+| `decideCorrectionRequest` | `POST /api/correction-requests/:id/decide` `{decision: "accepted"\|"rejected", note?}` (`note` Pflicht bei Ablehnung) → 200 · 403 Mitarbeitende/fremder Mandant/eigene Anfrage (außer Inhaber) · 409 bereits entschieden oder Eintrag seit der Anfrage geändert (`version_conflict`) · 409 `overlap` · 400 `break_rule` (Pausenregeln des Tages nach dem Annehmen, Rollback – Anfrage bleibt offen) |
+| `listTimeEntryRevisions` | `GET /api/employees/:id/time-entries/:entryId/revisions` → Versionen (älteste zuerst): `{version, operation, isCorrection, changedAt, changedByName, reason, values, deleted, source}` |
 | `submitStatement` | `POST /api/employees/:id/statements/:month/submit` |
 | `approveStatement` / `returnStatement` | `POST /api/statements/:id/approve` · `POST /api/statements/:id/return` `{reason}` |
 | `listAudit` | `GET /api/tenants/:tenantId/audit?limit=` |
@@ -185,6 +193,9 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | Plattform-Audit (UI) | `GET /api/platform/audit?limit=` |
 
 **Fachregeln in der API**
+- **Korrekturanfragen** (seit 0013) laufen nie über die Offline-Warteschlange der Mitarbeiter-App: ohne Verbindung
+  meldet die App „Korrekturanfragen können nur mit Internetverbindung gestellt werden.“ Angenommene Anfragen werden wie
+  jede Korrektur behandelt (Herkunft `correction`, Revision, Audit, Pausenprüfung in derselben Transaktion).
 - Ändert/löscht jemand den Eintrag einer **anderen** Person (Leitung), läuft das als Korrektur über
   `correct_time_entry` (Begründung ≥ 5 Zeichen Pflicht, Herkunft `correction`, Audit-Eintrag).
   Eigene Einträge laufen über `update_time_entry`/`delete_time_entry` (Monatssperre gilt).

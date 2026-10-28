@@ -15,6 +15,17 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   „mehr als 6 Stunden“). Laxere Regeln als § 4 ArbZG lehnen Core, API, Demo und Datenbank ab
   (Migration `0014_break_policy_statutory.sql`). Demo-Mandant „Muster Pflegedienst“ nutzt wie im Seed die
   gesetzliche Regel; der UWE-Nachbau bleibt streng.
+- Korrekturanfragen (Migration `0013_correction_requests.sql`): Mitarbeitende beantragen für eigene Einträge eine
+  Änderung, Löschung oder einen fehlenden Eintrag – vor allem in eingereichten/freigegebenen Monaten – mit Pflichtbegründung;
+  Status offen/angenommen/abgelehnt/zurückgezogen. Die Leitung nimmt im Chef-Portal an (Übernahme als Korrektur mit
+  Revision und Audit, gleiche Regeln wie bei der Erfassung: Pausen, 12 h, Überschneidung, Vier-Augen) oder lehnt mit
+  Begründung ab. Menüpunkt und Dashboard-Kachel „Offene Korrekturanfragen“, Verlauf (Revisionen) je Eintrag auch unter
+  „Arbeitszeiten“. Freigegebene Monate, die nachträglich korrigiert wurden, sind als „nach Freigabe korrigiert“ markiert
+  (Sicht `statement_correction_flags`); die freigegebenen Zahlen bleiben unverändert – offene Entscheidung N1
+  (`docs/database.md`). API: `/api/tenants/:id/correction-requests`, `/api/employees/:id/correction-requests`,
+  `/api/correction-requests/:id/withdraw|decide`, `/api/employees/:id/time-entries/:entryId/revisions`; Statements mit
+  `correctedAfterApproval`. Anfragen nur online (klare Meldung offline). Bedienung: `docs/bedienung-korrekturen.md`.
+  Demo: Löschen durch die Leitung setzt wie auf dem Server die Herkunft „Korrektur“; Verlauf wird ab jetzt aufgezeichnet.
 - Betreiberbefehl `cli.ts invite-link <mandant> <email> <rolle>` (QA 2026-10-28, B1): Einladungslink ohne
   E-Mail, Ausgabe nur auf der Konsole; Migration `0010_operator_invitation.sql`.
 - Container-Betrieb: mehrstufiges `Dockerfile` (Node 22, Lockfile, Nicht-root, API liefert die gebauten

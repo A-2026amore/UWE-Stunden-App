@@ -109,6 +109,9 @@ export interface SyncingRepository extends Repository {
   dispose(): void;
 }
 
+/** Correction requests are not queued offline: the employee needs the leadership's answer anyway. */
+export const CORRECTION_OFFLINE_MESSAGE = "Korrekturanfragen können nur mit Internetverbindung gestellt werden. Bitte versuche es später erneut.";
+
 /** Network failure (fetch TypeError, explicit NetworkError) – the request may or may not have reached the server. */
 export function isNetworkError(e: unknown): boolean {
   if (e instanceof TypeError) return true;
@@ -838,6 +841,24 @@ export function createSyncingRepository(inner: Repository, opts: SyncOptions): S
     },
     approveStatement: (id) => inner.approveStatement(id),
     returnStatement: (id, r) => inner.returnStatement(id, r),
+
+    // ------------------------------------------------ correction requests (online only, never queued)
+    listCorrectionRequests: (t, f) => inner.listCorrectionRequests(t, f),
+    async createCorrectionRequest(employeeId, input) {
+      if (!isOnline()) throw new Error(CORRECTION_OFFLINE_MESSAGE);
+      try {
+        return await inner.createCorrectionRequest(employeeId, input);
+      } catch (e) {
+        if (isNetworkError(e)) throw new Error(CORRECTION_OFFLINE_MESSAGE);
+        throw e;
+      }
+    },
+    async withdrawCorrectionRequest(id) {
+      if (!isOnline()) throw new Error(CORRECTION_OFFLINE_MESSAGE);
+      return inner.withdrawCorrectionRequest(id);
+    },
+    decideCorrectionRequest: (id, d, n) => inner.decideCorrectionRequest(id, d, n),
+    listTimeEntryRevisions: (e, id) => inner.listTimeEntryRevisions(e, id),
 
     // ------------------------------------------------ audit + platform
     listAudit: (t, l) => inner.listAudit(t, l),

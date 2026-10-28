@@ -231,6 +231,69 @@ export interface MonthlyStatement {
   workedMinutes: number;
   allocatedMinutes: number;
   billingMinutes: number;
+  /**
+   * Approved statements only: corrections of this month made after the
+   * approval. The stored figures above are NOT recalculated (open decision N1,
+   * docs/database.md) – the UI shows a "nach Freigabe korrigiert" hint.
+   */
+  correctedAfterApproval?: { count: number; lastAt: string } | null;
+}
+
+// ---------------------------------------------------------------- correction requests
+
+/** Values of a time entry as used in correction requests and revisions. */
+export interface EntryValues {
+  date: ISODate;
+  start: ClockTime;
+  end: ClockTime;
+  pauseMinutes: number;
+  note: string;
+}
+
+export type CorrectionKind = "change" | "delete" | "add";
+export type CorrectionStatus = "open" | "accepted" | "rejected" | "withdrawn";
+
+/** An employee asks the leadership to change, delete or add one of their own entries. */
+export interface CorrectionRequest {
+  id: UUID;
+  tenantId: UUID;
+  employeeId: UUID;
+  kind: CorrectionKind;
+  /** Entry concerned (change/delete); null for "add". */
+  entryId: string | null;
+  /** Entry version at request time (accepting fails when the entry changed since). */
+  entryVersion: number | null;
+  /** Values at request time (change/delete). */
+  before: EntryValues | null;
+  /** Requested values (change/add). */
+  proposed: EntryValues | null;
+  /** Mandatory reason of the employee. */
+  reason: string;
+  status: CorrectionStatus;
+  createdAt: string;
+  decidedAt: string | null;
+  /** Display name of the deciding person (null when not visible to the caller). */
+  decidedByName: string | null;
+  /** Answer of the leadership (mandatory for rejections). */
+  decisionNote: string | null;
+  /** Entry changed/created by the acceptance. */
+  appliedEntryId: string | null;
+}
+
+/** One version of a time entry from the change history (time_entry_revisions). */
+export interface TimeEntryRevision {
+  entryId: string;
+  version: number;
+  operation: "insert" | "update" | "delete" | "restore";
+  /** Made through the leadership's correction function. */
+  isCorrection: boolean;
+  changedAt: string;
+  /** Display name of the person (null when not visible to the caller). */
+  changedByName: string | null;
+  reason: string | null;
+  values: EntryValues;
+  deleted: boolean;
+  source: TimeEntry["source"];
 }
 
 // ---------------------------------------------------------------- audit
