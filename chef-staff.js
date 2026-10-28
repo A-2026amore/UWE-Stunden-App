@@ -204,7 +204,7 @@ function render(){
   if(!visible.length){
     node.append(element("p","empty",view==="active"?
       "Zurzeit sind keine aktiven Mitarbeiter erfasst. Wenn du bereits Zugänge verschickt hast, übernimm unten zuerst deine bisherige Mitarbeiterliste.":
-      "Noch keine Mitarbeiter in der Übersicht. Übernimm die fünf vorbereiteten Mitarbeiter unten mit einem Klick."));
+      "Noch keine Mitarbeiter in der Übersicht. Trage deine bisherigen Mitarbeiter unten ein oder füge ihre Einladungslinks ein."));
     return;
   }
   for(const item of visible){
