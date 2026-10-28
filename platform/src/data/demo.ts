@@ -26,7 +26,7 @@ import type {
   MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID, WorkAccountPolicy,
 } from "../core/types";
 import { activeShifts, addDays, findOverlapAcrossDays, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
-import { UWE_BREAK_POLICY, evaluateDay, issueForDay } from "../core/breaks";
+import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validateBreakPolicy } from "../core/breaks";
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
@@ -219,17 +219,18 @@ export function validateLogoDataUrl(url: string): void {
 
 // ------------------------------------------------------------------ seed
 
-const GENERIC_BREAK_POLICY = UWE_BREAK_POLICY;
-
+// New tenants (and the generic demo tenant, like db/seed.sql) get the default
+// rule from core/breaks.ts; only the UWE replica keeps the strict UWE rule.
 function defaultSettings(): TenantSettings {
   return {
-    breakPolicy: clone(GENERIC_BREAK_POLICY),
+    breakPolicy: defaultBreakPolicy(),
     workAccount: { enabled: false, model: "calendar-year", openingMinutes: 0, federalState: null, startMonth: "2026-01", approvalRequired: true },
   };
 }
 
 type Pattern = Array<[string, string, number]>;
-// All patterns satisfy the UWE break rules (≥ 6 h → 30 min, ≥ 9 h → 45 min, gaps ≥ 15 min count).
+// All patterns satisfy the strict UWE break rules (≥ 6 h → 30 min, ≥ 9 h → 45 min, gaps ≥ 15 min count),
+// hence also the statutory rule of the generic tenant.
 const KT_PATTERNS: Pattern[] = [
   [["06:30", "14:45", 30]],
   [["07:00", "12:30", 0]],
@@ -278,7 +279,7 @@ function seedDb(now: Date): DemoDb {
         contactPerson: "Petra Leitung",
       },
       settings: {
-        breakPolicy: clone(GENERIC_BREAK_POLICY),
+        breakPolicy: defaultBreakPolicy(),
         workAccount: { enabled: true, model: "calendar-year", openingMinutes: 0, federalState: "BE", startMonth: "2026-01", approvalRequired: false },
       },
     },
@@ -811,7 +812,12 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         assertOwner(s, tenantId, "Einstellungen darf nur der Inhaber ändern.");
         const t = tenantById(db, tenantId);
         const before = clone(t.settings);
-        if (settings.breakPolicy) t.settings.breakPolicy = settings.breakPolicy;
+        if (settings.breakPolicy) {
+          const bp = { ...t.settings.breakPolicy, ...settings.breakPolicy };
+          const problems = validateBreakPolicy(bp);
+          if (problems.length) throw new Error(problems[0]);
+          t.settings.breakPolicy = clone(bp);
+        }
         if (settings.workAccount) {
           const w = { ...t.settings.workAccount, ...settings.workAccount };
           if (!Number.isSafeInteger(w.openingMinutes) || Math.abs(w.openingMinutes) > 60000) throw new Error("Ungültiger Startsaldo.");
