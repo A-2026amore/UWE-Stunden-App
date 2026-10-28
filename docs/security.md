@@ -45,6 +45,15 @@ eines Mandanten ändert **nur der Inhaber** – Plattformpersonal auch nicht mit
 Migration 0011; Status nur über `set_tenant_status`, Anlage über `create_tenant`). Beide sehen **ohne Freigabe keine personenbezogenen
 Daten** (Mitarbeiter, Zeiten, Konten, Abschlüsse, Revisionen) – nur Mandanten-Metadaten, Lizenz
 und Mitarbeiterzahlen (`platform_list_tenants()`).
+Abrechnung (seit 0012, `docs/preismodell.md`): Plattformpersonal sieht je Mandant nur Zahlen (Anzahl abrechenbarer
+Personen, Preis, Betrag, Status) über `platform_billing_overview`; die Liste der abrechenbaren Personen
+(`billing_period_lines`, `tenant_billing`) und die Statushistorie sind nur für die Leitung des Mandanten (bzw. mit
+Support-Freigabe die Historie) lesbar. Audit-Einträge zum Abrechnungsstatus enthalten keine Personen.
+
+**Gesperrte Mitarbeitende** (`employees.status = 'locked'`, seit 0012): vorübergehende Sperre durch die Leitung
+(Grund Pflicht, Audit). Alle Zugriffsprüfungen verlangen `status = 'active'` – die Sperre wirkt deshalb sofort, auch
+für bestehende Sitzungen (403), und die Anmeldung antwortet wie bei falschem Passwort (B4). Daten bleiben erhalten;
+Entsperren setzt wieder `active`.
 
 **Datenbankrollen**: siehe `docs/database.md` (`app_api`, `app_user`, `app_anon`, `app_auth`, `app_service`).
 
