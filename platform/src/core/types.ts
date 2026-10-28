@@ -88,6 +88,11 @@ export interface Tenant {
   isDemo: boolean;
   /** Owner setting: managers and owners must use two-factor authentication (missing = false). */
   requireTwoFactorForManagers?: boolean;
+  /**
+   * Owner setting (0016): months after an employee left before the record may be anonymised.
+   * Missing/null = not configured (anonymisation refused). Legal period to be checked (docs/datenschutz.md).
+   */
+  retentionMonthsAfterExit?: number | null;
 }
 
 // ---------------------------------------------------------------- licences
@@ -220,6 +225,8 @@ export interface Employee {
   role: TenantRole;
   status: EmployeeStatus;
   createdAt: string;
+  /** Set when the owner anonymised the record of a former employee (0016); missing = not anonymised. */
+  anonymizedAt?: string | null;
 }
 
 // ---------------------------------------------------------------- time

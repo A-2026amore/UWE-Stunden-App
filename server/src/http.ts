@@ -19,6 +19,8 @@ export interface Reply {
   status: number;
   body?: unknown;
   headers?: Record<string, string | string[]>;
+  /** Non-JSON body (e.g. a CSV download); the route sets Content-Type itself. */
+  raw?: string;
 }
 
 export interface RequestContext {
@@ -37,6 +39,8 @@ export type Handler = (ctx: RequestContext) => Promise<Reply>;
 
 interface Route {
   method: Method;
+  /** Pattern as registered, e.g. "/api/tenants/:tenantId" (route listing for tests). */
+  pattern: string;
   regex: RegExp;
   keys: string[];
   handler: Handler;
@@ -54,7 +58,12 @@ export class Router {
       keys.push(k);
       return "([^/]+)";
     });
-    this.routes.push({ method, regex: new RegExp(`^${src}$`), keys, handler, bodyLimit: opts.bodyLimit ?? DEFAULT_BODY_LIMIT });
+    this.routes.push({ method, pattern, regex: new RegExp(`^${src}$`), keys, handler, bodyLimit: opts.bodyLimit ?? DEFAULT_BODY_LIMIT });
+  }
+
+  /** All registered routes (method + pattern), in registration order. */
+  list(): Array<{ method: Method; pattern: string }> {
+    return this.routes.map((r) => ({ method: r.method, pattern: r.pattern }));
   }
 
   match(method: string, path: string): { route: Route; params: Record<string, string> } | "method" | null {
@@ -214,8 +223,14 @@ export function clientIp(req: IncomingMessage, trustProxy: boolean, trustedProxi
   return req.socket.remoteAddress ?? "unknown";
 }
 
-function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}): void {
+function send(res: ServerResponse, status: number, body: unknown, headers: Record<string, string | string[]> = {}, raw?: string): void {
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
+  if (raw !== undefined) {
+    res.statusCode = status;
+    res.setHeader("Content-Length", Buffer.byteLength(raw));
+    res.end(raw);
+    return;
+  }
   if (status === 204 || body === undefined) {
     res.statusCode = status;
     res.end();
@@ -300,7 +315,7 @@ export function createRequestHandler(router: Router, o: HttpOptions) {
         requestId,
       });
       status = reply.status;
-      send(res, reply.status, reply.body, reply.headers);
+      send(res, reply.status, reply.body, reply.headers, reply.raw);
     } catch (err) {
       const e = toHttpError(err);
       status = e.status;

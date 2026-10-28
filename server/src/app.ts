@@ -20,6 +20,7 @@ import { Router, createRequestHandler, serializeCookie, type Reply, type Request
 import type { Mail, Mailer } from "./mailer.ts";
 import { oneTimeLink } from "./operator.ts";
 import { RateLimiter } from "./rateLimit.ts";
+import { registerPrivacyRoutes } from "./privacy.ts";
 import { registerDomainRoutes } from "./routes.ts";
 import { withStaticFiles } from "./static.ts";
 import { CHALLENGE_MINUTES, createTwoFactorService, parseProof, type Proof } from "./twoFactor.ts";
@@ -461,6 +462,7 @@ export function createApp(deps: AppDeps) {
   });
 
   registerDomainRoutes(router, app);
+  registerPrivacyRoutes(router, app);
 
   const apiHandler = createRequestHandler(router, {
     allowedOrigins: config.publicOrigins,
@@ -470,5 +472,5 @@ export function createApp(deps: AppDeps) {
     log,
   });
   const handler = config.staticDir ? withStaticFiles(apiHandler, { root: config.staticDir, secure: config.secureCookies, log }) : apiHandler;
-  return { handler, limiters, cookieName, challengeCookieName, twoFactor };
+  return { handler, limiters, cookieName, challengeCookieName, twoFactor, routes: router.list() };
 }

@@ -46,6 +46,7 @@ export function toEmployee(r: Row): Employee {
     role: r.role as Employee["role"],
     status: r.status as Employee["status"],
     createdAt: iso(r.created_at),
+    ...(r.anonymized_at ? { anonymizedAt: iso(r.anonymized_at) } : {}),
   };
 }
 
@@ -60,6 +61,7 @@ export function toTenant(r: Row): Tenant {
     settings: r.settings as Tenant["settings"],
     isDemo: Boolean(r.is_demo),
     requireTwoFactorForManagers: Boolean(r.require_two_factor_for_managers),
+    ...(r.retention_months_after_exit == null ? {} : { retentionMonthsAfterExit: Number(r.retention_months_after_exit) }),
   };
 }
 

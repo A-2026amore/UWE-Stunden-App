@@ -76,6 +76,8 @@ export interface TestServer {
   /** The server's TOTP clock (ms). */
   now(): number;
   advanceClock(ms: number): void;
+  /** Every route registered by createApp (method + pattern), read from the router. */
+  routes: Array<{ method: string; pattern: string }>;
   /** Clears the in-memory rate limiters (tests that hit a limit on purpose). */
   resetRateLimits(): void;
   close(): Promise<void>;
@@ -98,7 +100,7 @@ export async function startTestServer(env: Record<string, string> = {}): Promise
   let clockOffset = 0;
   const frozen = (Math.floor(Date.now() / 30_000) * 30 + 15) * 1000;
   const now = () => frozen + clockOffset;
-  const { handler, limiters } = createApp({
+  const { handler, limiters, routes } = createApp({
     config,
     pool,
     mailer: { async send(m) { mails.push(m); } },
@@ -173,7 +175,7 @@ export async function startTestServer(env: Record<string, string> = {}): Promise
   };
 
   return {
-    url, db, pool, mails, call, login, secrets, enrollTwoFactor, twoFactorCode,
+    url, db, pool, mails, call, login, secrets, enrollTwoFactor, twoFactorCode, routes,
     now,
     advanceClock(ms) { clockOffset += ms; },
     resetRateLimits() {
