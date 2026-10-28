@@ -131,6 +131,18 @@ jobs:
           test "$(docker inspect -f '{{len .HostConfig.PortBindings}}' stunden-ci-app)" = 0
           docker exec stunden-ci-app node -e "fetch('http://127.0.0.1:3000/app/').then(async r=>{const csp=r.headers.get('content-security-policy')||'';if(!r.ok||!csp.includes(\"default-src 'self'\"))process.exit(1)})"
           docker exec stunden-ci-db psql -U stunden_admin -d stunden -Atc "select rolbypassrls or rolsuper from pg_roles where rolname = 'app_api'" | grep -qx f
+      # Testzugänge (fiktiv, Passwörter nur in der Konsole dieses Laufs), Backup aus dem Compose-Container,
+      # Wiederherstellungsprobe in einem Wegwerf-Container ohne Netz.
+      - name: Testzugänge, Backup und Wiederherstellungsprobe
+        run: |
+          C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"
+          $C run --rm migrate node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+            server/src/cli.ts seed-test-env --confirm-test-environment --domain=stunden-ci.example > /dev/null
+          docker exec stunden-ci-db psql -U stunden_admin -d stunden -Atc "select count(*) from public.employees" | grep -qx 10
+          umask 077
+          BK="$RUNNER_TEMP/backup"; mkdir -p "$BK"; openssl rand -hex 32 > "$BK/pass"
+          BACKUP_PASSPHRASE_FILE="$BK/pass" BACKUP_KEEP_LOCAL=0 deploy/backup.sh --compose deploy/.env --out "$BK/out"
+          BACKUP_PASSPHRASE_FILE="$BK/pass" deploy/restore-test.sh --docker --migrations db/migrations "$BK"/out/stunden-ci-*.tar.gpg
       - name: Logs bei Fehler
         if: failure()
         run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs --no-color || true

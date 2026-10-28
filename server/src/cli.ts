@@ -13,16 +13,23 @@
  * this console (stdout) – for operation without SMTP. The link is not logged
  * and no API route returns it. Uses DATABASE_URL and PUBLIC_ORIGIN /
  * INVITE_LINK_PATH like the API.
+ *
+ *   node --import ./server/register.mjs server/src/cli.ts seed-test-env --confirm-test-environment [--domain=…] [--admin-email=…]
+ *
+ * Test environment only: fictitious test companies with random passwords, printed
+ * ONLY on this console (server/src/testenv.ts). Uses MIGRATION_DATABASE_URL (owner).
  */
 import { createInterface } from "node:readline";
 import { passwordProblem, setPasswordViaReset } from "./auth.ts";
 import { createPool } from "./db.ts";
+import { TestEnvRefused, formatAccounts, seedTestEnvironment } from "./testenv.ts";
 import { INVITE_ROLES, createOperatorInvitation, inviteLinkBase, oneTimeLink, type InviteRole } from "./operator.ts";
 
 const USAGE = [
   "Aufruf:",
   "  cli.ts set-password <email>                                   (Passwort über stdin)",
   "  cli.ts invite-link <mandant-kurzname> <email> <employee|manager|owner> [--days=1..30] [--name=Anzeigename]",
+  "  cli.ts seed-test-env --confirm-test-environment [--domain=stunden-test.example] [--admin-email=…]   (nur Testumgebung)",
 ].join("\n");
 
 async function readLine(): Promise<string> {
@@ -119,10 +126,47 @@ async function inviteLink(args: string[]) {
   }
 }
 
+async function seedTestEnv(args: string[]) {
+  let confirmed = false;
+  let domain: string | undefined;
+  let adminEmail: string | undefined;
+  for (const a of args) {
+    const d = /^--domain=(.+)$/.exec(a);
+    const m = /^--admin-email=(.+)$/.exec(a);
+    if (a === "--confirm-test-environment") confirmed = true;
+    else if (d) domain = d[1];
+    else if (m) adminEmail = m[1];
+    else usage();
+  }
+  if (!confirmed) {
+    console.error("Nur für die Testumgebung: bitte mit --confirm-test-environment bestätigen.");
+    process.exit(2);
+  }
+  const url = process.env.MIGRATION_DATABASE_URL;
+  if (!url) {
+    console.error("MIGRATION_DATABASE_URL fehlt (Eigentümer der Datenbank, wie beim Migrationsjob).");
+    process.exit(2);
+  }
+  try {
+    const accounts = await seedTestEnvironment({ url, domain, adminEmail });
+    console.log("Testzugänge angelegt. Passwörter erscheinen nur hier – jetzt sicher übergeben (z. B. Passwort-Manager), nicht in Dateien speichern.");
+    console.log("Der Super-Admin muss bei der ersten Anmeldung die Zwei-Faktor-Anmeldung einrichten.\n");
+    console.log(formatAccounts(accounts));
+  } catch (e) {
+    if (e instanceof TestEnvRefused) {
+      console.error(e.message);
+      process.exitCode = 1;
+    } else {
+      throw e;
+    }
+  }
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   if (cmd === "set-password") await setPassword(args);
   else if (cmd === "invite-link") await inviteLink(args);
+  else if (cmd === "seed-test-env") await seedTestEnv(args);
   else usage();
 }
 

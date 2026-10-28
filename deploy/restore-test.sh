@@ -126,9 +126,15 @@ case "$TARGET_MODE" in
     CONTAINER="stunden-restore-test-$(date +%s)-$$"
     docker run -d --rm --name "$CONTAINER" --network none -e POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
       -e POSTGRES_USER=postgres -e TZ=Europe/Berlin "$IMAGE" >/dev/null || abort "Wegwerf-Container startet nicht"
-    for _ in $(seq 1 60); do docker exec "$CONTAINER" pg_isready -U postgres -q 2>/dev/null && break; sleep 1; done
-    # Das offizielle Image startet einmal neu (Initialisierung) – zweite Bereitschaft abwarten.
-    sleep 2; for _ in $(seq 1 30); do docker exec "$CONTAINER" pg_isready -U postgres -q 2>/dev/null && break; sleep 1; done
+    # Das offizielle Image initialisiert mit einem vorläufigen Server und startet dann neu:
+    # erst das Ende der Initialisierung abwarten, dann die Bereitschaft.
+    ready=0
+    for _ in $(seq 1 90); do
+      if docker logs "$CONTAINER" 2>&1 | grep -q "PostgreSQL init process complete" \
+         && docker exec "$CONTAINER" pg_isready -U postgres -h 127.0.0.1 -q 2>/dev/null; then ready=1; break; fi
+      sleep 1
+    done
+    [ "$ready" = 1 ] || abort "Wegwerf-Container wird nicht bereit: $(docker logs "$CONTAINER" 2>&1 | tail -n 3 | tr '\n' ' ')"
     t_psql() { local db="$1"; shift; docker exec -i "$CONTAINER" psql -X -U postgres -d "$db" "$@"; }
     t_restore() { docker exec -i "$CONTAINER" pg_restore -U postgres -d "$1" --exit-on-error < "$WORK/database.dump"; }
     ok "Wegwerf-Container $CONTAINER gestartet ($IMAGE, ohne Netz)"
