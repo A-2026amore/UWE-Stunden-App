@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Branding, CompanyContact } from "../../../core/types";
 import { ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES } from "../../../data/demo";
 import {
-  Alert, Button, Card, Field, InputField, brandVariables, contrastRatio, isHexColor, readableTextOn, resolveAsset, useToast,
+  Alert, Button, Card, Field, InputField, brandVariables, brandVariablesDark, contrastRatio, isHexColor, readableTextOn, resolveAsset, useResolvedTheme, useToast,
 } from "../../../design";
 import { errorText } from "../../shared/hooks";
 import { useChef } from "../context";
@@ -48,7 +48,10 @@ export function CompanyPage() {
   };
 
   const colorsValid = (["primaryColor", "secondaryColor", "accentColor"] as ColorKey[]).every((k) => isHexColor(branding[k]));
-  const preview = colorsValid ? brandVariables(branding) : brandVariables(tenant.branding);
+  // The live preview uses the colours of the active scheme (light or dark).
+  const theme = useResolvedTheme();
+  const derive = theme === "dark" ? brandVariablesDark : brandVariables;
+  const preview = colorsValid ? derive(branding) : derive(tenant.branding);
 
   const save = async (e: Event) => {
     e.preventDefault();

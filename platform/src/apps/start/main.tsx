@@ -20,7 +20,7 @@ const AREAS = [
 
 function AreaCards() {
   return (
-    <div class="grid-3">
+    <div class="area-grid">
       {AREAS.map((a) => (
         <Card key={a.href} class="area-card">
           <span class="area-icon"><Icon name={a.icon} size={22} /></span>
