@@ -6,7 +6,7 @@ import type { TimeEntry } from "../../../core/types";
 import { Alert, Button, Card, EmptyState, LinkButton, StatusPill, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, formatDateDE, hoursLabel, monthLabelDE } from "../../shared/format";
-import { buildStatement, shareOrDownload } from "../../shared/statement";
+import { buildStatement, preparePdfLogo, shareOrDownload } from "../../shared/statement";
 import { downloadBlob } from "../../shared/format";
 import { navigate } from "../../shared/router";
 import { MonthPicker } from "../../shared/MonthPicker";
@@ -25,6 +25,8 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   const policy = tenant.settings.workAccount;
 
   useEffect(() => { if (initialMonth && isValidMonth(initialMonth)) setMonth(initialMonth); }, [initialMonth]);
+  // Company logo for the PDF is converted ahead of time: "PDF teilen" must open the share sheet directly in the click.
+  useEffect(() => { void preparePdfLogo(tenant); }, [tenant.branding.logoUrl]);
 
   const q = useAsync(async () => {
     const [entries, allocations, statement] = await Promise.all([

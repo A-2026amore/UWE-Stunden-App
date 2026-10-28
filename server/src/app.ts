@@ -42,7 +42,7 @@ export interface Membership {
   role: TenantRole;
   tenantName: string;
   /** Since 0008: memberships of suspended/pending tenants are listed too. */
-  tenantStatus: "active" | "suspended" | "pending";
+  tenantStatus: "active" | "suspended" | "pending" | "deactivated";
 }
 
 /** Session as in repository.ts, plus all memberships (for a later tenant switch). */
@@ -97,7 +97,12 @@ export async function buildSession(q: Queryable, userId: string, email: string):
   let blocked: Blocked | null = null;
   if (!active && !session.platformRole) {
     blocked = memberships.length
-      ? { code: "tenant_suspended", message: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." }
+      ? {
+          code: "tenant_suspended",
+          message: memberships.every((m) => m.tenantStatus === "deactivated")
+            ? "Der Firmenzugang ist deaktiviert. Bitte wende dich an deinen Arbeitgeber."
+            : "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.",
+        }
       : { code: "forbidden", message: "Dein Zugang ist nicht aktiv. Bitte wende dich an deinen Arbeitgeber." };
   }
   return { session, blocked };

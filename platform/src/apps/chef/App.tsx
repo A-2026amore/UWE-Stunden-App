@@ -12,6 +12,7 @@ import { Ctx, type ChefCtx } from "./context";
 import { DashboardPage } from "./pages/Dashboard";
 import { EmployeesPage } from "./pages/Employees";
 import { TimesPage } from "./pages/Times";
+import { HoursPage } from "./pages/Hours";
 import { StatementsPage } from "./pages/Statements";
 import { AccountsPage } from "./pages/Accounts";
 import { CompanyPage } from "./pages/Company";
@@ -29,6 +30,7 @@ const checkArea = (s: Session): string | null =>
 const NAV: NavItem[] = [
   { href: "#/", label: "Dashboard", icon: "chart", match: "/" },
   { href: "#/mitarbeiter", label: "Mitarbeiter", icon: "users", match: "/mitarbeiter" },
+  { href: "#/stunden", label: "Stundenübersicht", icon: "calendar", match: "/stunden" },
   { href: "#/zeiten", label: "Arbeitszeiten", icon: "clock", match: "/zeiten" },
   { href: "#/nachweise", label: "Monatsnachweise", icon: "fileCheck", match: "/nachweise" },
   { href: "#/korrekturen", label: "Korrekturanfragen", icon: "message", match: "/korrekturen" },
@@ -102,6 +104,7 @@ export function ChefApp() {
   let page;
   switch (route.path) {
     case "/mitarbeiter": page = <EmployeesPage />; break;
+    case "/stunden": page = <HoursPage initialMonth={route.query.get("m")} initialEmployee={route.query.get("ma")} />; break;
     case "/zeiten": page = <TimesPage />; break;
     case "/nachweise": page = <StatementsPage />; break;
     case "/korrekturen": page = <CorrectionsPage />; break;

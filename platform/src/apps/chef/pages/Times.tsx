@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { activeShifts, addDays, isRealDate, netMinutes } from "../../../core/time";
-import { csvRow } from "../../../core/csv";
+import { timeEntriesCsv } from "../../shared/exports";
 import { evaluateDay, issueForDay, requiredPauseText } from "../../../core/breaks";
 import type { Employee, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
@@ -9,7 +9,7 @@ import {
 } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, todayISO, weekdayShort } from "../../shared/format";
-import { buildStatement } from "../../shared/statement";
+import { buildStatementWithLogo } from "../../shared/statement";
 import { monthRange, useChef } from "../context";
 import { EntryHistoryDialog } from "./Corrections";
 
@@ -66,14 +66,8 @@ export function TimesPage() {
   const total = rows.reduce((s, e) => s + net(e), 0);
 
   const exportCsv = () => {
-    const head = ["Personalnummer", "Name", "Datum", "Beginn", "Ende", "Pause (Min.)", "Stunden", "Bemerkung", "Quelle"];
-    const lines = rows.map((e) => {
-      const emp = byId.get(e.employeeId);
-      // csvRow neutralises formula-like free texts (notes, names) – QA B6.
-      return csvRow([emp?.personnelNumber ?? "", emp?.displayName ?? "", formatDateDE(e.date), e.start, e.end, e.pauseMinutes, (net(e) / 60).toFixed(2).replace(".", ","), e.note,
-        e.source === "correction" ? "Korrektur" : e.source === "migration" ? "Übernahme" : "App"]);
-    });
-    const csv = "﻿" + [csvRow(head), ...lines].join("\r\n");
+    // Formula-like free texts (notes, names) are neutralised – QA B6.
+    const csv = timeEntriesCsv(rows, byId);
     const who = employeeId === "all" ? "alle" : (byId.get(employeeId)?.personnelNumber ?? "mitarbeiter");
     downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `Arbeitszeiten_${tenant.slug}_${from}_${to}_${who}.csv`);
     toast("CSV-Datei wurde erstellt.");
@@ -85,7 +79,7 @@ export function TimesPage() {
     const month = date.slice(0, 7);
     try {
       const [entries, allocations, statement] = await Promise.all([repo.listTimeEntries(emp.id, month), repo.listAllocations(emp.id), repo.getStatement(emp.id, month)]);
-      const { blob, fileName } = buildStatement({ tenant, employee: emp, month, entries, allocations, statement });
+      const { blob, fileName } = await buildStatementWithLogo({ tenant, employee: emp, month, entries, allocations, statement });
       downloadBlob(blob, fileName);
       toast(`PDF erstellt: ${fileName}`);
     } catch (e) {

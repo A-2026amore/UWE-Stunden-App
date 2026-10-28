@@ -6,6 +6,7 @@ import { TwoFactorCard } from "../../shared/twoFactor";
 import { MyDataCard } from "../../shared/privacy";
 import { errorText } from "../../shared/hooks";
 import { useEmployee } from "../context";
+import { InstallCard } from "../InstallHint";
 import { isOfflineSimulated, setOfflineSimulated } from "../syncRepo";
 import { conflictText, pendingText } from "../SyncStatus";
 
@@ -62,6 +63,8 @@ export function SettingsPage() {
       <TwoFactorCard repo={getRepository("app")} account={session.email} />
 
       <MyDataCard repo={getRepository("app")} employeeId={me.id} />
+
+      <InstallCard />
 
       <Card title={`Kontakt zu ${tenant.name}`}>
         <div class="stack-sm">

@@ -36,7 +36,8 @@ import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validat
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type NewTimeEntry, type PrivacyApi, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type BillingApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
+  type Session, type SystemOverview, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
   base32Decode, base32Encode, generateRecoveryCode, matchTotpStep, normalizeRecoveryCode, normalizeTotpCode, otpauthUri,
@@ -67,7 +68,8 @@ export const DEMO_TENANT_IDS = {
 
 /** Maximum size of an uploaded logo (data URL) in bytes. */
 export const MAX_LOGO_BYTES = 300 * 1024;
-export const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/svg+xml", "image/webp"];
+/** Like the API (server/src/validate.ts imageUrl): no SVG uploads – SVG can carry script. */
+export const ALLOWED_LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 // ------------------------------------------------------------------ storage + db types
 
@@ -186,6 +188,29 @@ export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, Pr
   getSupportGrant(tenantId: UUID): Promise<SupportGrant | null>;
   /** Owner/manager grants (hours > 0) or revokes (0) platform support access. */
   setSupportGrant(tenantId: UUID, hours: number): Promise<SupportGrant | null>;
+  inviteEmployee(tenantId: UUID, input: NewEmployee): Promise<InvitedEmployee>;
+  /** Demo: a new invitation of an invited employee (nothing is sent; the link is a placeholder). */
+  createInvitation(employeeId: UUID, channel: InvitationChannel): Promise<InvitationInfo>;
+  /** Owner: display name of the company. */
+  renameTenant(tenantId: UUID, name: string): Promise<Tenant>;
+  /** Platform staff: technical status (demo values). */
+  getSystemOverview(): Promise<SystemOverview>;
+}
+
+/** Text for a sign-in into a tenant that is not active. */
+function tenantBlockedText(tenant: Tenant | undefined): string {
+  return tenant?.status === "deactivated" ? "Der Firmenzugang ist deaktiviert." : "Der Firmenzugang ist derzeit gesperrt.";
+}
+
+/** Demo invitations: valid 7 days, like the API (create_invitation). */
+const INVITATION_DAYS = 7;
+
+function demoInvitation(channel: InvitationChannel): InvitationInfo {
+  const expiresAt = new Date(Date.now() + INVITATION_DAYS * 86400000).toISOString();
+  if (channel === "email") return { expiresAt, delivery: "demo" };
+  const token = `demo-${uuid().replace(/-/g, "")}`;
+  const origin = typeof location !== "undefined" && location.origin && location.origin !== "null" ? location.origin : "https://zeit.demo.example";
+  return { expiresAt, delivery: "link", link: `${origin}/einladung/#token=${token}` };
 }
 
 export interface DemoOptions {
@@ -257,7 +282,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 export function validateLogoDataUrl(url: string): void {
   const m = /^data:([a-z+/.-]+);base64,/.exec(url);
   if (!m) throw new Error("Das Logo muss als Bilddatei hochgeladen werden.");
-  if (!ALLOWED_LOGO_TYPES.includes(m[1]!)) throw new Error("Erlaubte Formate: PNG, JPG, SVG oder WebP.");
+  if (!ALLOWED_LOGO_TYPES.includes(m[1]!)) throw new Error("Erlaubte Formate: PNG, JPG oder WebP.");
   const bytes = Math.floor(((url.length - m[0].length) * 3) / 4);
   if (bytes > MAX_LOGO_BYTES) throw new Error(`Das Logo ist zu groß (max. ${Math.round(MAX_LOGO_BYTES / 1024)} KB).`);
 }
@@ -601,7 +626,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     if (s.tenantId) {
       const tenant = db.tenants.find((t) => t.id === s.tenantId);
       const emp = db.employees.find((e) => e.id === s.employeeId);
-      if (!tenant || tenant.status === "suspended") throw new AccessDeniedError("Der Firmenzugang ist derzeit gesperrt.");
+      if (!tenant || tenant.status !== "active") throw new AccessDeniedError(tenantBlockedText(tenant));
       if (!emp || emp.status === "deactivated") throw new AccessDeniedError("Dein Zugang wurde deaktiviert.");
       if (emp.status === "locked") throw new AccessDeniedError("Dein Zugang ist vorübergehend gesperrt.");
     }
@@ -845,7 +870,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       if (acc.tenantId) {
         const tenant = db.tenants.find((t) => t.id === acc.tenantId);
         const emp = db.employees.find((e) => e.id === acc.employeeId);
-        if (!tenant || tenant.status === "suspended") throw new AccessDeniedError("Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.");
+        if (!tenant || tenant.status !== "active") throw new AccessDeniedError(`${tenantBlockedText(tenant)} Bitte wende dich an deinen Arbeitgeber.`);
         if (!emp || emp.status === "deactivated") throw new AccessDeniedError("Dein Zugang wurde deaktiviert. Bitte wende dich an deinen Arbeitgeber.");
         if (emp.status === "locked") throw new AccessDeniedError("Dein Zugang ist vorübergehend gesperrt. Bitte wende dich an deinen Arbeitgeber.");
         if (emp.status === "invited") {
@@ -1012,6 +1037,18 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         return t;
       });
     },
+    async renameTenant(tenantId, name) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Firmendaten darf nur der Inhaber ändern.");
+        const t = tenantById(db, tenantId);
+        const next = name.trim();
+        if (next.length < 2 || next.length > 200) throw new Error("Bitte den Firmennamen angeben (2–200 Zeichen).");
+        const before = { name: t.name };
+        t.name = next;
+        addAudit(db, s, { tenantId, action: "tenant.renamed", entity: "tenant", entityId: tenantId, before, after: { name: next }, reason: null });
+        return t;
+      });
+    },
     async updateContact(tenantId, contact: Partial<CompanyContact>) {
       return tx((db, s) => {
         assertOwner(s, tenantId, "Firmendaten darf nur der Inhaber ändern.");
@@ -1081,7 +1118,21 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         recordStatus(db, emp);
         if (email) db.accounts.push({ userId: `u-${emp.id}`, email, password: DEMO_PASSWORD, tenantId, employeeId: emp.id, platformRole: null });
         addAudit(db, s, { tenantId, action: "employee.invited", entity: "employee", entityId: emp.id, before: null, after: emp, reason: null });
-        return emp;
+        const result: InvitedEmployee = email ? { ...emp, invitation: demoInvitation(input.invitation ?? "email") } : emp;
+        return result;
+      });
+    },
+    async createInvitation(employeeId, channel) {
+      return tx((db, s) => {
+        const emp = db.employees.find((e) => e.id === employeeId);
+        if (!emp) throw new AccessDeniedError();
+        assertManager(s, emp.tenantId);
+        if (emp.role !== "employee" && s.role !== "owner") throw new AccessDeniedError("Nur Inhaber dürfen Leitungspersonen einladen.");
+        if (emp.status !== "invited") throw new Error("Dieser Mitarbeiter hat bereits ein Benutzerkonto.");
+        if (!emp.email) throw new Error("Für die Einladung wird eine E-Mail-Adresse benötigt.");
+        const info = demoInvitation(channel);
+        addAudit(db, s, { tenantId: emp.tenantId, action: "invitation.created", entity: "invitation", entityId: emp.id, before: null, after: { channel, expiresAt: info.expiresAt }, reason: null });
+        return info;
       });
     },
     async updateEmployee(employeeId, patch) {
@@ -1640,6 +1691,14 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         };
         db.tenants.push(tenant);
         const license = licenseFor(tenant.id, input.plan);
+        if (input.freeOfCharge && input.plan !== "pilot_free") {
+          // Free test customer in one step (special condition "free", optionally limited).
+          if (input.conditionValidUntil && !isRealDate(input.conditionValidUntil)) throw new Error("Bitte ein gültiges Datum für die Gültigkeit angeben.");
+          if (input.conditionNote && input.conditionNote.length > 500) throw new Error("Die Notiz zur Kondition darf höchstens 500 Zeichen lang sein.");
+          license.freeOfCharge = true;
+          license.conditionNote = input.conditionNote?.trim() || null;
+          license.conditionValidUntil = input.conditionValidUntil || null;
+        }
         db.licenses.push(license);
         const owner: Employee = { id: uuid(), tenantId: tenant.id, personnelNumber: "1", displayName: "Inhaber/in", email: ownerEmail, role: "owner", status: "invited", createdAt: new Date().toISOString() };
         db.employees.push(owner);
@@ -1650,9 +1709,24 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         return overview(db, tenant);
       });
     },
+    async getSystemOverview() {
+      return read((db, s) => {
+        assertPlatform(s);
+        const tenants: Record<string, number> = {};
+        for (const t of db.tenants) tenants[t.status] = (tenants[t.status] ?? 0) + 1;
+        const now = new Date().toISOString();
+        const overview: SystemOverview = {
+          version: null, commit: null, serverTime: now, uptimeSeconds: 0, nodeVersion: "—", production: false,
+          database: { reachable: false, time: null }, migrations: null, activeSessions: null, tenants,
+          mail: { configured: false, delivery: "none" }, paymentProvider: "none", lastBackupAt: null,
+        };
+        return overview;
+      });
+    },
     async setTenantStatus(tenantId, status, reason) {
       return tx((db, s) => {
         assertPlatform(s, true);
+        if (!["active", "suspended", "pending", "deactivated"].includes(status)) throw new Error("Ungültiger Status.");
         const r = requireReason(reason);
         const t = tenantById(db, tenantId);
         const before = { status: t.status };

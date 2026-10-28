@@ -14,10 +14,11 @@ import type { TenantOverview } from "../../platform/src/data/repository.ts";
 import { errorsForMonth, evaluateDay, issueForDay, validateBreakPolicy } from "../../platform/src/core/breaks.ts";
 import { addDays, findOverlapAcrossDays } from "../../platform/src/core/time.ts";
 import type { AppContext } from "./app.ts";
-import type { Queryable } from "./db.ts";
+import { withTx, type Queryable } from "./db.ts";
 import { HttpError, badRequest, forbidden } from "./errors.ts";
 import type { Router } from "./http.ts";
 import type { Mail } from "./mailer.ts";
+import { systemOverview } from "./system.ts";
 import {
   STATEMENT_SELECT, TIME_ENTRY_COLUMNS, toAllocation, toAudit, toBillingSummary, toCorrectionRequest, toEmployee, toLicense,
   toRevenueRow, toRevision, toStatement, toTenant, toTimeEntry,
@@ -28,6 +29,8 @@ const BRANDING_BODY_LIMIT = 1_200_000; // two images of max. 300 KB as base64 + 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 const ROLES = ["employee", "manager", "owner"] as const;
 const PLANS = ["pilot_free", "standard", "business", "enterprise"] as const;
+const CHANNELS = ["email", "link"] as const;
+const TENANT_STATUSES = ["active", "suspended", "pending", "deactivated"] as const;
 
 type Row = Record<string, unknown>;
 
@@ -320,6 +323,19 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  // Owner: display name of the company (tenants_guard allows name changes by the owner since 0011).
+  router.add("PATCH", "/api/tenants/:tenantId/name", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const b = v.object(ctx.body, ["name"]);
+    const name = v.str(b.name, { label: "den Firmennamen", max: 200, min: 2 });
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_owner($1)", [id], "Firmendaten darf nur der Inhaber ändern.");
+      const r = await one(q, "update public.tenants set name = $2 where id = $1 returning *", [id, name]);
+      if (!r) throw forbidden("Firmendaten darf nur der Inhaber ändern.");
+      return json(200, toTenant(r));
+    });
+  });
+
   router.add("PATCH", "/api/tenants/:tenantId/settings", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     return app.asUser(ctx, async (q) => {
@@ -390,45 +406,67 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  /**
+   * Delivery of a freshly created (committed) invitation. channel "link": the one-time link goes back to the
+   * manager for sharing (copy / WhatsApp) – except when the address already belongs to an account: accepting
+   * such an invitation links it WITHOUT a password (auth.accept_invitation), so the link must only reach the
+   * address owner and is mailed instead (existingAccount: true).
+   */
+  async function deliverInvitation(channel: (typeof CHANNELS)[number], inv: { token: string; expiresAt: string; email: string; tenantName: string }, mails: Mail[]) {
+    if (channel === "link") {
+      const existing = await withTx(app.pool, "app_auth", null, async (q) =>
+        Boolean((await q.query<{ v: boolean }>("select auth.invitation_needs_existing_login($1) as v", [inv.token])).rows[0]?.v));
+      if (!existing) return { expiresAt: inv.expiresAt, delivery: "link" as const, link: app.link("invite", inv.token) };
+      mails.push(invitationMail(inv.email, inv.token, inv.tenantName));
+      return { expiresAt: inv.expiresAt, delivery: app.mailDelivery, existingAccount: true };
+    }
+    // E-mail delivery: the link itself is not returned, only the invited address receives it.
+    mails.push(invitationMail(inv.email, inv.token, inv.tenantName));
+    return { expiresAt: inv.expiresAt, delivery: app.mailDelivery };
+  }
+
   router.add("POST", "/api/tenants/:tenantId/employees", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
-    const b = v.object(ctx.body, ["displayName", "personnelNumber", "email", "role"]);
+    const b = v.object(ctx.body, ["displayName", "personnelNumber", "email", "role", "invitation"]);
+    const channel = v.oneOf(b.invitation ?? "email", CHANNELS, "Einladungsweg");
     const displayName = v.str(b.displayName, { label: "den Namen", max: 120, min: 1 });
     const personnelNumber = v.str(b.personnelNumber, { label: "die Personalnummer", max: 30, min: 1, pattern: /^[A-Za-z0-9_-]{1,30}$/, patternMessage: "Personalnummer: 1–30 Zeichen, nur Buchstaben, Ziffern, - und _." });
     const email = b.email === null || b.email === undefined || b.email === "" ? null : v.email(b.email);
     const role = v.oneOf(b.role ?? "employee", ROLES, "Rolle");
-    const mails: Mail[] = [];
-    const result = await app.asUser(ctx, async (q) => {
+    const created = await app.asUser(ctx, async (q) => {
       await check(q, "private.is_manager($1)", [id], "Mitarbeitende dürfen nur Vorgesetzte anlegen.");
       const r = await one(q,
         `insert into public.employees (tenant_id, personnel_number, display_name, email, role, status)
          values ($1, $2, $3, $4, $5, 'invited') returning *`, [id, personnelNumber, displayName, email, role]);
-      if (email) {
-        const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
-        const t = await one(q, "select name from public.tenants where id = $1", [id]);
-        const data = inv!.inv as { token: string; expiresAt: string };
-        mails.push(invitationMail(email, String(data.token), String(t?.name ?? "")));
-        // The link itself is never returned: only the invited address receives it.
-        return json(201, { ...toEmployee(r!), invitation: { expiresAt: data.expiresAt, delivery: app.mailDelivery } });
-      }
-      return json(201, toEmployee(r!));
+      if (!email) return { employee: toEmployee(r!), inv: null };
+      const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
+      const t = await one(q, "select name from public.tenants where id = $1", [id]);
+      const data = inv!.inv as { token: string; expiresAt: string };
+      return { employee: toEmployee(r!), inv: { token: String(data.token), expiresAt: data.expiresAt, email, tenantName: String(t?.name ?? "") } };
     });
+    if (!created.inv) return json(201, created.employee);
+    const mails: Mail[] = [];
+    const invitation = await deliverInvitation(channel, created.inv, mails);
     app.sendLater(mails);
-    return result;
+    return json(201, { ...created.employee, invitation });
   });
 
+  // New invitation (earlier links of this employee become invalid – create_invitation revokes them).
+  // {channel: "link"} returns the one-time link for sharing (copy / WhatsApp) instead of mailing it.
   router.add("POST", "/api/employees/:employeeId/invitation", async (ctx) => {
     const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
-    const mails: Mail[] = [];
-    const result = await app.asUser(ctx, async (q) => {
+    const b = v.object(ctx.body ?? {}, ["channel"]);
+    const channel = v.oneOf(b.channel ?? "email", CHANNELS, "Einladungsweg");
+    const created = await app.asUser(ctx, async (q) => {
       const inv = await one(q, "select public.create_invitation($1, 7) as inv", [id]);
       const e = await one(q, "select e.email, t.name from public.employees e join public.tenants t on t.id = e.tenant_id where e.id = $1", [id]);
       const data = inv!.inv as { invitationId: string; token: string; expiresAt: string };
-      mails.push(invitationMail(String(e!.email), data.token, String(e!.name)));
-      return json(200, { invitationId: data.invitationId, expiresAt: data.expiresAt, delivery: app.mailDelivery });
+      return { invitationId: data.invitationId, token: data.token, expiresAt: data.expiresAt, email: String(e!.email), tenantName: String(e!.name) };
     });
+    const mails: Mail[] = [];
+    const delivery = await deliverInvitation(channel, created, mails);
     app.sendLater(mails);
-    return result;
+    return json(200, { invitationId: created.invitationId, ...delivery });
   });
 
   router.add("PATCH", "/api/employees/:employeeId", async (ctx) => {
@@ -758,6 +796,13 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  // Technical status for super_admin and support: no secrets, no personal data (server/src/system.ts).
+  router.add("GET", "/api/platform/system", async (ctx) =>
+    app.asUser(ctx, async (q) => {
+      await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
+      return json(200, await systemOverview(app.config, app.mailDelivery, q));
+    }));
+
   // ---------------------------------------------------------------- platform administration
   async function overviews(q: Queryable, onlyTenant?: string): Promise<TenantOverview[]> {
     const list = await all(q, "select * from public.platform_list_tenants()");
@@ -783,7 +828,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     app.asUser(ctx, async (q) => json(200, await overviews(q))));
 
   router.add("POST", "/api/platform/tenants", async (ctx) => {
-    const b = v.object(ctx.body, ["name", "slug", "plan", "isDemo", "ownerEmail", "ownerName"]);
+    const b = v.object(ctx.body, ["name", "slug", "plan", "isDemo", "ownerEmail", "ownerName", "freeOfCharge", "conditionNote", "conditionValidUntil"]);
+    // Free test customer in one step: standard licence with the "free" special condition (optionally limited).
+    const trial = b.freeOfCharge === undefined ? [] : billingConditionPatch({
+      freeOfCharge: b.freeOfCharge, conditionNote: b.conditionNote, conditionValidUntil: b.conditionValidUntil,
+    });
     const name = v.str(b.name, { label: "den Firmennamen", max: 200, min: 2 });
     const slug = v.str(b.slug, { label: "den Kurznamen", max: 50, min: 3, pattern: /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/, patternMessage: "Kurzname: 3–50 Zeichen, nur Kleinbuchstaben, Ziffern und Bindestriche." });
     const plan = v.oneOf(b.plan, PLANS, "Tarif");
@@ -794,6 +843,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const result = await app.asUser(ctx, async (q) => {
       const r = await one(q, "select public.create_tenant($1, $2, $3, $4, $5, $6, null) as res", [name, slug, plan, isDemo, ownerEmail, ownerName]);
       const res = r!.res as { tenantId: string; invitationToken: string };
+      if (trial.length && plan !== "pilot_free") {
+        const sets = trial.map(([col], i) => `${col} = $${i + 2}`);
+        await q.query("select set_config('app.change_reason', $1, true)", ["Kostenloser Testkunde bei Anlage"]);
+        await q.query(`update public.licenses set ${sets.join(", ")} where tenant_id = $1 and status = 'active'`, [res.tenantId, ...trial.map(([, val]) => val)]);
+      }
       mails.push(invitationMail(ownerEmail, res.invitationToken, name));
       const [ov] = await overviews(q, res.tenantId);
       return json(201, ov);
@@ -805,7 +859,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
   router.add("POST", "/api/platform/tenants/:tenantId/status", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const b = v.object(ctx.body, ["status", "reason"]);
-    const status = v.oneOf(b.status, ["active", "suspended", "pending"] as const, "Status");
+    const status = v.oneOf(b.status, TENANT_STATUSES, "Status");
     const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Statusänderung angeben.");
     return app.asUser(ctx, async (q) => {
       await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen den Mandantenstatus ändern.");

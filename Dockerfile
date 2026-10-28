@@ -29,6 +29,9 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && npm cache clean -
 
 # ---------------------------------------------------------------- 3. Laufzeit
 FROM ${NODE_IMAGE} AS runtime
+# Commit des Builds für den Super-Admin-„Systemstatus“ (docker build --build-arg APP_COMMIT=$(git rev-parse HEAD)).
+ARG APP_COMMIT=""
+ENV APP_COMMIT=${APP_COMMIT}
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \

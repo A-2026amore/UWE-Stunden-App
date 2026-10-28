@@ -14,7 +14,7 @@ export type InviteRole = (typeof INVITE_ROLES)[number];
 
 export interface OperatorInvitation {
   tenantName: string;
-  tenantStatus: "active" | "suspended" | "pending";
+  tenantStatus: "active" | "suspended" | "pending" | "deactivated";
   employeeId: string;
   role: InviteRole;
   createdEmployee: boolean;

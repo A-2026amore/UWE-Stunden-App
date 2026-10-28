@@ -88,6 +88,8 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel, kommagetrennt – nur zum Entschlüsseln während einer Rotation. |
 | `TOTP_ISSUER` | – | `Stundenwerk` | Name in der Authenticator-App (1–40 Zeichen, kein Doppelpunkt). |
 | `PAYMENT_PROVIDER` | – | `none` | Nur `none` erlaubt (Preismodell: manuelle Abrechnung, `docs/preismodell.md`). |
+| `APP_COMMIT` | – | leer | Git-Commit des laufenden Builds (7–40 Hex-Zeichen), nur zur Anzeige im Super-Admin unter „Systemstatus“. |
+| `BACKUP_STATUS_FILE` | – | leer | Datei, in die der nächtliche Sicherungsjob nach **erfolgreicher** Sicherung einen ISO-Zeitstempel schreibt (oder die er nur `touch`t). „Systemstatus“ zeigt daraus „Letzte Sicherung“; ohne Variable: „nicht bekannt“. Ersetzt keinen Wiederherstellungstest. |
 | `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Codes je Konto bzw. IP im Zeitfenster `RATE_LIMIT_WINDOW_MINUTES`. |
 
 **Schlüssel erzeugen** (einmalig, nur in `/etc/uwe-zeit/api.env`, Rechte 600, nie ins Repository):
@@ -233,8 +235,12 @@ Möglich (siehe `server/README.md`, Caddy-Beispiel ohne `STATIC_DIR`). Dann müs
   `passwort-neu/` und `einladung/`. Nur ändern, wenn die Plattform unter einem Unterpfad läuft (dann beide Pfade inkl.
   Unterpfad setzen). Die Seiten entfernen das Token nach dem Lesen aus der Adresszeile.
 - Das Chef-Portal zeigt nach „Mitarbeiter einladen“, wohin die Einladung ging („per E-Mail an … gesendet“, gültig bis …).
-  Den Link selbst sieht nur die eingeladene Person (sonst könnte jemand anderes das Konto für diese E-Mail-Adresse
-  anlegen). Ohne SMTP in Produktion meldet das Portal, dass nichts zugestellt wurde.
+  Bei „Per E-Mail senden“ sieht den Link nur die eingeladene Person. Alternativ „Link selbst teilen (WhatsApp oder
+  kopieren)“ bzw. später „Zugang senden“ → „Link erstellen“: Der Einmal-Link (7 Tage, nur einmal verwendbar, ein neuer
+  Link macht alte ungültig) wird der Leitung angezeigt und kann per WhatsApp (wa.me mit vorausgefülltem Text) geteilt
+  oder kopiert werden – so funktioniert die Einladung auch ganz ohne SMTP. Es wird nie ein Passwort versendet. Gehört
+  die Adresse schon zu einem Konto, schickt der Server den Link nur per E-Mail (siehe `docs/security.md`). Ohne SMTP in
+  Produktion meldet das Portal bei E-Mail-Einladungen, dass nichts zugestellt wurde.
 - Service Worker nur für die Mitarbeiter-App: `app/sw.js`, Bereich `/app/`, nur in Produktions-Builds über HTTPS
   (oder `localhost`). Er speichert ausschließlich die App-Hülle (beim Build erzeugte Liste), nie `/api/…`.
   Cache-Namen beginnen mit `stundenwerk-app-`; gelöscht werden nur eigene ältere Versionen. Löscht eine andere App

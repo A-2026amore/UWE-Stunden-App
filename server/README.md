@@ -94,6 +94,8 @@ sicheren Kanal weitergeben; Terminal-Verlauf/Mitschnitte beachten.
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel (kommagetrennt), nur zum Entschlüsseln während einer Rotation. |
 | `TOTP_ISSUER` | – | `Stundenwerk` | Anzeigename in der Authenticator-App. |
 | `PAYMENT_PROVIDER` | – | `none` | Zahlungsdienstleister. Nur `none` (keine Abbuchungen, keine externen Aufrufe, `src/payment.ts`); jeder andere Wert verhindert den Start. |
+| `APP_COMMIT` | – | – | Commit des Builds (7–40 Hex-Zeichen) für `GET /api/platform/system`. |
+| `BACKUP_STATUS_FILE` | – | – | Zeitstempel-Datei der letzten erfolgreichen Sicherung (Inhalt ISO-Zeit oder Änderungszeit) für `GET /api/platform/system`; fehlt sie: „nicht bekannt“. |
 
 Ein `SESSION_SECRET` wird nicht benötigt: Sitzungs-Token sind 32 zufällige Bytes, die Datenbank
 speichert nur ihren SHA-256-Hash.

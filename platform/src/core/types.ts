@@ -74,7 +74,7 @@ export interface TenantSettings {
   workAccount: WorkAccountPolicy;
 }
 
-export type TenantStatus = "active" | "suspended" | "pending";
+export type TenantStatus = "active" | "suspended" | "pending" | "deactivated";
 
 export interface Tenant {
   id: UUID;
