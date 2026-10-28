@@ -134,7 +134,15 @@ export interface License {
 // ---------------------------------------------------------------- billing (price model 2026-10-28)
 
 /** Which price applies to a tenant in a month. */
-export type BillingCondition = "standard" | "special" | "free" | "pilot_free";
+export type BillingCondition = "standard" | "special" | "free" | "pilot_free"
+  /** Customer blocked (suspended / deactivated) for the whole month: 0 € (decision 28.10.2026, migration 0018). */
+  | "tenant_suspended" | "tenant_deactivated";
+
+/** Block of a customer covering a whole month (status and start of the block). */
+export interface TenantBlock {
+  status: "suspended" | "deactivated";
+  since: string;
+}
 /** Manual billing status of a tenant and month (platform operator). */
 export type BillingStatus = "open" | "invoiced" | "paid" | "waived";
 /** Why a person is billable: role employee, or leadership with own time entries in the month. */
@@ -177,6 +185,8 @@ export interface TenantBillingMonth extends BillingMonthSummary {
   currency: "EUR";
   closedAt: string | null;
   lines: BillingLine[];
+  /** Set when the customer was blocked for the whole month (condition tenant_*), else null. */
+  tenantBlock?: TenantBlock | null;
 }
 
 /** One row of the platform revenue overview – numbers only, never names. */
@@ -189,6 +199,9 @@ export interface PlatformRevenueRow extends BillingMonthSummary {
   plan: LicensePlan | null;
   note: string | null;
   closedAt: string | null;
+  /** Condition tenant_*: start of the block and the reason given by the super-admin. */
+  blockSince?: string | null;
+  blockReason?: string | null;
 }
 
 export interface PlatformRevenue {
@@ -315,7 +328,8 @@ export interface MonthSummary {
 
 // ---------------------------------------------------------------- statements
 
-export type StatementStatus = "draft" | "submitted" | "approved" | "returned";
+/** "reopened": an approved month re-opened by the leadership with a reason (decision 28.10.2026, migration 0017). */
+export type StatementStatus = "draft" | "submitted" | "approved" | "returned" | "reopened";
 
 export interface MonthlyStatement {
   id: UUID;
@@ -331,12 +345,25 @@ export interface MonthlyStatement {
   workedMinutes: number;
   allocatedMinutes: number;
   billingMinutes: number;
+  /** Status "reopened": when the month was re-opened (the reason is in reviewNote). */
+  reopenedAt?: string | null;
   /**
-   * Approved statements only: corrections of this month made after the
-   * approval. The stored figures above are NOT recalculated (open decision N1,
-   * docs/database.md) – the UI shows a "nach Freigabe korrigiert" hint.
+   * Legacy cases only: corrections of an approved month made after the approval
+   * before migration 0017. Since the decision of 28.10.2026 an approved month can
+   * only be changed after a documented re-opening, so new cases cannot arise.
    */
   correctedAfterApproval?: { count: number; lastAt: string } | null;
+}
+
+/** One entry of the history of a monthly statement (monthly_statement_events). */
+export interface StatementEvent {
+  action: "submit" | "approve" | "return" | "reopen";
+  at: string;
+  actorName: string | null;
+  reason: string | null;
+  workedMinutes: number;
+  allocatedMinutes: number;
+  billingMinutes: number;
 }
 
 // ---------------------------------------------------------------- correction requests

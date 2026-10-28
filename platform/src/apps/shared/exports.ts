@@ -16,6 +16,7 @@ export const STATEMENT_STATUS_LABEL: Record<StatementStatus | "none", string> = 
   submitted: "Eingereicht",
   approved: "Freigegeben",
   returned: "Zurückgegeben",
+  reopened: "Wieder geöffnet",
 };
 
 const net = (e: TimeEntry) => netMinutes({ ...e, pause: e.pauseMinutes });
