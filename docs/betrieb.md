@@ -229,7 +229,84 @@ delete from public.tenants where slug = 'qa-testfirma-a' and is_demo;   -- Fremd
 commit;
 ```
 
-Ein eigenes Aufräum-Skript für `is_demo`-Mandanten der Testumgebung ist ein offener Punkt.
+Ein eigenes Aufräum-Skript für `is_demo`-Mandanten der Testumgebung ist ein offener Punkt. Für **echte**
+Mandanten gilt ausschließlich das Verfahren in 6.1b.
+
+### 6.1b Vertragsende: Datenexport und Löschung eines Mandanten (Migration 0020)
+
+Grundlage: AGB/AV-Vertrag (Entwürfe, `recht/`). **Fristen sind rechtlich zu prüfen** (Rückgabe-/Exportfrist nach
+Vertragsende, Löschfrist, Aufbewahrungsfristen des Kunden und der Plattform) – der Code legt keine Frist fest.
+
+Beide Befehle laufen **nur auf der Server-Konsole** mit der Eigentümerrolle der Datenbank
+(`MIGRATION_DATABASE_URL`, wie der Migrationsjob). Es gibt dafür keinen HTTP-Endpunkt; `app_api` und die
+Anfragerollen dürfen die Funktionen nicht ausführen (Test). Jeder Lauf wird im Audit-Log protokolliert.
+
+**1. Export (für jeden Status, auch `suspended`/`deactivated`, deren Inhaber sich nicht mehr anmelden kann):**
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+  server/src/cli.ts export-tenant <mandant-kurzname> --out /root/vertragsende/<mandant-kurzname>-$(date +%F)
+```
+
+- Schreibt ein neues Verzeichnis (Rechte 0700, Dateien 0600; ein vorhandenes, nicht leeres Ziel wird abgelehnt):
+  `firmendaten.json` (vollständiger Gesamtexport, gleiches Format wie „Gesamtexport der Firma“ im Chef-Portal:
+  Stammdaten, Lizenzen, Abrechnungsmonate, Support-Freigaben, alle Personen mit Zeiten, Revisionen,
+  Korrekturanfragen, Nachweisen, Kontobewegungen, Einladungen und das Audit-Log), `arbeitszeiten.csv`
+  (Excel, Semikolon) und `SHA256SUMS` (`sha256sum -c SHA256SUMS`).
+- Audit-Eintrag `tenant.operator_export` beim Mandanten. Schlägt das Schreiben fehl, wird auch der Audit-Eintrag
+  zurückgerollt.
+- Der Export enthält personenbezogene Daten: nur verschlüsselt an den Kunden übergeben (z. B. 7-Zip/AES mit
+  getrennt übermitteltem Passwort), Übergabe dokumentieren, danach vom Server löschen.
+- Der Inhaber eines **aktiven** Mandanten kann denselben Export weiterhin selbst im Chef-Portal abrufen. Ein
+  Selbstbedienungs-Export für Inhaber gesperrter/deaktivierter Mandanten ist **nicht** umgesetzt (siehe unten).
+
+**2. Löschung (nur Status `deactivated`, nach dem Export):**
+
+```bash
+# vorher: Mandant im Admin-Portal deaktivieren (mit Grund), Backup prüfen (5.1)
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+  server/src/cli.ts delete-tenant <mandant-kurzname> --confirm <mandant-kurzname> \
+  --after-export /root/vertragsende/<mandant-kurzname>-<datum>
+# nur mit ausdrücklicher Freigabe ohne Export:  ... --confirm <mandant-kurzname> --without-export
+```
+
+- Prüft vorher: Kurzname zweimal identisch, Status `deactivated`, Export gehört zu diesem Mandanten (Kurzname und
+  Kennung) und ist unverändert (Prüfsumme), und in der Datenbank ist ein Export protokolliert
+  (`tenant.operator_export` oder `tenant.data_export`). Ohne Export nur mit `--without-export`.
+- Läuft in **einer Transaktion**: jeder Fehler bricht alles ab, es bleibt nichts halb gelöscht; der Befehl kann
+  danach erneut gestartet werden. Ein zweiter Lauf nach erfolgreicher Löschung findet den Mandanten nicht mehr
+  (Exit-Code 1, nichts geändert).
+- **Gelöscht** werden: alle Mitarbeitenden-Datensätze mit Zeiten, Revisionen, Korrekturanfragen, Monatsnachweisen
+  und deren Verlauf, Arbeitszeitkonto-Buchungen, Statushistorie, Einladungen samt Einladungslinks, Abrechnungszeilen
+  je Person; Anmeldekonten, die **nur** zu diesem Mandanten gehören (mit Sitzungen, Einmal-Links, 2FA) – Konten,
+  die auch in einem anderen Mandanten oder als Plattform-Konto genutzt werden, bleiben; Lizenzen,
+  Support-Freigaben, Mandanten-Statushistorie, offene Abrechnungsmonate, Logos/Branding und Kontaktdaten; das
+  gesamte Audit-Log des Mandanten sowie mandantenlose Audit-Einträge über die gelöschten Konten. Zusätzlich
+  leert ein Katalog-Durchlauf **jede weitere Tabelle mit Spalte `tenant_id`** (auch später hinzugefügte).
+  Zum Schluss prüft die Funktion selbst über den Katalog, dass keine Zeile des Mandanten übrig ist – sonst Abbruch.
+- **Aufbewahrt** (Buchhaltungsunterlagen der Plattform, keine Mitarbeiternamen): Rechnungen und Stornos
+  (`invoices`, unveränderlich) und abgerechnete Monate (`billing_periods` mit Status ≠ `open`, nur Zahlen).
+  Solange solche Zeilen existieren, bleibt die Mandantenzeile als anonymisierter Platzhalter
+  („Gelöschter Mandant …“, Kurzname `geloescht-…`, ohne Kontakt, Standard-Branding, `deleted_at` gesetzt; nicht
+  mehr änderbar, nicht reaktivierbar, keine neuen Mitglieder). Sonst wird auch die Mandantenzeile gelöscht.
+  Hinweis: Rechnungen enthalten die Rechnungsanschrift des Kunden (Pflichtangabe) – Aufbewahrungsdauer rechtlich
+  prüfen; danach ist ihre Löschung eine eigene, noch nicht umgesetzte Wartungsarbeit.
+- **Audit-Entscheidung:** Die Audit-Zeilen des Mandanten enthalten Namen, E-Mail-Adressen und Bemerkungen
+  (Vorher/Nachher-Daten) und werden **gelöscht**, nicht nur anonymisiert – sie sind im Export enthalten.
+  Stattdessen bleibt **ein** anonymisierter Eintrag `tenant.deleted` (ohne Mandanten-Kennung in `tenant_id`, ohne
+  Namen und Kurzname; `entity_id` = Mandanten-ID, Anzahl gelöschter Zeilen je Tabelle, aufbewahrte Zeilen,
+  Zeitpunkt des letzten Exports, SHA-256 der Exportdatei bzw. `withoutExport`). Das Audit-Log bleibt für alle
+  anderen Fälle append-only; die Ausnahme greift nur innerhalb dieser Funktion (Markierung der Transaktion in
+  `private.tenant_deletions`, für Anfragerollen nicht beschreibbar).
+- **Backups:** Ältere verschlüsselte Sicherungen enthalten die Daten bis zum Ablauf ihrer Aufbewahrung
+  (restic-Rotation). Wiederherstellung einer Sicherung nach einer Löschung: Löschung danach erneut ausführen.
+  Frist rechtlich prüfen und im AV-Vertrag nennen.
+
+**Selbstbedienungs-Export für gesperrte Inhaber (Variante b) – nicht umgesetzt:** Dafür müssten Anmeldung,
+Zwei-Faktor-Ablauf, Sitzungsprüfung (`asUser`) und die Oberfläche einen eigenen „nur Export“-Zustand bekommen. Das
+greift in sicherheitskritische Pfade ein und wurde in der verfügbaren Zeit nicht sauber und getestet machbar.
+Stattdessen: Export durch den Betreiber (oben) und Übergabe an den Inhaber; alternativ den Mandanten für die
+Exportfrist kurz reaktivieren.
 
 ## 6.2 Container-Betrieb (Docker Compose)
 

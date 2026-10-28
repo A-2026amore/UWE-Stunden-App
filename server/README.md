@@ -25,7 +25,8 @@ Browser ──HTTPS──▶ Caddy ──▶ Node-API (127.0.0.1:3000) ──▶
 | `src/twoFactor.ts` | Zwei-Faktor-Anmeldung (TOTP): Verschlüsselung des Geheimnisses, Code-Prüfung mit Replay-Schutz, Wiederherstellungscodes, zweiter Anmeldeschritt |
 | `src/static.ts` | Optional: Auslieferung von `platform/dist` (`STATIC_DIR`) mit eigener CSP |
 | `src/mailer.ts` | E-Mail (minimaler SMTP-Client; ohne SMTP: Ausgabe ins Log nur in Entwicklung) |
-| `src/cli.ts` | Betriebsbefehle `set-password` und `invite-link` |
+| `src/cli.ts` | Betriebsbefehle `set-password`, `invite-link`, `seed-test-env`, `export-tenant`, `delete-tenant` |
+| `src/offboarding.ts` | Vertragsende: Gesamtexport und Löschung eines Mandanten (nur Konsole, Eigentümerrolle) |
 | `src/operator.ts` | Einladungslink für den Betrieb ohne E-Mail (`invite-link`), Link-Aufbau |
 | `src/migrate.ts` | Migrationsjob: `db/migrations` als Eigentümer einspielen (Versionstabelle `ops.schema_migrations` mit Prüfsumme), Passwort für `app_api` setzen (`deploy/README.md`) |
 | `register.mjs`, `resolve-ts.mjs` | Lädt TypeScript direkt (Node-Typ-Entfernung) inkl. `platform/src/core` |
@@ -68,6 +69,20 @@ wird sie erneuert (gleiche Rolle nötig, ältere Links werden ungültig); sonst 
 `invited` mit Personalnummer `CLI-…` (später im Chef-Portal änderbar). Bereits verknüpfte oder deaktivierte Zugänge
 werden abgelehnt. Benötigt `DATABASE_URL` und `PUBLIC_ORIGIN` (wie die API). Den Link nur persönlich bzw. über einen
 sicheren Kanal weitergeben; Terminal-Verlauf/Mitschnitte beachten.
+
+### Vertragsende: Mandant exportieren und löschen
+
+Nur auf der Server-Konsole, mit `MIGRATION_DATABASE_URL` (Eigentümer der Datenbank). Ablauf, Umfang und
+Aufbewahrung: `docs/betrieb.md` 6.1b.
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+  server/src/cli.ts export-tenant <mandant-kurzname> --out <neues-verzeichnis>
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+  server/src/cli.ts delete-tenant <mandant-kurzname> --confirm <mandant-kurzname> --after-export <verzeichnis>
+```
+
+Exit-Codes: 0 erledigt, 1 abgelehnt (Grund auf stderr, nichts geändert), 2 Aufruf falsch.
 
 ## Umgebungsvariablen
 

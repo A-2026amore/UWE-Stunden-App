@@ -203,6 +203,19 @@ nachträglich ändern), (c) Korrektur im freigegebenen Monat nur nach Rückgabe 
 Tests: `tests/db/privacy.test.ts` (Rechte, Frist, Schwärzung, Unveränderlichkeit), `tests/server/privacy.test.ts`
 (HTTP), `tests/db/security-catalog.test.ts` (Katalogprüfung aller Migrationen).
 
+## Vertragsende (0020)
+
+| Objekt | Zweck |
+|---|---|
+| `tenants.deleted_at` | gesetzt, wenn die Daten gelöscht sind und nur aufbewahrte Rechnungsunterlagen die Zeile noch brauchen (Platzhalter); Trigger `tenants_deleted_guard` (keine Änderung, keine Reaktivierung) und `employees_deleted_tenant_guard` (keine neuen Mitglieder) |
+| `private.tenant_export_json(tenant_id)` | Inhalt des Gesamtexports; genutzt von `export_tenant_data` (Inhaber, aktiv) und `private.operator_export_tenant(slug)` (nur Eigentümerrolle, jeder Status, Audit `tenant.operator_export`) |
+| `private.operator_delete_tenant(slug, bestätigung, export_sha256, ohne_export)` | Löschung eines deaktivierten Mandanten in einer Transaktion (Katalog-Durchlauf über alle Tabellen mit `tenant_id`, Prüfung am Ende); aufbewahrt: `invoices`, `billing_periods` ≠ `open`; Audit `tenant.deleted` ohne `tenant_id` und ohne Namen. Nur Eigentümerrolle |
+| `private.tenant_deletions` | transaktionsgebundene Freigabe für DELETE in `audit_log` (Zeilen des Mandanten und mandantenlose Zeilen über gelöschte Konten), nur innerhalb der Löschfunktion |
+
+Tests: `tests/db/tenant-offboarding.test.ts` (Rechte, Export, Vorbedingungen, Abbruch ohne Teil-Löschung,
+Vollständigkeit über den Katalog, fremder Mandant unverändert, Platzhalter), `tests/server/tenant-offboarding-cli.test.ts`
+(Befehle, Dateien, Prüfsumme).
+
 ## Tests
 
 ```sh
