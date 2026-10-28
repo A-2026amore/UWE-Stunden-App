@@ -2,8 +2,9 @@
  * Blocked accounts and the second factor (QA 2026-10-28, finding B4):
  * with 2FA the password step of a blocked account (tenant suspended or
  * employee deactivated) looks exactly like that of an active account; the
- * block is only reported after the second factor. Without 2FA the block is
- * reported after the password and no session is created.
+ * block is only reported after the second factor. Without 2FA a blocked
+ * account answers exactly like a wrong password (401, same text, same rate
+ * limit) and no session is created.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EMAILS, IDS, PASSWORD, cookieFrom, startTestServer, type TestServer } from "./support/server.ts";
@@ -46,6 +47,11 @@ describe("tenant suspended, account with 2FA", () => {
       const unknown = await shape("niemand@nirgendwo.example", "falsch-falsch-falsch");
       expect(wrong.status).toBe(401);
       expect(wrong).toEqual(unknown);
+      // Same tenant, account WITHOUT 2FA (empB): right password looks like a wrong one.
+      const empBRight = await shape(EMAILS.empB);
+      const empBWrong = await shape(EMAILS.empB, "falsch-falsch-falsch");
+      expect(empBRight).toEqual({ status: 401, body: unknown.body, cookies: [] });
+      expect(empBRight).toEqual(empBWrong);
 
       const before = await sessions(EMAILS.ownerB);
       const step = await passwordStep(EMAILS.ownerB);
@@ -82,19 +88,29 @@ describe("employee deactivated", () => {
     }
   });
 
-  it("without 2FA: 403 right after the password, no session is created", async () => {
+  it("without 2FA: the right password answers exactly like a wrong one, no session is created", async () => {
     expect((await t.call("POST", `/api/employees/${IDS.employees.emp2A}/status`, { cookie: ownerA, body: { status: "deactivated", reason: "Test B4" } })).status).toBe(200);
     try {
+      t.resetRateLimits();
       const before = await sessions(EMAILS.emp2A);
       const r = await passwordStep(EMAILS.emp2A);
-      expect(r.status).toBe(403);
-      expect(r.body.error.code).toBe("forbidden");
+      const wrong = await passwordStep(EMAILS.emp2A, "falsch-falsch-falsch");
+      expect(r.status).toBe(401);
+      expect(r.body).toEqual({ error: { code: "unauthenticated", message: "E-Mail-Adresse oder Passwort ist falsch." } });
+      expect(r.body).toEqual(wrong.body);
       expect(r.headers.get("set-cookie")).toBeNull();
       expect(await sessions(EMAILS.emp2A)).toBe(before);
       const all = (await t.db.admin.query(
         "select count(*)::int as n from auth.sessions s join auth.users u on u.id = s.user_id where u.email = $1", [EMAILS.emp2A])).rows[0].n;
       expect(all).toBe(before); // not even a revoked one
+      // The right password counts towards the lock-out like a wrong one (no reset):
+      // 2 attempts above + 3 more = 5, the 6th is blocked.
+      for (let i = 0; i < 3; i++) expect((await passwordStep(EMAILS.emp2A)).status).toBe(401);
+      const locked = await passwordStep(EMAILS.emp2A);
+      expect(locked.status).toBe(429);
+      expect(locked.headers.get("retry-after")).not.toBeNull();
     } finally {
+      t.resetRateLimits();
       await t.call("POST", `/api/employees/${IDS.employees.emp2A}/status`, { cookie: ownerA, body: { status: "active", reason: "Test B4 Ende" } });
     }
   });
