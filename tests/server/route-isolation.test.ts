@@ -135,6 +135,21 @@ const ROUTE_RULES: Record<string, Rule> = {
   "GET /api/platform/billing": { scope: "tenant", allowed: ["support"], query: "month=2026-10" },
   "PUT /api/platform/tenants/:tenantId/billing/:month": { scope: "tenant", body: { status: "paid" }, params: { month: "2026-09" } },
 
+  // ---------------------------------------------------------------- re-opening of statements (0017)
+  "POST /api/statements/:statementId/reopen": { scope: "tenant", allowed: ["managerA"], body: { reason: "Fremdzugriff Test" } },
+  "GET /api/statements/:statementId/events": { scope: "tenant", allowed: ["managerA"] },
+
+  // ---------------------------------------------------------------- invoices (0019): owner sees own; platform staff all
+  "GET /api/tenants/:tenantId/invoices": { scope: "tenant" },
+  "GET /api/platform/invoice-settings": { scope: "tenant", allowed: ["support"] },
+  "PUT /api/platform/invoice-settings": { scope: "tenant", body: { issuerName: "Fremd GmbH", reason: "Fremdzugriff" } },
+  "GET /api/platform/invoices": { scope: "tenant", allowed: ["support"] },
+  "GET /api/platform/tenants/:tenantId/invoices/:month/draft": { scope: "tenant", allowed: ["support"], params: { month: "2026-09" } },
+  "POST /api/platform/tenants/:tenantId/invoices/:month": { scope: "tenant", body: {}, params: { month: "2026-09" } },
+  "POST /api/platform/invoices/:invoiceId/cancel": {
+    scope: "tenant", body: { reason: "Fremdzugriff Test" }, params: { invoiceId: "00000000-0000-4000-8000-0000000000aa" },
+  },
+
   // ---------------------------------------------------------------- privacy (0016): only the person or the owner
   "GET /api/employees/:employeeId/data-export": { scope: "tenant" },
   "POST /api/employees/:employeeId/anonymize": { scope: "tenant", body: { confirmPersonnelNumber: "A-101" } },

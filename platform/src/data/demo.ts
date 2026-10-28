@@ -177,7 +177,7 @@ interface DemoDb {
   defaultPriceCents?: number;
   billingPeriods?: DemoBillingPeriod[];
   /** Added with the re-opening of statements (0017): history of every statement. */
-  statementEvents?: Array<StatementEvent & { statementId: UUID; tenantId: UUID; employeeId: UUID }>;
+  statementEvents?: Array<StatementEvent & { statementId: UUID; tenantId: UUID; employeeId: UUID; actorId?: UUID | null }>;
   /** Added with the tenant status history (0018). */
   tenantStatusHistory?: Array<TenantStatusPeriod & { tenantId: UUID }>;
   /** Added with invoices (0019). */
@@ -774,7 +774,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
   function recordStatementEvent(db: DemoDb, s: Session, st: MonthlyStatement, action: StatementEvent["action"], reason: string | null) {
     (db.statementEvents ??= []).push({
       statementId: st.id, tenantId: st.tenantId, employeeId: st.employeeId, action, at: new Date().toISOString(),
-      actorName: db.employees.find((e) => e.id === s.employeeId)?.displayName ?? null, reason,
+      actorId: s.employeeId, actorName: null, reason,
       workedMinutes: st.workedMinutes, allocatedMinutes: st.allocatedMinutes, billingMinutes: st.billingMinutes,
     });
   }
@@ -1510,7 +1510,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         assertEmployeeRead(db, s, st.employeeId);
         return (db.statementEvents ?? []).filter((e) => e.statementId === statementId).sort((a, b) => a.at.localeCompare(b.at))
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          .map(({ statementId: _s, tenantId: _t, employeeId: _e, ...ev }) => ev);
+          .map(({ statementId: _s, tenantId: _t, employeeId: _e, actorId, ...ev }) => ({ ...ev, actorName: visibleName(db, s, actorId ?? null) }));
       });
     },
 

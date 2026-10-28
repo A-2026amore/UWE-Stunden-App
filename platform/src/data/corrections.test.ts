@@ -80,7 +80,9 @@ describe("correction requests (demo)", () => {
     expect(again.status).toBe("approved");
     const events = await w.anna.listStatementEvents(before.id);
     expect(events.map((e) => e.action).slice(-2)).toEqual(["reopen", "approve"]);
-    expect(events.find((e) => e.action === "reopen")).toMatchObject({ reason: "Korrekturanfrage von Anna", actorName: "Chef Demo" });
+    // like RLS on employees: the employee does not see the leadership's name, the leadership does
+    expect(events.find((e) => e.action === "reopen")).toMatchObject({ reason: "Korrekturanfrage von Anna", actorName: null });
+    expect((await w.chef.listStatementEvents(before.id)).find((e) => e.action === "reopen")).toMatchObject({ actorName: "Chef Demo" });
     expect((await w.chef.listStatements(KT, previous)).find((x) => x.employeeId === ANNA)!.correctedAfterApproval).toBeNull();
 
     // History: correction with the employee's reason and the leadership's answer
