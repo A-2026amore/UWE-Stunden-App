@@ -63,6 +63,8 @@ export function ChefApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [counts, setCounts] = useState({ corrections: 0, statements: 0 });
   const route = useRoute();
+  // Close the phone/tablet menu whenever the page changes (also on back/forward).
+  useEffect(() => { setMenuOpen(false); }, [route.path]);
 
   useEffect(() => {
     repo.currentSession().then((s) => {

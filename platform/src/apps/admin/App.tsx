@@ -66,6 +66,8 @@ export function AdminApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
   const route = useRoute();
+  // Close the phone/tablet menu whenever the page changes (also on back/forward).
+  useEffect(() => { setMenuOpen(false); }, [route.path]);
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
     applyBranding(null);

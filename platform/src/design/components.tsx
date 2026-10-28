@@ -713,7 +713,7 @@ export function Sidebar({ items, groups, current, brand, footer, open, onNavigat
   return (
     <>
       {open && <div class="sidebar-scrim" onClick={onNavigate} aria-hidden="true" />}
-      <aside class={cx("sidebar", open && "is-open")} id="sidebar">
+      <aside class={cx("sidebar", open && "is-open")} id="sidebar" onKeyDown={(e) => { if (open && e.key === "Escape") onNavigate(); }}>
         <div class="sidebar-brand">{brand}</div>
         <nav aria-label="Hauptnavigation">
           {groups
