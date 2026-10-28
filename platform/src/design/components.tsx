@@ -443,6 +443,10 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   pending: { label: "In Vorbereitung", tone: "warning" },
   expired: { label: "Abgelaufen", tone: "neutral" },
   none: { label: "Nicht erstellt", tone: "neutral" },
+  reopened: { label: "Wieder geöffnet", tone: "warning" },
+  cancelled: { label: "Storniert", tone: "neutral" },
+  cancellation: { label: "Stornorechnung", tone: "danger" },
+  issued: { label: "Ausgestellt", tone: "info" },
 };
 
 export function StatusPill({ status, label }: { status: string; label?: string }) {
