@@ -15,6 +15,7 @@ import { TwoFactorCard, TwoFactorGate } from "../shared/twoFactor";
 import { PLAN_LABEL, currentMonth, dateTimeDE, formatDateDE, monthLabelDE } from "../shared/format";
 import { errorText, useAsync } from "../shared/hooks";
 import { auditLabel } from "../shared/audit";
+import { InvoicesPage } from "./pages/Invoices";
 
 const repo = getRepository("admin");
 
@@ -23,6 +24,7 @@ const checkArea = (s: Session): string | null => (s.platformRole ? null : "Diese
 const NAV: NavItem[] = [
   { href: "#/", label: "Mandanten", icon: "building", match: "/" },
   { href: "#/umsatz", label: "Umsatz", icon: "chart", match: "/umsatz" },
+  { href: "#/rechnungen", label: "Rechnungen", icon: "fileCheck", match: "/rechnungen" },
   { href: "#/lizenzen", label: "Preismodell", icon: "key", match: "/lizenzen" },
   { href: "#/support", label: "Supportzugriff", icon: "shield", match: "/support" },
   { href: "#/system", label: "Systemstatus", icon: "server", match: "/system" },
@@ -88,6 +90,7 @@ export function AdminApp() {
 
   let page;
   if (route.path === "/mandant" && route.parts[0]) page = <TenantDetail id={route.parts[0]} readOnly={readOnly} />;
+  else if (route.path === "/rechnungen") page = <InvoicesPage readOnly={readOnly} />;
   else if (route.path === "/lizenzen") page = <PlansPage readOnly={readOnly} />;
   else if (route.path === "/umsatz") page = <RevenuePage readOnly={readOnly} />;
   else if (route.path === "/support") page = <SupportPage />;
@@ -594,7 +597,12 @@ function RevenuePage({ readOnly }: { readOnly: boolean }) {
               empty={<p class="muted">Keine Mandanten in diesem Monat.</p>}
               columns={[
                 { key: "n", header: "Mandant", render: (x) => <><a href={`#/mandant/${x.tenantId}`}><strong>{x.tenantName}</strong></a>{x.isDemo && <div class="xsmall muted">Demo-Mandant</div>}</> },
-                { key: "k", header: "Kondition", render: (x) => <span class="small">{BILLING_CONDITION_LABEL[x.condition]}</span> },
+                { key: "k", header: "Kondition", render: (x) => (
+                  <span class="small">
+                    {BILLING_CONDITION_LABEL[x.condition]}
+                    {x.blockSince && <><br />gesperrt seit {dateTimeDE(x.blockSince)}{x.blockReason ? ` – ${x.blockReason}` : ""}</>}
+                  </span>
+                ) },
                 { key: "c", header: "Abrechenbar", align: "right", render: (x) => <span class="num">{x.billableCount}</span> },
                 { key: "p", header: "Preis je MA", align: "right", render: (x) => <span class="num">{formatEuro(x.unitPriceCents)}</span> },
                 { key: "a", header: "Summe netto", align: "right", render: (x) => <span class="num">{formatEuro(x.amountCents)}</span> },

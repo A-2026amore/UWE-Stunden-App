@@ -4,6 +4,7 @@ import { useDialogs, useToast } from "../../design";
 import { errorText } from "../shared/hooks";
 import { hoursLabel, monthLabelDE } from "../shared/format";
 import { useChef } from "./context";
+import { useReopenStatement } from "./StatementHistory";
 
 export function useStatementActions(): {
   approve: (employee: Employee, statement: MonthlyStatement) => Promise<void>;
@@ -24,7 +25,10 @@ export function useStatementActions(): {
     catch (e) { toast(errorText(e), "error"); }
   };
 
+  const reopen = useReopenStatement();
   const giveBack = async (employee: Employee, statement: MonthlyStatement) => {
+    // Approved months are re-opened (reason, history) instead of returned (decision 28.10.2026).
+    if (statement.status === "approved") { await reopen(employee, statement); return; }
     const reason = await dialogs.askReason({
       title: "Monatsnachweis zurückgeben",
       message: `${employee.displayName} erhält den Nachweis für ${monthLabelDE(statement.month)} zur Korrektur zurück und sieht deine Begründung.`,
