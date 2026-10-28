@@ -14,7 +14,7 @@ import { EMAILS, IDS, ORIGIN, startTestServer, type TestServer } from "./support
 const ROOT = resolve(__dirname, "../..");
 const SLUG_A = "demo-krankentransporte";
 const SLUG_B = "muster-pflegedienst";
-const LINK_RE = new RegExp(`^${ORIGIN.replace(/[.]/g, "\\.")}/einladung#token=([0-9a-f]{64})$`, "m");
+const LINK_RE = new RegExp(`^${ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/einladung#token=([0-9a-f]{64})$`, "m");
 
 let t: TestServer;
 let dbUrl = "";
