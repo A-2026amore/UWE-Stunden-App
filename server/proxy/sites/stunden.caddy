@@ -1,8 +1,0 @@
-# UWE Stunden-App / Zeiterfassungsplattform. Bis zur Freigabe passwortgeschützt.
-stunden.appzentrale24.de {
-	import sicher
-	import intern
-	respond "Stunden-App - in Vorbereitung" 503
-	# Nach dem Deployment ersetzen durch:
-	# reverse_proxy stunden-app:3000
-}
