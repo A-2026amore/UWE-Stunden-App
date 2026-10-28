@@ -192,12 +192,13 @@ test("super-admin: overview, free test customer, deactivate and reactivate, syst
   await expect(status).toContainText("nicht bekannt");
 });
 
-test("employee app: install hint for the home screen, dismissible; full card in the settings", async ({ page, isMobile }) => {
+test("employee app: install hint for the home screen, dismissible; full card in the settings", async ({ page }, testInfo) => {
   await loginEmployee(page);
   const hint = page.getByTestId("install-hint");
   await expect(hint).toBeVisible();
   await expect(hint.getByRole("heading", { name: "Zum Home-Bildschirm hinzufügen" })).toBeVisible();
-  if (isMobile) await expect(hint.getByTestId("install-steps-browser")).toContainText("⋮ oben rechts");
+  // Android shows the browser-menu steps; the iPhone project gets the Safari steps (tested below).
+  if (testInfo.project.name === "mobile-android") await expect(hint.getByTestId("install-steps-browser")).toContainText("⋮ oben rechts");
   await hint.getByRole("button", { name: "Hinweis ausblenden" }).click();
   await expect(hint).toHaveCount(0);
   await page.reload();
