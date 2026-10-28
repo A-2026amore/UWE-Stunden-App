@@ -119,8 +119,8 @@ export function AdminApp() {
                 <Avatar name={session.email} />
                 <div class="user-chip-text"><strong>{session.email}</strong><span>{session.platformRole === "super_admin" ? "Super-Admin" : "Support (nur lesen)"}</span></div>
               </div>
-              <ThemeSwitch compact />
-              <Button variant="secondary" size="sm" icon="logout" onClick={signOut}>Abmelden</Button>
+              <div class="sidebar-actions"><ThemeSwitch compact />
+              <Button variant="secondary" size="sm" icon="logout" onClick={signOut}>Abmelden</Button></div>
             </>} />
           <main class="d-main" id="main">{page}</main>
         </div>

@@ -5,6 +5,20 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Neues Design „Stundenwerk“ (Branch `feature/design-stundenwerk`, Doku `docs/design.md`):
+  - Produktname „Stundenwerk“ ohne Zusatz „Arbeitstitel“, eigenes Produktlogo (inline SVG).
+  - Hell- und Dunkelmodus (System/Hell/Dunkel, lokal gespeichert) für alle Bereiche; Firmenfarben werden für
+    beide Modi automatisch kontrastsicher (WCAG AA) abgeleitet, Firmenlogos im Dunkelmodus auf heller Plakette.
+  - Schrift Inter lokal eingebunden (OFL), neue Tokens für Farben, Abstände, Radien, Schatten, Bewegung;
+    Animationen respektieren `prefers-reduced-motion`; Skeleton-Ladeanzeige.
+  - Zweigeteilte Anmeldeseiten (Mitarbeiter, Chef, Admin, Passwort neu, Einladung, 2FA), mobil einspaltig,
+    mit Firmenlogo, wenn auf dem Gerät bekannt.
+  - Chef-Portal und Super-Admin: Seitenleiste mit Gruppen und Zählern, Farbschema-Umschalter; Chef-Dashboard mit
+    Kennzahlen (inkl. Kosten des Monats), SVG-Balkendiagramm Stunden je Tag/Woche und Stunden je Person.
+  - Mitarbeiter-App: neue Kopfzeile, Tab-Leiste mit hervorgehobenem „Erfassen“, Safe-Area, Tagesdiagramm in
+    der Monatsübersicht, Darstellung im Profil.
+  - PDF-Stundennachweis: Infofeld, farbiger Tabellenkopf, Zebra-Streifen, Wochentage, Summenblock, Fußzeile mit
+    Erstellungsdatum, Produktname und „Seite x von y“ – weiterhin mehrseitig mit unveränderten Seitenumbrüchen.
 - Datenschutz, Sicherheit und Wiederherstellbarkeit (Branch `feature/sicherheit-dsgvo-backup`, Migration
   `0016_privacy.sql`, Doku `docs/datenschutz.md` – Entwurf, rechtlich prüfen):
   - Datenauskunft (Art. 15/20 DSGVO): Mitarbeiter-App → Einstellungen → „Meine Daten“ (CSV oder JSON, inkl.

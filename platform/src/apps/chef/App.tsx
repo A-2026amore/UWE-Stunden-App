@@ -166,8 +166,8 @@ export function ChefApp() {
                     <Avatar name={data.me.displayName} />
                     <div class="user-chip-text"><strong>{data.me.displayName}</strong><span>{ROLE_LABEL[data.me.role]} · {data.tenant.name}</span></div>
                   </div>
-                  <ThemeSwitch compact />
-                  <Button variant="secondary" size="sm" icon="logout" onClick={ctx.signOut}>Abmelden</Button>
+                  <div class="sidebar-actions"><ThemeSwitch compact />
+                  <Button variant="secondary" size="sm" icon="logout" onClick={ctx.signOut}>Abmelden</Button></div>
                   <div class="product-line"><ProductMark compact /></div>
                 </>
               }
