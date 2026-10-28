@@ -1,0 +1,20 @@
+name: Funktionswunsch
+description: Neue Funktion oder Verbesserung vorschlagen
+labels: [funktion]
+body:
+  - type: textarea
+    id: wunsch
+    attributes:
+      label: Was soll möglich sein?
+    validations: { required: true }
+  - type: textarea
+    id: nutzen
+    attributes:
+      label: Wer profitiert und warum?
+  - type: checkboxes
+    id: freigabe
+    attributes:
+      label: Freigaben
+      options:
+        - label: Betrifft rechtliche Arbeitszeit- oder Vergütungsregeln (Freigabe Auftraggeber nötig)
+        - label: Verursacht laufende Kosten (Freigabe Auftraggeber nötig)

@@ -1,0 +1,16 @@
+# Gitleaks configuration: default rules plus a narrow allowlist for known
+# false positives. Test files contain only dummy passwords and test-only keys
+# (documented in docs/security.md); legacy localStorage key names such as
+# "uwe_hours_2_<id>" look like API keys to the generic rule.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test-only fixtures and legacy storage key names"
+paths = [
+  '''^tests/''',
+  '''\.test\.tsx?$''',
+]
+regexes = [
+  '''^uwe_[a-z0-9_]+$''',
+]

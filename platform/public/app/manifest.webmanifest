@@ -1,0 +1,20 @@
+{
+  "id": "./?app=stundenwerk-mitarbeiter-demo",
+  "name": "Zeiterfassung – Mitarbeiter (Demo)",
+  "short_name": "Zeiterfassung",
+  "description": "Arbeitszeiten erfassen, Monatsnachweis senden, Arbeitszeitkonto einsehen (Demo-Umgebung).",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "./#/",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#2d4f73",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

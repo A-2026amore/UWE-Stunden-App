@@ -1,0 +1,21 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie erwartet
+labels: [fehler]
+body:
+  - type: dropdown
+    id: bereich
+    attributes:
+      label: Bereich
+      options: [Mitarbeiter-App, Chef-Portal, Super-Admin, PDF, Arbeitszeitkonto, Synchronisierung, Sonstiges]
+    validations: { required: true }
+  - type: textarea
+    id: ablauf
+    attributes:
+      label: Was ist passiert und was wurde erwartet?
+      description: Bitte KEINE echten Namen, Personalnummern oder Arbeitszeiten eintragen.
+    validations: { required: true }
+  - type: input
+    id: geraet
+    attributes:
+      label: Gerät und Browser
+      placeholder: z. B. iPhone 13, iOS 18, Home-Bildschirm-App
