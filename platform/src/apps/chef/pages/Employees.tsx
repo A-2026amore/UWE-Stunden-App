@@ -27,7 +27,7 @@ export function EmployeesPage() {
   const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState<"all" | "active" | "invited" | "deactivated">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "invited" | "locked" | "deactivated">("all");
   const [sent, setSent] = useState<{ tone: "success" | "warning"; text: string } | null>(null);
 
   const open = (e: Employee | "new") => {
@@ -64,25 +64,45 @@ export function EmployeesPage() {
     }
   };
 
-  const toggle = async (e: Employee) => {
-    const deactivate = e.status !== "deactivated";
+  type StatusAction = "lock" | "unlock" | "deactivate" | "activate";
+  const ACTIONS: Record<StatusAction, { status: "active" | "locked" | "deactivated"; title: string; message: string; confirm: string; done: string; danger: boolean }> = {
+    lock: {
+      status: "locked", title: "sperren?", confirm: "Sperren", done: "Zugang gesperrt.", danger: true,
+      message: "Vorübergehende Sperre: Die Anmeldung ist sofort nicht mehr möglich, alle Daten bleiben erhalten. Die Sperre kann jederzeit aufgehoben werden. Für den laufenden Monat wird die Person noch berechnet, ab dem Folgemonat nicht mehr.",
+    },
+    unlock: { status: "active", title: "entsperren?", confirm: "Entsperren", done: "Zugang entsperrt.", danger: false, message: "Die Anmeldung ist wieder möglich." },
+    deactivate: {
+      status: "deactivated", title: "deaktivieren?", confirm: "Deaktivieren", done: "Zugang deaktiviert.", danger: true,
+      message: "Für ausgeschiedene Mitarbeitende: Der Zugang wird sofort gesperrt. Bereits erfasste Zeiten bleiben vollständig erhalten. Ab dem Folgemonat wird die Person nicht mehr berechnet.",
+    },
+    activate: { status: "active", title: "wieder aktivieren?", confirm: "Aktivieren", done: "Zugang aktiviert.", danger: false, message: "Der Zugang wird wieder freigeschaltet." },
+  };
+
+  const changeStatus = async (e: Employee, action: StatusAction) => {
+    const a = ACTIONS[action];
     const reason = await dialogs.askReason({
-      title: deactivate ? `${e.displayName} deaktivieren?` : `${e.displayName} wieder aktivieren?`,
-      message: deactivate
-        ? "Der Zugang wird sofort gesperrt. Bereits erfasste Zeiten bleiben vollständig erhalten."
-        : "Der Zugang wird wieder freigeschaltet.",
-      confirmLabel: deactivate ? "Deaktivieren" : "Aktivieren",
-      danger: deactivate,
-      reasonLabel: "Grund",
+      title: `${e.displayName} ${a.title}`, message: a.message, confirmLabel: a.confirm, danger: a.danger, reasonLabel: "Grund",
     });
     if (!reason) return;
     try {
-      await repo.setEmployeeStatus(e.id, deactivate ? "deactivated" : "active", reason);
-      toast(deactivate ? "Zugang deaktiviert." : "Zugang aktiviert.");
+      await repo.setEmployeeStatus(e.id, a.status, reason);
+      toast(a.done);
       changed();
     } catch (err) {
       toast(errorText(err), "error");
     }
+  };
+
+  const statusButtons = (e: Employee) => {
+    const actions: StatusAction[] = e.status === "active" ? ["lock", "deactivate"]
+      : e.status === "locked" ? ["unlock", "deactivate"]
+      : e.status === "deactivated" ? ["activate"] : ["deactivate"];
+    return actions.map((act) => (
+      <Button key={act} size="sm" variant={act === "unlock" || act === "activate" ? "secondary" : "ghost"} onClick={() => changeStatus(e, act)}
+        aria-label={`${e.displayName} ${ACTIONS[act].confirm.toLowerCase()}`}>
+        {ACTIONS[act].confirm}
+      </Button>
+    ));
   };
 
   const resend = async (e: Employee) => {
@@ -109,7 +129,7 @@ export function EmployeesPage() {
       <Card>
         <div class="toolbar">
           <SelectField label="Anzeigen" value={filter} onValue={(v) => setFilter(v as typeof filter)} options={[
-            { value: "all", label: "Alle" }, { value: "active", label: "Aktiv" }, { value: "invited", label: "Eingeladen" }, { value: "deactivated", label: "Deaktiviert" },
+            { value: "all", label: "Alle" }, { value: "active", label: "Aktiv" }, { value: "invited", label: "Eingeladen" }, { value: "locked", label: "Gesperrt" }, { value: "deactivated", label: "Deaktiviert" },
           ]} />
           <p class="muted small mb-0">{list.length} von {q.data?.length ?? 0} Einträgen</p>
         </div>
@@ -132,11 +152,7 @@ export function EmployeesPage() {
                   {!IS_DEMO && e.status === "invited" && e.email && (
                     <Button size="sm" variant="ghost" icon="mail" onClick={() => resend(e)} aria-label={`Einladung an ${e.displayName} erneut senden`}>Erneut einladen</Button>
                   )}
-                  {e.id !== me.id && (
-                    <Button size="sm" variant={e.status === "deactivated" ? "secondary" : "ghost"} onClick={() => toggle(e)} aria-label={`${e.displayName} ${e.status === "deactivated" ? "aktivieren" : "deaktivieren"}`}>
-                      {e.status === "deactivated" ? "Aktivieren" : "Deaktivieren"}
-                    </Button>
-                  )}
+                  {e.id !== me.id && statusButtons(e)}
                 </div>
               ),
             },

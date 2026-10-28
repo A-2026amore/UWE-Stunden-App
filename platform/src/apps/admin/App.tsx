@@ -1,5 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
-import type { AuditEvent, License, LicensePlan, Tenant } from "../../core/types";
+import type { AuditEvent, BillingStatus, License, LicensePlan, PlatformRevenueRow, Tenant } from "../../core/types";
+import {
+  BILLING_CONDITION_LABEL, BILLING_STATUS_LABEL, DEFAULT_EMPLOYEE_PRICE_CENTS, VAT_NOTE, billingConditionFor, formatEuro, monthsBack, parseEuro,
+} from "../../core/billing";
 import type { Session, TenantOverview } from "../../data/repository";
 import {
   Alert, Badge, Button, Card, Checkbox, Dialog, Icon, InputField, LinkButton, SelectField, Sidebar, StatTile, StatusPill, Table,
@@ -9,7 +12,7 @@ import { API_BASE, IS_DEMO, getRepository, onAuthFailure } from "../shared/repo"
 import { useRoute } from "../shared/router";
 import { LoginScreen, ProductMark } from "../shared/ui";
 import { TwoFactorCard, TwoFactorGate } from "../shared/twoFactor";
-import { PLAN_LABEL, dateTimeDE, formatDateDE } from "../shared/format";
+import { PLAN_LABEL, currentMonth, dateTimeDE, formatDateDE, monthLabelDE } from "../shared/format";
 import { errorText, useAsync } from "../shared/hooks";
 import { ACTION_LABEL } from "../shared/audit";
 
@@ -19,7 +22,8 @@ const checkArea = (s: Session): string | null => (s.platformRole ? null : "Diese
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Mandanten", icon: "building", match: "/" },
-  { href: "#/lizenzen", label: "Lizenzmodelle", icon: "key", match: "/lizenzen" },
+  { href: "#/umsatz", label: "Umsatz", icon: "chart", match: "/umsatz" },
+  { href: "#/lizenzen", label: "Preismodell", icon: "key", match: "/lizenzen" },
   { href: "#/support", label: "Supportzugriff", icon: "shield", match: "/support" },
   { href: "#/system", label: "Systemstatus", icon: "server", match: "/system" },
   { href: "#/protokoll", label: "Plattform-Protokoll", icon: "log", match: "/protokoll" },
@@ -28,9 +32,9 @@ const NAV: NavItem[] = [
 
 const PLANS: Array<{ plan: LicensePlan; text: string; employees: string }> = [
   { plan: "pilot_free", text: "Pilotkunden: dauerhaft kostenlos, ohne Zahlungsdaten, ohne Rechnungen, keine automatische Umstellung auf ein kostenpflichtiges Modell.", employees: "unbegrenzt" },
-  { plan: "standard", text: "Kleine Betriebe: Zeiterfassung, Monatsnachweise, Chef-Portal.", employees: "bis 25" },
-  { plan: "business", text: "Mittlere Betriebe: zusätzlich Arbeitszeitkonto und erweiterte Auswertungen.", employees: "bis 100" },
-  { plan: "enterprise", text: "Große Organisationen: individuelle Vereinbarung, mehrere Standorte.", employees: "individuell" },
+  { plan: "standard", text: "Zeiterfassung, Monatsnachweise, Chef-Portal. Preis: Standardpreis je abrechenbarem Mitarbeiter.", employees: "bis 25 (Standard-Obergrenze)" },
+  { plan: "business", text: "Wie Standard, höhere Mitarbeiter-Obergrenze. Gleicher Preis je Mitarbeiter.", employees: "bis 100 (Standard-Obergrenze)" },
+  { plan: "enterprise", text: "Individuelle Vereinbarung, ohne Obergrenze. Gleicher Preis je Mitarbeiter, sofern keine Sonderkondition.", employees: "unbegrenzt" },
 ];
 
 export function LicenseBadge({ license }: { license: License | null }) {
@@ -39,9 +43,17 @@ export function LicenseBadge({ license }: { license: License | null }) {
   return <Badge tone="info">{PLAN_LABEL[license.plan]}</Badge>;
 }
 
-function priceText(l: License | null): string {
-  if (!l) return "—";
-  return l.plan === "pilot_free" ? "0,00 € – kostenlos (keine Abrechnung)" : "Preis noch nicht festgelegt";
+/** Price that applies in the current month (price model 2026-10-28). */
+function priceText(l: License | null, defaultPriceCents: number): string {
+  const c = billingConditionFor(l, defaultPriceCents, currentMonth());
+  if (c.condition === "pilot_free") return "0,00 € – kostenlos (Pilot)";
+  if (c.condition === "free") return "0,00 € – kostenloses Konto";
+  return `${formatEuro(c.unitPriceCents)} je Mitarbeiter/Monat (${BILLING_CONDITION_LABEL[c.condition]})`;
+}
+
+function useDefaultPrice(): number {
+  const q = useAsync(() => repo.getBillingSettings(), []);
+  return q.data?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
 }
 
 export function AdminApp() {
@@ -76,7 +88,8 @@ export function AdminApp() {
 
   let page;
   if (route.path === "/mandant" && route.parts[0]) page = <TenantDetail id={route.parts[0]} readOnly={readOnly} />;
-  else if (route.path === "/lizenzen") page = <PlansPage />;
+  else if (route.path === "/lizenzen") page = <PlansPage readOnly={readOnly} />;
+  else if (route.path === "/umsatz") page = <RevenuePage readOnly={readOnly} />;
   else if (route.path === "/support") page = <SupportPage />;
   else if (route.path === "/system") page = <SystemPage />;
   else if (route.path === "/protokoll") page = <PlatformAudit />;
@@ -125,6 +138,7 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
   const toast = useToast();
   const [tick, setTick] = useState(0);
   const q = useAsync(() => repo.listTenants(), [tick]);
+  const defaultPrice = useDefaultPrice();
   const [creating, setCreating] = useState(false);
   const [f, setF] = useState({ name: "", slug: "", ownerEmail: "", plan: "pilot_free" as LicensePlan, isDemo: false });
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +187,7 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
             { key: "n", header: "Mandant", render: (t) => <><a href={`#/mandant/${t.tenant.id}`}><strong>{t.tenant.name}</strong></a><div class="xsmall muted">{t.tenant.slug}{t.tenant.isDemo ? " · Demo-Daten" : ""}</div></> },
             { key: "s", header: "Status", render: (t) => <StatusPill status={t.tenant.status} /> },
             { key: "l", header: "Lizenz", render: (t) => <LicenseBadge license={t.license} /> },
-            { key: "p", header: "Preis", render: (t) => <span class="small">{priceText(t.license)}</span> },
+            { key: "p", header: "Preis", render: (t) => <span class="small">{priceText(t.license, defaultPrice)}</span> },
             { key: "e", header: "Mitarbeitende", align: "right", render: (t) => <span class="num">{t.activeEmployeeCount} / {t.employeeCount}{t.license?.maxEmployees ? ` (max. ${t.license.maxEmployees})` : ""}</span> },
             { key: "a", header: "Aktionen", actions: true, render: (t) => <LinkButton size="sm" href={`#/mandant/${t.tenant.id}`} aria-label={`${t.tenant.name} verwalten`}>Verwalten</LinkButton> },
           ]}
@@ -187,7 +201,7 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
           <InputField label="Kurzname (URL)" value={f.slug} onValue={(v) => setF({ ...f, slug: v })} hint="Kleinbuchstaben, Ziffern und Bindestriche." />
           <InputField label="E-Mail des Inhabers" type="email" value={f.ownerEmail} onValue={(v) => setF({ ...f, ownerEmail: v })} hint="Erhält die Einladung zum Chef-Portal." />
           <SelectField label="Lizenz" value={f.plan} onValue={(v) => setF({ ...f, plan: v as LicensePlan })} options={PLANS.map((p) => ({ value: p.plan, label: PLAN_LABEL[p.plan]! }))}
-            hint={f.plan === "pilot_free" ? "Kostenlos, unbefristet, keine Zahlungsdaten, keine Rechnungen." : "Preis noch nicht festgelegt – es wird nichts abgerechnet."} />
+            hint={f.plan === "pilot_free" ? "Kostenlos, unbefristet, keine Zahlungsdaten, keine Rechnungen." : `Standardpreis ${formatEuro(defaultPrice)} netto je abrechenbarem Mitarbeiter und Monat; Sonderkonditionen danach im Mandanten.`} />
           <Checkbox label="Demo-/Testmandant" hint="Nur anonymisierte Testdaten. PDFs werden als Test gekennzeichnet." checked={f.isDemo} onChange={(v) => setF({ ...f, isDemo: v })} />
           {error && <Alert tone="danger" live>{error}</Alert>}
         </form>
@@ -204,20 +218,29 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
     const all = await repo.listTenants();
     const o = all.find((t) => t.tenant.id === id);
     if (!o) throw new Error("Mandant nicht gefunden.");
-    const [audit, grant] = await Promise.all([repo.listAudit(id, 50), repo.getSupportGrant(id)]);
-    return { o, audit, grant };
+    const [audit, grant, revenue] = await Promise.all([repo.listAudit(id, 50), repo.getSupportGrant(id), repo.getPlatformRevenue(currentMonth())]);
+    return { o, audit, grant, billing: revenue.rows.find((r) => r.tenantId === id) ?? null, defaultPrice: revenue.defaultPriceCents };
   }, [id, tick]);
-  const [lic, setLic] = useState({ plan: "pilot_free" as LicensePlan, maxEmployees: "", validUntil: "", note: "" });
+  const [lic, setLic] = useState({
+    plan: "pilot_free" as LicensePlan, maxEmployees: "", validUntil: "", note: "",
+    price: "", free: false, condNote: "", condFrom: "", condUntil: "", reason: "",
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const l = q.data?.o.license;
-    if (l) setLic({ plan: l.plan, maxEmployees: l.maxEmployees == null ? "" : String(l.maxEmployees), validUntil: l.validUntil ?? "", note: l.note ?? "" });
+    if (l) {
+      setLic({
+        plan: l.plan, maxEmployees: l.maxEmployees == null ? "" : String(l.maxEmployees), validUntil: l.validUntil ?? "", note: l.note ?? "",
+        price: l.employeePriceCents == null ? "" : formatEuro(l.employeePriceCents).replace(" €", "").replace(/\./g, ""),
+        free: l.freeOfCharge && l.plan !== "pilot_free", condNote: l.conditionNote ?? "", condFrom: l.conditionValidFrom ?? "", condUntil: l.conditionValidUntil ?? "", reason: "",
+      });
+    }
   }, [q.data]);
 
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
   if (!q.data) return <h1 class="page-title">Mandant</h1>;
-  const { o, audit, grant } = q.data;
+  const { o, audit, grant, billing, defaultPrice } = q.data;
   const t: Tenant = o.tenant;
 
   const setStatus = async () => {
@@ -237,8 +260,17 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
     setError(null);
     const max = lic.maxEmployees.trim() === "" ? null : Number(lic.maxEmployees);
     if (max !== null && (!Number.isInteger(max) || max < 1)) { setError("Maximale Mitarbeiterzahl: ganze Zahl ab 1 oder leer für unbegrenzt."); return; }
+    let price: number | null = null;
+    try { price = lic.price.trim() === "" ? null : parseEuro(lic.price); } catch (err) { setError(errorText(err)); return; }
+    const condition = {
+      employeePriceCents: price, freeOfCharge: lic.free, conditionNote: lic.condNote.trim() || null,
+      conditionValidFrom: lic.condFrom || null, conditionValidUntil: lic.condUntil || null,
+      ...(lic.reason.trim() ? { reason: lic.reason.trim() } : {}),
+    };
     try {
-      await repo.setLicense(t.id, lic.plan, lic.plan === "pilot_free" ? { note: lic.note || null } : { maxEmployees: max, validUntil: lic.validUntil || null, note: lic.note || null });
+      await repo.setLicense(t.id, lic.plan, lic.plan === "pilot_free"
+        ? { note: lic.note || null, ...(lic.reason.trim() ? { reason: lic.reason.trim() } : {}) }
+        : { maxEmployees: max, validUntil: lic.validUntil || null, note: lic.note || null, ...condition });
       toast("Lizenz gespeichert.");
       setTick((x) => x + 1);
     } catch (err) { setError(errorText(err)); }
@@ -274,8 +306,8 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
         <Card title="Lizenz">
           <form class="stack" onSubmit={saveLicense} noValidate>
             <dl class="kv">
-              <dt>Preis</dt><dd>{priceText(o.license)}</dd>
-              <dt>Abrechnung</dt><dd>{o.license?.billing === "none" ? "keine (keine Zahlungsdaten, keine Rechnungen)" : o.license?.billing === "manual" ? "manuell – noch nicht eingerichtet" : "—"}</dd>
+              <dt>Preis</dt><dd data-testid="tenant-price">{priceText(o.license, defaultPrice)}</dd>
+              <dt>Abrechnung</dt><dd>{o.license?.plan === "pilot_free" ? "keine (keine Zahlungsdaten, keine Rechnungen)" : "manuell (Status je Monat unter „Umsatz“)"}</dd>
               <dt>Gültig ab</dt><dd>{o.license ? formatDateDE(o.license.validFrom) : "—"}</dd>
               <dt>Gültig bis</dt><dd>{o.license?.validUntil ? formatDateDE(o.license.validUntil) : "unbefristet"}</dd>
             </dl>
@@ -286,14 +318,36 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
               : <>
                   <InputField label="Max. Mitarbeitende" optional inputMode="numeric" value={lic.maxEmployees} onValue={(v) => setLic({ ...lic, maxEmployees: v })} disabled={readOnly} hint="Leer = unbegrenzt" />
                   <InputField label="Gültig bis" optional type="date" value={lic.validUntil} onValue={(v) => setLic({ ...lic, validUntil: v })} disabled={readOnly} />
-                  <Alert tone="info"><p>Preis noch nicht festgelegt. Es werden keine Rechnungen erzeugt.</p></Alert>
+                  <fieldset class="stack-sm" style={{ border: 0, padding: 0, margin: 0 }}>
+                    <legend><strong>Sonderkondition</strong></legend>
+                    <Checkbox label="Kostenloses Konto" hint="z. B. Test- oder Pilotkunde ohne Pilot-Lizenz – es wird nichts berechnet." checked={lic.free} onChange={(v) => setLic({ ...lic, free: v })} disabled={readOnly} />
+                    <InputField label="Sonderpreis je Mitarbeiter (€ netto)" optional inputMode="decimal" value={lic.price} onValue={(v) => setLic({ ...lic, price: v })} disabled={readOnly || lic.free}
+                      hint={`Leer = Standardpreis (${formatEuro(defaultPrice)}).`} />
+                    <div class="grid-2">
+                      <InputField label="Kondition gültig ab" optional type="date" value={lic.condFrom} onValue={(v) => setLic({ ...lic, condFrom: v })} disabled={readOnly} />
+                      <InputField label="Kondition gültig bis" optional type="date" value={lic.condUntil} onValue={(v) => setLic({ ...lic, condUntil: v })} disabled={readOnly} />
+                    </div>
+                    <p class="xsmall muted">Gilt für jeden Monat, den der Zeitraum berührt. Leer = unbefristet. Bereits abgerechnete Monate bleiben unverändert.</p>
+                    <InputField label="Notiz zur Kondition" optional value={lic.condNote} onValue={(v) => setLic({ ...lic, condNote: v })} disabled={readOnly} maxLength={500} />
+                  </fieldset>
                 </>}
             <TextareaField label="Notiz" optional value={lic.note} onValue={(v) => setLic({ ...lic, note: v })} disabled={readOnly} maxLength={300} />
+            {!readOnly && <InputField label="Grund der Änderung (Protokoll)" optional value={lic.reason} onValue={(v) => setLic({ ...lic, reason: v })} maxLength={500} />}
             {error && <Alert tone="danger" live>{error}</Alert>}
             {!readOnly && <div><Button type="submit" icon="check">Lizenz speichern</Button></div>}
           </form>
         </Card>
       </div>
+      <Card title={`Abrechnung ${monthLabelDE(currentMonth())} (Vorschau)`}>
+        {billing
+          ? <dl class="kv">
+              <dt>Abrechenbare Mitarbeitende</dt><dd data-testid="tenant-billable">{billing.billableCount}</dd>
+              <dt>Preis je Mitarbeiter</dt><dd>{formatEuro(billing.unitPriceCents)} ({BILLING_CONDITION_LABEL[billing.condition]})</dd>
+              <dt>Summe netto</dt><dd>{formatEuro(billing.amountCents)} <span class="xsmall muted">{VAT_NOTE}</span></dd>
+            </dl>
+          : <p class="muted">Keine Daten.</p>}
+        <p class="xsmall muted">Nur Zahlen – Namen sieht ausschließlich der Mandant selbst. <a href="#/umsatz">Alle Monate unter „Umsatz“</a></p>
+      </Card>
       <Card title="Supportzugriff auf Personendaten">
         {grant
           ? <Alert tone="warning" title="Freigabe durch den Mandanten aktiv"><p>Bis {dateTimeDE(grant.grantedUntil)}. Lesender Zugriff auf Arbeitszeiten ist für diesen Zeitraum möglich und wird protokolliert.</p></Alert>
@@ -340,23 +394,153 @@ function PlatformAudit() {
 
 // ------------------------------------------------------------------ static pages
 
-function PlansPage() {
+function PlansPage({ readOnly }: { readOnly: boolean }) {
+  const toast = useToast();
+  const [tick, setTick] = useState(0);
+  const q = useAsync(() => repo.getBillingSettings(), [tick]);
+  const [price, setPrice] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const current = q.data?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
+
+  const save = async (e: Event) => {
+    e.preventDefault();
+    setError(null);
+    try {
+      const cents = parseEuro(price);
+      await repo.setDefaultPrice(cents, reason);
+      toast(`Standardpreis auf ${formatEuro(cents)} gesetzt.`);
+      setPrice(""); setReason(""); setTick((x) => x + 1);
+    } catch (err) { setError(errorText(err)); }
+  };
+
   return (
     <div class="stack">
-      <h1 class="page-title">Lizenzmodelle</h1>
-      <Alert tone="info" title="Preise noch nicht festgelegt"><p>Die endgültigen Preise sind eine geschäftliche Entscheidung und noch offen. Bis dahin wird nichts abgerechnet.</p></Alert>
+      <h1 class="page-title">Preismodell</h1>
+      <Card title="Preis je Mitarbeiter" accent>
+        <p class="stat-value" data-testid="default-price">{formatEuro(current)} <span class="small muted">netto je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE}</span></p>
+        <ul class="stack-sm small" style={{ margin: 0, paddingLeft: "1.3em" }}>
+          <li>Keine Grundgebühr, keine Mindestanzahl, keine Staffeln. Beispiele: 5 → {formatEuro(5 * current)}, 20 → {formatEuro(20 * current)}, 100 → {formatEuro(100 * current)}.</li>
+          <li>Abrechenbar: Mitarbeiter/innen, die im Monat mindestens zeitweise aktiv waren. Gesperrte/deaktivierte ab dem Folgemonat nicht mehr; nur eingeladene nie.</li>
+          <li>Inhaber und Vorgesetzte kostenlos, solange sie im Monat keine eigenen Arbeitszeiten erfassen.</li>
+          <li>Sonderkonditionen (eigener Preis, kostenloses Konto, Gültigkeit) je Mandant unter „Mandanten“ → „Verwalten“.</li>
+          <li>Kein Zahlungsdienstleister angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.</li>
+        </ul>
+        {!readOnly && (
+          <form class="stack" onSubmit={save} noValidate style={{ marginTop: "var(--space-4)" }}>
+            <div class="grid-2">
+              <InputField label="Neuer Standardpreis (€ netto)" inputMode="decimal" value={price} onValue={setPrice} hint="Gilt für alle nicht abgeschlossenen Monate ohne Sonderkondition." />
+              <InputField label="Grund (Protokoll)" value={reason} onValue={setReason} />
+            </div>
+            {error && <Alert tone="danger" live>{error}</Alert>}
+            <div><Button type="submit" icon="check">Standardpreis speichern</Button></div>
+          </form>
+        )}
+      </Card>
+      <h2>Lizenzen</h2>
       <div class="grid-2">
         {PLANS.map((p) => (
           <Card key={p.plan} title={PLAN_LABEL[p.plan]} accent={p.plan === "pilot_free"}>
             <p class="muted small">{p.text}</p>
             <dl class="kv">
-              <dt>Preis</dt><dd>{p.plan === "pilot_free" ? "0,00 € – Kostenlos – Pilot" : "Preis noch nicht festgelegt"}</dd>
+              <dt>Preis</dt><dd>{p.plan === "pilot_free" ? "0,00 € – Kostenlos – Pilot" : `${formatEuro(current)} je Mitarbeiter/Monat`}</dd>
               <dt>Mitarbeitende</dt><dd>{p.employees}</dd>
-              <dt>Abrechnung</dt><dd>{p.plan === "pilot_free" ? "keine" : "noch nicht eingerichtet"}</dd>
+              <dt>Abrechnung</dt><dd>{p.plan === "pilot_free" ? "keine" : "manuell"}</dd>
             </dl>
           </Card>
         ))}
       </div>
+    </div>
+  );
+}
+
+const BILLING_STATUSES: BillingStatus[] = ["open", "invoiced", "paid", "waived"];
+
+function RevenuePage({ readOnly }: { readOnly: boolean }) {
+  const toast = useToast();
+  const now = currentMonth();
+  const months = monthsBack(now, "2026-01", 24);
+  const [month, setMonth] = useState(now);
+  const [tick, setTick] = useState(0);
+  const q = useAsync(() => repo.getPlatformRevenue(month), [month, tick]);
+  const [editing, setEditing] = useState<PlatformRevenueRow | null>(null);
+  const [form, setForm] = useState<{ status: BillingStatus; note: string }>({ status: "invoiced", note: "" });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const r = q.data;
+  const closable = month < now;
+
+  const open = (row: PlatformRevenueRow) => {
+    setEditing(row);
+    setError(null);
+    setForm({ status: row.status === "open" ? "invoiced" : row.status, note: row.note ?? "" });
+  };
+  const save = async (e: Event) => {
+    e.preventDefault();
+    if (!editing) return;
+    setBusy(true); setError(null);
+    try {
+      await repo.setBillingStatus(editing.tenantId, month, form.status, form.note.trim() || undefined);
+      toast(`Abrechnungsstatus „${BILLING_STATUS_LABEL[form.status]}“ gespeichert.`);
+      setEditing(null);
+      setTick((x) => x + 1);
+    } catch (err) { setError(errorText(err)); } finally { setBusy(false); }
+  };
+
+  return (
+    <div class="stack">
+      <h1 class="page-title">Umsatz</h1>
+      <p class="muted">Nur Zahlen je Mandant – keine Namen von Mitarbeitenden. Beträge netto, {VAT_NOTE}</p>
+      <Card>
+        <div class="toolbar">
+          <SelectField label="Monat" value={month} onValue={setMonth}
+            options={months.map((m) => ({ value: m, label: m === now ? `${monthLabelDE(m)} (laufend, Vorschau)` : monthLabelDE(m) }))} />
+          {r && <p class="small muted mb-0">Standardpreis {formatEuro(r.defaultPriceCents)} · Zahlungsdienstleister: {r.paymentProvider === "none" ? "keiner (manuelle Abrechnung)" : r.paymentProvider}</p>}
+        </div>
+      </Card>
+      {q.error && <Alert tone="danger" live>{q.error}</Alert>}
+      {r && (
+        <>
+          <div class="grid-4">
+            <StatTile label="Abrechenbare Mitarbeitende" value={r.totals.billableCount} hint="ohne Demo-Mandanten" />
+            <StatTile label="Umsatz netto" value={formatEuro(r.totals.amountCents)} hint="ohne Demo, ohne erlassene Monate" tone="brand" />
+            <StatTile label="Erlassen" value={formatEuro(r.totals.waivedCents)} />
+            <StatTile label="Demo-Mandanten" value={formatEuro(r.totals.demoAmountCents)} hint="kein Umsatz" />
+          </div>
+          {!closable && <Alert tone="info" title="Laufender Monat"><p>Vorschau. Der Abrechnungsstatus kann erst nach Monatsende gesetzt werden; dabei werden Anzahl und Betrag festgeschrieben.</p></Alert>}
+          <Card>
+            <Table<PlatformRevenueRow>
+              caption="Umsatz je Mandant"
+              rows={r.rows}
+              rowKey={(x) => x.tenantId}
+              empty={<p class="muted">Keine Mandanten in diesem Monat.</p>}
+              columns={[
+                { key: "n", header: "Mandant", render: (x) => <><a href={`#/mandant/${x.tenantId}`}><strong>{x.tenantName}</strong></a>{x.isDemo && <div class="xsmall muted">Demo-Mandant</div>}</> },
+                { key: "k", header: "Kondition", render: (x) => <span class="small">{BILLING_CONDITION_LABEL[x.condition]}</span> },
+                { key: "c", header: "Abrechenbar", align: "right", render: (x) => <span class="num">{x.billableCount}</span> },
+                { key: "p", header: "Preis je MA", align: "right", render: (x) => <span class="num">{formatEuro(x.unitPriceCents)}</span> },
+                { key: "a", header: "Summe netto", align: "right", render: (x) => <span class="num">{formatEuro(x.amountCents)}</span> },
+                { key: "s", header: "Status", render: (x) => <><StatusPill status={x.status} label={x.status === "open" && !closable ? "Vorschau" : undefined} />{x.final && <div class="xsmall muted">festgeschrieben</div>}{x.note && <div class="xsmall muted">{x.note}</div>}</> },
+                ...(!readOnly && closable ? [{
+                  key: "x", header: "Aktionen", actions: true,
+                  render: (x: PlatformRevenueRow) => <Button size="sm" variant="secondary" onClick={() => open(x)} aria-label={`Abrechnungsstatus ${x.tenantName} ändern`}>Status ändern</Button>,
+                }] : []),
+              ]}
+            />
+          </Card>
+        </>
+      )}
+      <Dialog open={editing !== null} title={editing ? `Abrechnung ${editing.tenantName}, ${monthLabelDE(month)}` : ""} onClose={() => setEditing(null)}
+        footer={<><Button variant="secondary" onClick={() => setEditing(null)}>Abbrechen</Button><Button type="submit" form="billing-form" busy={busy}>Speichern</Button></>}>
+        <form id="billing-form" class="stack" onSubmit={save} noValidate>
+          <SelectField label="Abrechnungsstatus" value={form.status} onValue={(v) => setForm({ ...form, status: v as BillingStatus })}
+            options={BILLING_STATUSES.map((st) => ({ value: st, label: BILLING_STATUS_LABEL[st]! }))}
+            hint={form.status === "open" ? "Wiederöffnen hebt die Festschreibung auf (Grund erforderlich)." : "Anzahl und Betrag werden beim ersten Abschluss festgeschrieben."} />
+          <TextareaField label={form.status === "waived" || (form.status === "open" && editing?.final) ? "Grund / Notiz (Pflicht)" : "Notiz (z. B. Rechnungsnummer)"} optional={!(form.status === "waived" || (form.status === "open" && editing?.final))}
+            value={form.note} onValue={(v) => setForm({ ...form, note: v })} maxLength={500} />
+          {error && <Alert tone="danger" live>{error}</Alert>}
+        </form>
+      </Dialog>
     </div>
   );
 }

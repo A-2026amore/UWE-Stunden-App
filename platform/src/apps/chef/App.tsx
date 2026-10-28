@@ -17,6 +17,7 @@ import { AccountsPage } from "./pages/Accounts";
 import { CompanyPage } from "./pages/Company";
 import { SettingsPage } from "./pages/Settings";
 import { AuditPage } from "./pages/Audit";
+import { BillingPage } from "./pages/Billing";
 
 const repo = getRepository("chef");
 
@@ -30,6 +31,7 @@ const NAV: NavItem[] = [
   { href: "#/nachweise", label: "Monatsnachweise", icon: "fileCheck", match: "/nachweise" },
   { href: "#/konten", label: "Arbeitszeitkonten", icon: "wallet", match: "/konten" },
   { href: "#/firma", label: "Firmenprofil", icon: "building", match: "/firma" },
+  { href: "#/abrechnung", label: "Abrechnung", icon: "wallet", match: "/abrechnung" },
   { href: "#/einstellungen", label: "Einstellungen", icon: "settings", match: "/einstellungen" },
   { href: "#/protokoll", label: "Änderungsprotokoll", icon: "log", match: "/protokoll" },
 ];
@@ -102,6 +104,7 @@ export function ChefApp() {
     case "/firma": page = <CompanyPage />; break;
     case "/einstellungen": page = <SettingsPage />; break;
     case "/protokoll": page = <AuditPage />; break;
+    case "/abrechnung": page = <BillingPage />; break;
     default: page = <DashboardPage />;
   }
 
