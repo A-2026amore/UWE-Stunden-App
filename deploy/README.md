@@ -143,6 +143,10 @@ Einrichtung, Zeitplan, restic-Übergabe und die Notfall-Wiederherstellung Schrit
 
 ## Testumgebung `stunden-test.appzentrale24.de` aktualisieren (Server-Sitzung)
 
+**Kurzform (ein Befehl):** `deploy/update-test.sh release/1.0 [--seed-test-env]` führt die Schritte unten aus
+(Sicherung, Stand holen, Bauen mit `APP_COMMIT`, Migrationen, Neustart, Healthcheck, optional Testzugänge). Es bricht
+ab, wenn `deploy/.env` nicht `STAGE=test` enthält oder das Arbeitsverzeichnis lokale Änderungen hat.
+
 Nur die Container `stunden-test-*` werden angefasst; andere Dienste, der zentrale Caddy und das zentrale Backup
 bleiben unverändert. Ausschließlich erfundene Testfirmen, keine echten Mitarbeiterdaten.
 
