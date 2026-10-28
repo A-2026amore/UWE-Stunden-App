@@ -86,6 +86,11 @@ test("super-admin sees tenants and licences, but no time entries", async ({ page
 
   await go(page, "#/system");
   await expect(page.getByText("Erreichbar")).toBeVisible();
+  const status = page.getByTestId("system-status");
+  await expect(status).toContainText("Migrationsstand");
+  await expect(status).toContainText("Zahlungsdienst");
+  await expect(status).toContainText("keiner");
+  await expect(status).toContainText("Letzte Sicherung");
 });
 
 test("a tenant account is refused by the admin portal", async ({ page }) => {
