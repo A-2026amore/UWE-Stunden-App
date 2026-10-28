@@ -171,7 +171,7 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | Einladung erneut senden | `POST /api/employees/:id/invitation` → `{expiresAt, delivery}` (`delivery`: `sent` · `logged` · `failed`). Der Einladungslink wird nie an die Leitung zurückgegeben, nur an die eingeladene Adresse gesendet. Auch `inviteEmployee` liefert zusätzlich `invitation: {expiresAt, delivery}`. |
 | `listTimeEntries` | `GET /api/employees/:id/time-entries?month=YYYY-MM` |
 | `listTenantTimeEntries` | `GET /api/tenants/:tenantId/time-entries?from=YYYY-MM-DD&to=YYYY-MM-DD` (max. 400 Tage) |
-| `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |
+| `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App, **nur für eigene Einträge**, sonst 403), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |
 | `updateTimeEntry` | `PATCH /api/employees/:id/time-entries/:entryId` oder `PATCH /api/time-entries/:entryId` – `{patch, expectedVersion, reason?}` |
 | `deleteTimeEntry` | `DELETE` (gleiche Pfade) – `{expectedVersion, reason?}` (Soft-Delete) |
 | `listAllocations` / `setAllocation` | `GET /api/employees/:id/allocations` · `PUT /api/employees/:id/allocations/:month` `{minutes}` |

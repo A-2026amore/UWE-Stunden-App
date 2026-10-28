@@ -458,6 +458,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       source: b.source === undefined ? "app" : v.oneOf(b.source, ["app", "migration"] as const, "Herkunft"),
     };
     return app.asUser(ctx, async (q) => {
+      // "migration" marks entries taken over from the legacy app. The import runs in the employee
+      // app for the signed-in person's own data only – nobody marks entries of others (QA B5).
+      if (entry.source === "migration" && !(await isSelf(q, employeeId))) {
+        throw forbidden("Altdaten können nur für das eigene Konto übernommen werden.");
+      }
       await lockEmployee(q, employeeId);
       const existed = await one(q, "select 1 from public.time_entries where employee_id = $1 and id = $2", [employeeId, entry.id]);
       const row = await one(q, "select * from public.create_time_entry($1, $2::jsonb)", [employeeId, JSON.stringify(entry)]);

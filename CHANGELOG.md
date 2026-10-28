@@ -48,6 +48,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   `set_tenant_status` (jetzt SECURITY DEFINER mit Super-Admin-Prüfung). Migration `0011_tenant_profile_owner_only.sql`.
 - B4: Anmeldung eines gesperrten Kontos mit 2FA verrät die Sperre (und damit das richtige Passwort) nicht mehr
   vor dem zweiten Faktor; die 403-Meldung folgt erst nach dem richtigen Code.
+- B5: Herkunft `source: "migration"` (Altdaten-Übernahme) nur noch für eigene Einträge der angemeldeten Person;
+  Leitung kann Einträge anderer nicht als „Übernahme“ markieren (403).
+- B6: CSV-Export der Arbeitszeiten (Chef-Portal) schützt vor Formel-Injektion: Freitexte, die mit `=`, `+`, `-`,
+  `@`, Tab oder CR beginnen, erhalten ein vorangestelltes `'` (`platform/src/core/csv.ts`); Quelle „Übernahme“
+  wird im Export ausgewiesen.
+- B7: Stilllegen/Löschen von Mandanten dokumentiert (`docs/betrieb.md`, 6.1a); weiterhin kein API-Endpunkt.
 
 ### Bekannte Fehler der Alt-App (dokumentiert, nicht geändert)
 - Überschneidung über Mitternacht wird nicht erkannt.
