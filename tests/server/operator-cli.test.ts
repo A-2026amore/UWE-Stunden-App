@@ -67,9 +67,18 @@ describe("cli.ts invite-link", () => {
     expect(login.status).toBe(200);
     expect(login.body).toMatchObject({ tenantId: IDS.tenantA, role: "owner" });
 
+    // The rows written by the CLI (insert of employee and invitation) carry the operator reason.
+    // Select them explicitly: accepting the invitation above writes a later "invitation.update"
+    // row (accepted_at) without a reason, so "latest invitation row" would be the wrong one.
     const audit = (await t.db.admin.query(
-      "select actor_id, reason from public.audit_log where entity = 'invitation' and tenant_id = $1 order by created_at desc limit 1", [IDS.tenantA])).rows[0];
-    expect(audit).toEqual({ actor_id: null, reason: "Einladung über Betreiberbefehl (CLI)" });
+      `select action, actor_id, reason from public.audit_log
+        where tenant_id = $1 and action in ('employee.insert', 'invitation.insert')
+          and after ->> 'email' = 'neue.chefin@demo-krankentransporte.example'
+        order by action`, [IDS.tenantA])).rows;
+    expect(audit).toEqual([
+      { action: "employee.insert", actor_id: null, reason: "Einladung über Betreiberbefehl (CLI)" },
+      { action: "invitation.insert", actor_id: null, reason: "Einladung über Betreiberbefehl (CLI)" },
+    ]);
   });
 
   it("renews an existing open invitation (seeded invitedB): the old link stops working", async () => {
