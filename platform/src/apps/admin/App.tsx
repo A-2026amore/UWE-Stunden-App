@@ -6,7 +6,7 @@ import {
 import type { Session, TenantOverview } from "../../data/repository";
 import {
   Alert, Badge, Button, Card, Checkbox, Dialog, Icon, InputField, LinkButton, SelectField, Sidebar, StatTile, StatusPill, Table,
-  DialogProvider, ToastProvider, TextareaField, applyBranding, useDialogs, useToast, type NavItem,
+  Avatar, DialogProvider, ThemeSwitch, ToastProvider, TextareaField, applyBranding, useDialogs, useToast, type NavGroup,
 } from "../../design";
 import { IS_DEMO, getRepository, onAuthFailure } from "../shared/repo";
 import { useRoute } from "../shared/router";
@@ -20,14 +20,20 @@ const repo = getRepository("admin");
 
 const checkArea = (s: Session): string | null => (s.platformRole ? null : "Dieses Konto hat keinen Zugang zur Plattform-Administration.");
 
-const NAV: NavItem[] = [
-  { href: "#/", label: "Mandanten", icon: "building", match: "/" },
-  { href: "#/umsatz", label: "Umsatz", icon: "chart", match: "/umsatz" },
-  { href: "#/lizenzen", label: "Preismodell", icon: "key", match: "/lizenzen" },
-  { href: "#/support", label: "Supportzugriff", icon: "shield", match: "/support" },
-  { href: "#/system", label: "Systemstatus", icon: "server", match: "/system" },
-  { href: "#/protokoll", label: "Plattform-Protokoll", icon: "log", match: "/protokoll" },
-  { href: "#/konto", label: "Mein Konto", icon: "user", match: "/konto" },
+const NAV: NavGroup[] = [
+  { label: "Kunden", items: [
+    { href: "#/", label: "Mandanten", icon: "building", match: "/" },
+    { href: "#/umsatz", label: "Umsatz", icon: "chart", match: "/umsatz" },
+    { href: "#/lizenzen", label: "Preismodell", icon: "key", match: "/lizenzen" },
+  ] },
+  { label: "Betrieb", items: [
+    { href: "#/support", label: "Supportzugriff", icon: "shield", match: "/support" },
+    { href: "#/system", label: "Systemstatus", icon: "server", match: "/system" },
+    { href: "#/protokoll", label: "Plattform-Protokoll", icon: "log", match: "/protokoll" },
+  ] },
+  { label: "Konto", items: [
+    { href: "#/konto", label: "Mein Konto", icon: "user", match: "/konto" },
+  ] },
 ];
 
 const PLANS: Array<{ plan: LicensePlan; text: string; employees: string }> = [
@@ -104,10 +110,18 @@ export function AdminApp() {
           <div class="d-topbar">
             <Button variant="ghost" icon="menu" aria-label="Menü öffnen" aria-expanded={menuOpen ? "true" : "false"} aria-controls="sidebar" onClick={() => setMenuOpen(true)} />
             <ProductMark compact />
+            <div class="topbar-end"><Avatar name={session.email} small /></div>
           </div>
-          <Sidebar items={NAV} current={route.path === "/mandant" ? "/" : route.path} open={menuOpen} onNavigate={() => setMenuOpen(false)}
-            brand={<div class="stack-sm"><ProductMark /><span class="xsmall muted">Super-Admin · Plattformbetrieb</span></div>}
-            footer={<div class="stack-sm"><div><strong>{session.email}</strong><div class="xsmall muted">{session.platformRole === "super_admin" ? "Super-Admin" : "Support (nur lesen)"}</div></div><Button variant="secondary" size="sm" icon="logout" onClick={signOut}>Abmelden</Button></div>} />
+          <Sidebar groups={NAV} current={route.path === "/mandant" ? "/" : route.path} open={menuOpen} onNavigate={() => setMenuOpen(false)}
+            brand={<div class="stack-sm"><ProductMark /><span class="sidebar-area">Super-Admin · Plattformbetrieb</span></div>}
+            footer={<>
+              <div class="user-chip">
+                <Avatar name={session.email} />
+                <div class="user-chip-text"><strong>{session.email}</strong><span>{session.platformRole === "super_admin" ? "Super-Admin" : "Support (nur lesen)"}</span></div>
+              </div>
+              <ThemeSwitch compact />
+              <Button variant="secondary" size="sm" icon="logout" onClick={signOut}>Abmelden</Button>
+            </>} />
           <main class="d-main" id="main">{page}</main>
         </div>
       </DialogProvider>
@@ -204,8 +218,9 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
 
   return (
     <div class="stack">
-      <div class="row-between">
+      <div class="page-head">
         <div>
+          <p class="page-eyebrow">Plattform</p>
           <h1 class="page-title">Mandanten</h1>
           <p class="muted page-sub">Plattform-Übersicht · {monthLabelDE(now)}</p>
         </div>
@@ -217,11 +232,11 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
         )}
       </div>
       <div class="grid-4" data-testid="platform-kpis">
-        <StatTile label="Mandanten" value={all.length} hint={`${count("active")} aktiv · ${count("suspended")} gesperrt · ${count("deactivated")} deaktiviert${count("pending") ? ` · ${count("pending")} in Vorbereitung` : ""}`} />
-        <StatTile label="Mitarbeitende gesamt" value={employees} hint={`${activeEmployees} aktiv bei Kunden (ohne Demo) · nur Anzahl, keine Personendaten`} />
-        <StatTile label={`Umsatz netto ${monthLabelDE(now)}`} value={revenue ? formatEuro(revenue.totals.amountCents) : "—"} tone="brand"
+        <StatTile icon="building" label="Mandanten" value={all.length} hint={`${count("active")} aktiv · ${count("suspended")} gesperrt · ${count("deactivated")} deaktiviert${count("pending") ? ` · ${count("pending")} in Vorbereitung` : ""}`} />
+        <StatTile icon="users" label="Mitarbeitende gesamt" value={employees} hint={`${activeEmployees} aktiv bei Kunden (ohne Demo) · nur Anzahl, keine Personendaten`} />
+        <StatTile icon="euro" label={`Umsatz netto ${monthLabelDE(now)}`} value={revenue ? formatEuro(revenue.totals.amountCents) : "—"} tone="brand"
           hint={revenue ? `Vorschau · ${revenue.totals.billableCount} abrechenbare Mitarbeitende · ohne Demo` : undefined} />
-        <StatTile label="Pilotkunden (kostenlos)" value={pilots} hint={`${trials} kostenlose Testkunden`} />
+        <StatTile icon="sparkles" label="Pilotkunden (kostenlos)" value={pilots} hint={`${trials} kostenlose Testkunden`} />
       </div>
       {q.error && <Alert tone="danger" live>{q.error}</Alert>}
       <Card>

@@ -3,9 +3,10 @@ import { activeShifts, isValidMonth, netMinutes } from "../../../core/time";
 import { errorsForMonth } from "../../../core/breaks";
 import { summarizeMonth } from "../../../core/workAccount";
 import type { TimeEntry } from "../../../core/types";
-import { Alert, Button, Card, EmptyState, LinkButton, StatusPill, useDialogs, useToast } from "../../../design";
+import { Alert, BarChart, Button, Card, EmptyState, LinkButton, StatusPill, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
-import { dayLabel, formatDateDE, hoursLabel, monthLabelDE } from "../../shared/format";
+import { dayLabel, formatDateDE, hoursLabel, monthLabelDE, todayISO } from "../../shared/format";
+import { dailyBars, hoursAxis } from "../../shared/charts";
 import { buildStatement, preparePdfLogo, shareOrDownload } from "../../shared/statement";
 import { downloadBlob } from "../../shared/format";
 import { navigate } from "../../shared/router";
@@ -118,6 +119,10 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
               <dt>Tatsächlich geleistete Stunden</dt><dd class="num">{hoursLabel(summary.workedMinutes)}</dd>
               {policy.enabled && <><dt>Davon ins Arbeitszeitkonto übertragen</dt><dd class="num">–{hoursLabel(summary.allocatedMinutes)}</dd></>}
             </dl>
+            {data && data.entries.length > 0 && (
+              <BarChart data={dailyBars(data.entries, month, todayISO())} formatValue={hoursAxis} height={120}
+                label={`Geleistete Stunden je Tag im ${monthLabelDE(month)}`} />
+            )}
             <p class="muted small mb-0">Die geleisteten Stunden bleiben vollständig dokumentiert. Die Monatsstunden für die Abrechnung werden nach deiner gespeicherten Übertragung berechnet.</p>
             {data?.statement?.correctedAfterApproval && (
               <Alert tone="info" title="Nach Freigabe korrigiert"><p>Einträge dieses Monats wurden nach der Freigabe korrigiert. Die freigegebenen Monatszahlen bleiben vorerst unverändert; Rückfragen bitte an deine Vorgesetzten.</p></Alert>

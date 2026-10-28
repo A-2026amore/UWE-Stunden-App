@@ -1,5 +1,5 @@
 import { useState } from "preact/hooks";
-import { Alert, Badge, Button, Card, Checkbox, Icon, LinkButton, PRODUCT_FULL_NAME, useDialogs, useToast } from "../../../design";
+import { Alert, Badge, Button, Card, Checkbox, Icon, LinkButton, PRODUCT_FULL_NAME, ThemeSwitch, useDialogs, useToast } from "../../../design";
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
 import { IS_DEMO, getRepository } from "../../shared/repo";
 import { TwoFactorCard } from "../../shared/twoFactor";
@@ -58,6 +58,10 @@ export function SettingsPage() {
           <dt>Unternehmen</dt><dd>{tenant.name}</dd>
         </dl>
         <p class="muted small" style={{ marginTop: "var(--space-3)" }}>Änderungen an deinen Stammdaten nimmt dein Arbeitgeber vor.</p>
+      </Card>
+
+      <Card title="Darstellung">
+        <ThemeSwitch label="Farbschema" hint="„System“ folgt der Einstellung deines Handys. Die Auswahl wird nur auf diesem Gerät gespeichert." />
       </Card>
 
       <TwoFactorCard repo={getRepository("app")} account={session.email} />

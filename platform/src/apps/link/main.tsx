@@ -9,12 +9,13 @@
 import { render, type ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import "../../design/styles";
-import { Alert, Button, Card, InputField, LinkButton, setAssetBase } from "../../design";
+import { Alert, Button, Card, InputField, LinkButton, initTheme, setAssetBase } from "../../design";
 import { errorText } from "../shared/hooks";
 import { IS_DEMO, getApiRepository } from "../shared/repo";
-import { ProductMark } from "../shared/ui";
+import { AuthLayout } from "../shared/ui";
 
 setAssetBase("../");
+initTheme();
 
 const MIN_PASSWORD = 10;
 
@@ -45,15 +46,12 @@ function SignInLinks() {
 
 function Shell({ title, children }: { title: string; children: ComponentChildren }) {
   return (
-    <div class="auth">
-      <main class="auth-card stack" id="main">
-        <div class="auth-head">
-          <ProductMark />
-          <h1 style={{ marginTop: "var(--space-4)" }}>{title}</h1>
-        </div>
-        <Card>{children}</Card>
-      </main>
-    </div>
+    <AuthLayout area="link">
+      <div class="auth-head">
+        <h1>{title}</h1>
+      </div>
+      <Card>{children}</Card>
+    </AuthLayout>
   );
 }
 

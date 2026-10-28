@@ -190,7 +190,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
           {error && <Alert tone="danger" live>{error}</Alert>}
 
           <div class="btn-row btn-row-stack">
-            <Button type="submit" icon="check" busy={busy} disabled={!!locked}>{editing ? "Änderung speichern" : "Arbeitszeit speichern"}</Button>
+            <Button type="submit" icon="check" class="btn-lg" busy={busy} disabled={!!locked}>{editing ? "Änderung speichern" : "Arbeitszeit speichern"}</Button>
             {editing && <Button variant="secondary" onClick={() => resetForNext(null)}>Abbrechen</Button>}
             {!editing && <Button variant="secondary" onClick={() => { setDate(todayISO()); resetForNext(null); }}>Anderen Tag eintragen</Button>}
           </div>
