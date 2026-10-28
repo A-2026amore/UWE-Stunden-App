@@ -21,6 +21,9 @@ Kein Supabase, kein PostgREST: Davor sitzt eine eigene Node-API (siehe `docs/api
 | `0013_correction_requests.sql` | Korrekturanfragen der Mitarbeitenden (`correction_requests`, RPCs anlegen/zurückziehen/entscheiden), Sicht `statement_correction_flags` („nach Freigabe korrigiert“) |
 | `0014_break_policy_statutory.sql` | CHECK `tenants_break_policy_statutory`: Pausenregel eines Mandanten nie laxer als § 4 ArbZG (`private.break_policy_meets_statute`), siehe [pausenregeln.md](pausenregeln.md) |
 | `0015_tenant_deactivation_system_overview.sql` | Mandantenstatus `deactivated` (Vertrag beendet; keine Anmeldung, **keine Daten gelöscht**, reaktivierbar) zusätzlich zu `suspended` (vorübergehend gesperrt) und `pending`; `set_tenant_status` akzeptiert ihn (nur Super-Admin, Grund Pflicht). `public.platform_system_overview()` (SECURITY DEFINER, Super-Admin und Support): Migrationsstand aus `ops.schema_migrations` (falls vorhanden), Anzahl aktiver Sitzungen, Mandanten je Status – nur Zahlen |
+| `0017_statement_reopen.sql` | Entscheidung N1 (28.10.2026): Monatsnachweis-Status `reopened`, `reopen_statement` (Leitung, Begründung Pflicht), keine Korrektur im **freigegebenen** Monat (auch nicht über `correct_time_entry` oder angenommene Korrekturanfragen → `PT423`), erneute Freigabe berechnet die Zahlen neu, Verlauf `monthly_statement_events` |
+| `0018_tenant_status_billing.sql` | Statushistorie der Mandanten `tenant_status_history`; gesperrte/deaktivierte Firmen kosten ab dem Folgemonat 0 € (Kondition `tenant_suspended`/`tenant_deactivated`) |
+| `0019_invoices.sql` | Rechnungen: Absenderangaben (`invoice_settings`), lückenlose Nummern je Jahr (`invoice_number_counters`, `SW-2026-000001`), unveränderliche Rechnungen und Stornorechnungen (`invoices`) |
 
 Anwenden (als Superuser bzw. Datenbankeigentümer, in Dateireihenfolge):
 
@@ -72,7 +75,12 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 | `time_entries` | Einsatz. Schlüssel **`(tenant_id, employee_id, id)`**: `id` ist die vom Client erzeugte Kennung (`^[A-Za-z0-9_-]{4,100}$`, UUID oder migrierte `legacy-…`-Kennung) und nur **je Mitarbeiter** eindeutig = Idempotenzschlüssel. `version` (optimistische Sperre), `deleted_at` (Soft-Delete), `source` app/migration/correction. Berechnet: `duration_minutes`, `period` (tsrange; Ende ≤ Beginn ⇒ Ende am Folgetag). |
 | `time_entry_revisions` | Vollständige Historie: je Insert/Update ein Schnappschuss (per Trigger), mit `operation` insert/update/delete/restore, `is_correction`, `reason`, `changed_by`. Unveränderlich. |
 | `work_account_allocations` | Zuweisung ins Arbeitszeitkonto je Mitarbeiter und Monat (`YYYY-MM`), `minutes ≥ 0`, `status` proposed/approved/rejected (Ablehnung braucht Begründung). Nur wenn `settings.workAccount.enabled` und Monat ≥ `startMonth`. Migrierte Zuweisungen kommen mit `proposed`. |
-| `monthly_statements` | Monatsabschluss draft/submitted/approved/returned; Zahlen (`worked/allocated/billing_minutes`) berechnet die DB. `returned` ⇒ `review_note` Pflicht (CHECK). |
+| `monthly_statements` | Monatsabschluss draft/submitted/approved/returned/reopened (`reopened` seit 0017); Zahlen (`worked/allocated/billing_minutes`) berechnet die DB beim Einreichen und bei jeder (erneuten) Freigabe. `returned` ⇒ `review_note` Pflicht; `reopened` ⇒ Begründung (≥ 5 Zeichen) in `review_note` und `reopened_at` (CHECK). |
+| `monthly_statement_events` | Seit 0017. Verlauf je Monatsnachweis: `action` submit/approve/return/reopen, Zeitpunkt, `actor_id`, Begründung, Zahlen zu diesem Zeitpunkt. Per Trigger geschrieben, beim Einspielen aus dem Audit-Log befüllt; nur Anfügen (Ausnahme: Schwärzen der Begründung bei Anonymisierung, 0016). |
+| `tenant_status_history` | Seit 0018. Zeiträume `[valid_from, valid_to)` des Mandantenstatus mit Grund (`app.change_reason`) und `changed_by`; per Trigger auf `tenants.status`; Bestand aus dem Audit-Log rekonstruiert. Grundlage für „gesperrt ab Folgemonat = 0 €“. |
+| `invoice_settings` | Seit 0019. Genau eine Zeile: Absender nach § 14 UStG (Name, Anschrift, Steuernummer oder USt-IdNr.), `vat_rate_percent` (Standard 19, `vat_rate_confirmed` = vom Auftraggeber bestätigt), `payment_terms_days` (Standard 14), Zahlungshinweis, `number_prefix` (Standard `SW`). Änderung nur über `platform_set_invoice_settings` (Super-Admin, Grund, Audit). |
+| `invoice_number_counters` | Seit 0019. Zähler je Jahr; nur +1 (Trigger), kein Löschen. Wird in derselben Transaktion wie die Rechnung hochgezählt (Zeilensperre) → lückenlos, keine Nummer doppelt oder wiederverwendet. |
+| `invoices` | Seit 0019. Rechnung (`kind = invoice`) oder Stornorechnung (`cancellation`, negative Beträge, `cancels_invoice_id`), mit `tenant_id`. Absender, Empfänger, Positionen, USt-Satz, Beträge, Rechnungs- und Fälligkeitsdatum sind eingefroren (Trigger `invoices_guard`); einzige Änderung: Storno-Vermerk am Original. Höchstens eine gültige Rechnung je Mandant und Monat. Kein Löschen. |
 | `correction_requests` | Korrekturanfrage (seit 0013): `kind` change/delete/add, `entry_id` + `entry_version` (change/delete), `before`/`proposed` als `{date,start,end,pauseMinutes,note}`, `reason` (5–1000 Zeichen, Pflicht), `status` open/accepted/rejected/withdrawn, `decided_at`/`decided_by`/`decision_note` (Pflicht bei Ablehnung), `applied_entry_id`/`applied_version`. Höchstens eine offene Anfrage je Eintrag. Schreiben nur über die RPCs; entschiedene Anfragen sind unveränderlich (Trigger, auch für Wartungscode). |
 | `statement_correction_flags` (Sicht) | Freigegebene Monatsabschlüsse, deren Monat **nach** `reviewed_at` korrigiert wurde (Revisionen mit `is_correction`, altes oder neues Datum im Monat): `corrections`, `last_corrected_at`. `security_invoker`: RLS der Abschlüsse und Revisionen gilt. |
 | `employee_status_history` | Seit 0012. Gültigkeitszeiträume `[valid_from, valid_to)` von (`status`, `role`) je Mitarbeiter; gepflegt per Trigger `employees_status_history` (SECURITY DEFINER), keine Überschneidung (Exclusion-Constraint), höchstens ein offener Zeitraum. Bestand beim Einspielen aus dem Audit-Log rekonstruiert (`employee.insert/update`), sonst ab `created_at`. Grundlage für „im Monat aktiv“. |
@@ -91,7 +99,7 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 | Pause ≥ 0 und < Dauer | CHECK + Trigger → `23514` |
 | Kein hartes Löschen | kein DELETE-Recht + Trigger → `42501`; Löschen = `deleted_at` setzen |
 | Versionskonflikt | Trigger: gesendete `version` ≠ gespeicherte → `PT409`; sonst `version + 1` |
-| Freigegebener Monat gesperrt | Trigger auf Zeiten und Zuweisungen → `PT423`; Änderung nur über `correct_time_entry` (Leitung, Begründung, Audit) |
+| Freigegebener Monat gesperrt | Trigger auf Zeiten und Zuweisungen → `PT423`, **für alle** (seit 0017 auch für `correct_time_entry` und angenommene Korrekturanfragen). Erst `reopen_statement` (Leitung, Begründung) öffnet den Monat für die Leitung; Mitarbeitende bleiben gesperrt und stellen Korrekturanfragen |
 | Unveränderliche Felder | `id`, `tenant_id`, `employee_id`, `created_*` bei Zeiten; `tenant_id`/`user_id` bei Mitarbeitern |
 
 Die **detaillierte Pausenprüfung** (Schwellen 6 h/9 h, 15-Minuten-Abschnitte, Tagessumme) bleibt
@@ -154,7 +162,12 @@ eigene Mitarbeiterzeile. Plattformpersonal sieht weiterhin Metadaten (und mit ak
 | billing_settings | – | – | – | L (Änderung per RPC) | L | – |
 | billing_periods | – | L | L | L (Änderung per RPC) | L | – |
 | billing_period_lines | – | L | L | – | – | – |
-| audit_log | – | L | L | L (Mandant/Lizenz/Freigabe/Abrechnungs-Ereignisse) | L (dto.) | L |
+| monthly_statement_events | L eigen | L | L | – | – | L |
+| tenant_status_history | – | L | L | L | L | – |
+| invoice_settings | – | – | – | L (Änderung per RPC) | L | – |
+| invoice_number_counters | – | – | – | – | – | – |
+| invoices | – | – | L (eigene Firma) | L (A per RPC) | L | – |
+| audit_log | – | L | L | L (Mandant/Lizenz/Freigabe/Abrechnungs-/Rechnungs-Ereignisse) | L (dto.) | L |
 | auth.* | – | – | – | – | – | – |
 
 Die Abrechnung (seit 0012) liefern SECURITY-DEFINER-Funktionen: `tenant_billing`/`tenant_billing_history`
@@ -177,16 +190,53 @@ und `set search_path = ''`.
 
 Plattformpersonal sieht Anfragen (wie alle personenbezogenen Daten) nur mit aktiver Support-Freigabe und kann nicht entscheiden.
 
-### Offene Entscheidung N1: Korrektur nach Freigabe
+### Entschieden (N1, 28.10.2026): Korrektur nach Freigabe nur nach Wiederöffnung (0017)
 
-Eine Korrektur in einem **freigegebenen** Monat (direkt durch die Leitung oder über eine angenommene Anfrage) ändert die
-Einträge, aber **nicht** die in `monthly_statements` gespeicherten Zahlen (`worked/allocated/billing_minutes` werden nur
-beim Einreichen und Freigeben berechnet). Der freigegebene Nachweis zeigt damit den Stand zur Freigabe. Bewusst nicht
-eigenmächtig geändert; stattdessen sichtbar gemacht: `statement_correction_flags` → Chef-Portal (Monatsnachweise,
-Dashboard) „nach Freigabe korrigiert“ mit den aktuellen Werten, Mitarbeiter-App Hinweis in der Monatsansicht.
-Möglichkeiten zur Entscheidung durch den Auftraggeber: (a) so lassen, der Inhaber gibt den Nachweis bei Bedarf zurück und
-lässt neu einreichen (heute schon möglich), (b) Zahlen bei jeder Korrektur automatisch neu berechnen (Abrechnung kann sich
-nachträglich ändern), (c) Korrektur im freigegebenen Monat nur nach Rückgabe erlauben.
+Ein **freigegebener** Monat ist für alle gesperrt – auch für `correct_time_entry` und das Annehmen von Korrekturanfragen
+(Trigger `time_entries_approved_guard` → `PT423`). Ablauf:
+
+1. `reopen_statement(statement_id, reason)` – Leitung des Mandanten (den eigenen Nachweis nur der Inhaber), Begründung
+   ≥ 5 Zeichen, nur aus `approved`. Status `reopened`, Audit `statement.reopen`, Eintrag im Verlauf.
+2. Im wieder geöffneten Monat korrigiert die Leitung direkt (Begründung → Revision mit `is_correction`, Audit) oder nimmt
+   Korrekturanfragen an; sie kann die Kontoaufteilung prüfen. Mitarbeitende ändern selbst nichts (Korrekturanfrage).
+3. `approve_statement` (erneute Freigabe direkt aus `reopened`) oder `return_statement` → Mitarbeitende ändern und reichen
+   neu ein. Bei jeder Freigabe werden die Zahlen neu berechnet und gespeichert; der Verlauf behält die alten Zahlen.
+
+`return_statement` öffnet einen freigegebenen Monat nicht mehr (`55000`). Die Sicht `statement_correction_flags`
+(„nach Freigabe korrigiert“) bleibt nur für Altfälle vor 0017; neue Fälle entstehen nicht mehr.
+**Abrechnung:** Eine Wiederöffnung ändert keinen festgeschriebenen Abrechnungsmonat (`billing_periods`) und keine
+Rechnung – berechnet werden Personen, nicht Stunden.
+
+| Funktion | Wer | Wirkung |
+|---|---|---|
+| `reopen_statement(id, reason)` | Leitung; eigener Nachweis nur Inhaber; Mandant aktiv | `approved` → `reopened`; `22023` ohne Begründung, `55000` falscher Status |
+| `approve_statement(id)` | Leitung (nicht der eigene, außer Inhaber) | aus `submitted` oder `reopened`; Zahlen neu |
+| `return_statement(id, note)` | Leitung | aus `submitted` oder `reopened` |
+| `submit_statement(employee_id, month)` | Person selbst | auch aus `reopened` (erneutes Einreichen) |
+
+## Gesperrte Firmen in der Abrechnung (0018)
+
+`private.tenant_block(tenant, month)` liefert Status, Zeitpunkt und Grund, wenn der Mandant während des **ganzen**
+Monats (Europe/Berlin) `suspended` oder `deactivated` war. `private.billing_condition` gibt dann 0 € mit der Kondition
+`tenant_suspended`/`tenant_deactivated` zurück (vor allen anderen Regeln). Beispiel: gesperrt am 10.11. → November
+wird berechnet, ab Dezember 0 €. Reaktivierung im Monat → dieser Monat wird wieder berechnet. `pending` zählt nicht als
+Sperre. `tenant_billing` zeigt dem Kunden `tenantBlock` (Status, seit) **ohne** Grund; `platform_billing_overview`
+liefert Plattformpersonal zusätzlich `block_since` und `block_reason`. Festgeschriebene Monate behalten ihre Kondition.
+
+## Rechnungen (0019)
+
+| Funktion | Wer | Wirkung |
+|---|---|---|
+| `platform_invoice_settings()` | Plattformpersonal | Absenderangaben + `missing` (fehlende Pflichtangaben, deutsch) |
+| `platform_set_invoice_settings(jsonb, reason)` | Super-Admin | ändert die Angaben; Audit `invoice_settings.update` |
+| `platform_invoice_draft(tenant, month)` | Plattformpersonal | Entwurf ohne Nummer (Wasserzeichen „Entwurf – Pflichtangaben fehlen“, wenn etwas fehlt) |
+| `platform_issue_invoice(tenant, month)` | Super-Admin | Nummer `SW-JJJJ-000001` (Zähler je Jahr, gesperrt, lückenlos), friert Daten ein; verweigert bei fehlenden Pflichtangaben, bestehender Rechnung, erlassenem Monat, 0 € und laufendem Monat; ein offener Monat wird als `invoiced` festgeschrieben; Audit `invoice.issue` |
+| `platform_cancel_invoice(id, reason)` | Super-Admin | Stornorechnung mit eigener Nummer und negativen Beträgen; Original bleibt, wird als storniert markiert; Audit `invoice.cancel` |
+
+Rechnungen enthalten keine Namen von Mitarbeitenden (nur Anzahl × Preis). Kein Versand, keine Zahlungsabwicklung.
+Kunden (Inhaber) lesen ihre eigenen Rechnungen (RLS `is_owner`), Plattformpersonal alle.
+Hinweis für die Mandantenlöschung: `invoices` trägt `tenant_id`, ist aber unveränderlich und ohne `on delete cascade`
+(Aufbewahrungspflicht für Rechnungen, § 14b UStG / § 147 AO) – vor einer Löschung fachlich zu klären.
 
 ## Datenschutz (0016)
 

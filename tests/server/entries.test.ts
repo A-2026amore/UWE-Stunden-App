@@ -210,9 +210,14 @@ describe("monthly statements and work account", () => {
     const locked = await t.call("POST", `/api/employees/${E.emp1A}/time-entries`, { cookie: c.emp1A, body: entry("locked-0001", "2026-10-28", "08:00", "10:00", 0) });
     expect(locked.status).toBe(423);
 
-    const reopen = await t.call("POST", `/api/statements/${sub.body.id}/return`, { cookie: c.ownerA, body: { reason: "Korrektur nötig" } });
+    // decision 28.10.2026: approved months are re-opened (reason, history), no longer "returned"
+    const back = await t.call("POST", `/api/statements/${sub.body.id}/return`, { cookie: c.ownerA, body: { reason: "Korrektur nötig" } });
+    expect(back.status).toBe(409);
+    const reopen = await t.call("POST", `/api/statements/${sub.body.id}/reopen`, { cookie: c.ownerA, body: { reason: "Korrektur nötig" } });
     expect(reopen.status).toBe(200);
-    expect(reopen.body.status).toBe("returned");
+    expect(reopen.body.status).toBe("reopened");
+    const returned = await t.call("POST", `/api/statements/${sub.body.id}/return`, { cookie: c.ownerA, body: { reason: "Bitte selbst ergänzen" } });
+    expect(returned.body.status).toBe("returned");
   });
 
   it("refuses to submit a month with break-rule problems", async () => {

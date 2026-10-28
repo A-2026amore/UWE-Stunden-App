@@ -60,16 +60,30 @@ describe("correction requests (demo)", () => {
 
     const before = (await w.chef.listStatements(KT, previous)).find((x) => x.employeeId === ANNA)!;
     expect(before.correctedAfterApproval).toBeNull();
+    // Decision 28.10.2026: approved month → accepting needs a documented re-opening first
+    await expect(w.chef.decideCorrectionRequest(req.id, "accepted", "Danke")).rejects.toThrow("wieder öffnen");
+    await expect(w.chef.updateTimeEntry(entry.id, { note: "direkt" }, entry.version, "Direkte Korrektur")).rejects.toThrow("freigegeben");
+    await expect(w.anna.reopenStatement(before.id, "Bitte öffnen")).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(w.chef.reopenStatement(before.id, "kurz")).rejects.toThrow("mind. 5 Zeichen");
+    const reopened = await w.chef.reopenStatement(before.id, "Korrekturanfrage von Anna");
+    expect(reopened).toMatchObject({ status: "reopened", reviewNote: "Korrekturanfrage von Anna" });
+    expect((await w.anna.getStatement(ANNA, previous))!.status).toBe("reopened");
+    await expect(w.anna.updateTimeEntry(entry.id, { note: "x" }, entry.version)).rejects.toThrow("Korrekturanfrage");
+
     const done = await w.chef.decideCorrectionRequest(req.id, "accepted", "Danke");
     expect(done).toMatchObject({ status: "accepted", decisionNote: "Danke", decidedByName: "Chef Demo", appliedEntryId: entry.id });
     const changed = (await w.anna.listTimeEntries(ANNA, previous)).find((e) => e.id === entry.id)!;
     expect(changed).toMatchObject({ note: "Laut Fahrtenbuch", source: "correction", version: entry.version + 1 });
 
-    // N1: approved figures stay, the month is flagged
-    const after = (await w.chef.listStatements(KT, previous)).find((x) => x.employeeId === ANNA)!;
-    expect(after.workedMinutes).toBe(before.workedMinutes);
-    expect(after.correctedAfterApproval).toMatchObject({ count: 1 });
-    expect((await w.anna.getStatement(ANNA, previous))!.correctedAfterApproval).toMatchObject({ count: 1 });
+    // Re-approval recalculates the figures; the history shows approval, re-opening and re-approval
+    const again = await w.chef.approveStatement(before.id);
+    expect(again.status).toBe("approved");
+    const events = await w.anna.listStatementEvents(before.id);
+    expect(events.map((e) => e.action).slice(-2)).toEqual(["reopen", "approve"]);
+    // like RLS on employees: the employee does not see the leadership's name, the leadership does
+    expect(events.find((e) => e.action === "reopen")).toMatchObject({ reason: "Korrekturanfrage von Anna", actorName: null });
+    expect((await w.chef.listStatementEvents(before.id)).find((e) => e.action === "reopen")).toMatchObject({ actorName: "Chef Demo" });
+    expect((await w.chef.listStatements(KT, previous)).find((x) => x.employeeId === ANNA)!.correctedAfterApproval).toBeNull();
 
     // History: correction with the employee's reason and the leadership's answer
     const revs = await w.chef.listTimeEntryRevisions(ANNA, entry.id);
@@ -85,6 +99,8 @@ describe("correction requests (demo)", () => {
   it("rejection needs a reason; withdraw; delete and missing entry; overlap and stale entries are refused", async () => {
     const w = await world();
     const entry = await annaEntry(w);
+    const st = (await w.chef.listStatements(KT, previous)).find((x) => x.employeeId === ANNA)!;
+    await w.chef.reopenStatement(st.id, "Korrekturen von Anna prüfen");
     const del = await w.anna.createCorrectionRequest(ANNA, { kind: "delete", entryId: entry.id, reason: "Doppelt erfasst" });
     await expect(w.chef.decideCorrectionRequest(del.id, "rejected", " ")).rejects.toThrow("Ablehnung");
     const rejected = await w.chef.decideCorrectionRequest(del.id, "rejected", "Einsatz ist belegt");

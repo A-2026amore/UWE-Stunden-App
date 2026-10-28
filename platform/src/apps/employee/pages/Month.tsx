@@ -45,7 +45,9 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   const summary = data ? summarizeMonth({ entries: activeShifts(data.entries), allocations: data.allocations, month, policy }) : null;
   const issues = data ? errorsForMonth(activeShifts(data.entries), month, tenant.settings.breakPolicy) : [];
   const status = data?.statement?.status ?? "draft";
-  const locked = status === "submitted" || status === "approved";
+  // "reopened": the leadership re-opened the approved month – changes only via correction request.
+  const locked = status === "submitted" || status === "approved" || status === "reopened";
+  const canSubmit = status !== "submitted" && status !== "approved";
 
   const byDay = new Map<string, TimeEntry[]>();
   for (const e of data?.entries ?? []) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
@@ -109,7 +111,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
           <div class="stack">
             <div class="row-between">
               <h2 class="mb-0">{monthLabelDE(month)}</h2>
-              <StatusPill status={status} label={status === "draft" ? "Nicht eingereicht" : undefined} />
+              <StatusPill status={status} label={status === "draft" ? "Nicht eingereicht" : status === "reopened" ? "Wieder geöffnet" : undefined} />
             </div>
             <div class="stat stat-hero" aria-live="polite">
               <span class="stat-label">Monatsstunden für die Abrechnung vorgesehen</span>
@@ -126,6 +128,9 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
             <p class="muted small mb-0">Die geleisteten Stunden bleiben vollständig dokumentiert. Die Monatsstunden für die Abrechnung werden nach deiner gespeicherten Übertragung berechnet.</p>
             {data?.statement?.correctedAfterApproval && (
               <Alert tone="info" title="Nach Freigabe korrigiert"><p>Einträge dieses Monats wurden nach der Freigabe korrigiert. Die freigegebenen Monatszahlen bleiben vorerst unverändert; Rückfragen bitte an deine Vorgesetzten.</p></Alert>
+            )}
+            {data?.statement?.status === "reopened" && (
+              <Alert tone="warning" title="Wieder geöffnet"><p>Deine Leitung hat den freigegebenen Monat wieder geöffnet. Begründung: {data.statement.reviewNote}. Änderungen bitte per Korrekturanfrage; danach wird der Monat erneut freigegeben.</p></Alert>
             )}
             {data?.statement?.status === "returned" && (
               <Alert tone="danger" title="Zurückgegeben"><p>Begründung: {data.statement.reviewNote}</p></Alert>
@@ -146,7 +151,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
         <div class="btn-row btn-row-stack">
           <Button icon="share" onClick={() => pdf("share")} busy={busy === "share"} disabled={!data?.entries.length}>PDF teilen</Button>
           <Button variant="secondary" icon="download" onClick={() => pdf("download")} busy={busy === "download"} disabled={!data?.entries.length}>PDF speichern</Button>
-          {!locked && <Button variant="secondary" icon="send" onClick={submit} busy={busy === "submit"} disabled={!data?.entries.length}>Monatsnachweis einreichen</Button>}
+          {canSubmit && <Button variant="secondary" icon="send" onClick={submit} busy={busy === "submit"} disabled={!data?.entries.length}>Monatsnachweis einreichen</Button>}
         </div>
         <p class="muted small" style={{ marginTop: "var(--space-3)" }}>
           „PDF teilen“ öffnet das Teilen-Menü deines Handys (z. B. WhatsApp oder E-Mail). Prüfe die PDF vor dem Senden. Wenn keine Dateifreigabe angeboten wird, wird die PDF heruntergeladen.

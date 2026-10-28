@@ -80,11 +80,46 @@ describe("monthly statements", () => {
     expect(e.code).toBe("PT423");
   });
 
-  it("manager correction in a locked month requires a reason and is audited", async () => {
+  it("approved month: no correction at all, not even by the leadership (decision 28.10.2026)", async () => {
+    const e = await pgError(db.as(U.managerA, (q) => q.query("select public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"end\":\"15:30\"}', 1, 'Fahrtenbuch belegt 15:30')")));
+    expect(e.code).toBe("PT423");
+    const e2 = await pgError(db.as(U.ownerA, (q) => q.query("select public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"deleted\":true}', 1, 'Doppelt erfasst')")));
+    expect(e2.code).toBe("PT423");
+    // moving an entry of another month INTO the approved month is refused as well
+    const e3 = await pgError(db.as(U.managerA, (q) => q.query("select public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20260901', '{\"date\":\"2026-10-27\"}', 1, 'Datum verschoben')")));
+    expect(["PT423", "23P01"]).toContain(e3.code);
+    // the old way (return an approved statement) is closed
+    const e4 = await pgError(db.as(U.ownerA, (q) => q.query("select public.return_statement($1, 'nochmal öffnen')", [octId])));
+    expect(e4.code).toBe("55000");
+  });
+
+  it("re-opening: leadership with a mandatory reason, audited; not for employees, not other tenants", async () => {
+    for (const user of [U.emp1A, U.emp2A, U.ownerB, U.superAdmin, U.support]) {
+      const e = await pgError(db.as(user, (q) => q.query("select public.reopen_statement($1, 'Nachtrag Urlaubstag')", [octId])));
+      expect(e.code).toBe("42501");
+    }
+    for (const reason of [null, "", "  ", "kurz"]) {
+      const e = await pgError(db.as(U.managerA, (q) => q.query("select public.reopen_statement($1, $2)", [octId, reason])));
+      expect(e.code).toBe("22023");
+    }
+    const r = await db.as(U.managerA, async (q) => (await q.query("select * from public.reopen_statement($1, 'Nachtrag Urlaubstag')", [octId])).rows[0], { commit: true });
+    expect(r).toMatchObject({ status: "reopened", review_note: "Nachtrag Urlaubstag", reopened_by: U.managerA });
+    const again = await pgError(db.as(U.managerA, (q) => q.query("select public.reopen_statement($1, 'Nachtrag Urlaubstag')", [octId])));
+    expect(again.code).toBe("55000");
+    const audit = await db.admin.query("select action, reason from public.audit_log where entity_id = $1 and action = 'statement.reopen'", [octId]);
+    expect(audit.rows).toEqual([{ action: "statement.reopen", reason: "Nachtrag Urlaubstag" }]);
+    // the table enforces the reason too
+    const e = await pgError(db.admin.query("update public.monthly_statements set review_note = null where id = $1", [octId]));
+    expect(e.code).toBe("23514");
+  });
+
+  it("re-opened month: employee still locked; leadership corrects with reason (revision, audit) and adjusts the allocation", async () => {
+    const e1 = await pgError(db.as(U.emp1A, (q) => q.query("select public.update_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"note\":\"x\"}', 1)")));
+    expect(e1.code).toBe("PT423");
+    const e2 = await pgError(db.as(U.emp1A, (q) => q.query("select public.set_allocation($1, '2026-10', 10)", [E.emp1A])));
+    expect(["PT423", "42501"]).toContain(e2.code);
     const e = await pgError(db.as(U.managerA, (q) => q.query("select public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"end\":\"15:30\"}', 1, '')")));
     expect(e.code).toBe("22023");
-    const e2 = await pgError(db.as(U.emp1A, (q) => q.query("select public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"end\":\"15:30\"}', 1, 'Selbstkorrektur')")));
-    expect(e2.code).toBe("42501");
     const r = await db.as(U.managerA, async (q) =>
       (await q.query("select * from public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"end\":\"15:30\"}', 1, 'Fahrtenbuch belegt 15:30')")).rows[0], { commit: true });
     expect(r).toMatchObject({ version: 2, source: "correction", duration_minutes: 510 });
@@ -92,16 +127,35 @@ describe("monthly statements", () => {
     expect(rev.rows[0]).toEqual({ is_correction: true, reason: "Fahrtenbuch belegt 15:30", changed_by: U.managerA });
     const audit = await db.admin.query("select reason, actor_id from public.audit_log where action = 'time_entry.correction'");
     expect(audit.rows).toEqual([{ reason: "Fahrtenbuch belegt 15:30", actor_id: U.managerA }]);
-    // correction also respects the hard limits
     const e3 = await pgError(db.as(U.managerA, (q) => q.query("select public.correct_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261001', '{\"end\":\"20:00\"}', 2, 'zu lang test')")));
     expect(e3.code).toBe("23514");
+    // work-account allocation of the re-opened month: the leadership may review it
+    const alloc = await db.as(U.managerA, async (q) => (await q.query("select * from public.review_allocation($1, '2026-10', 'approved')", [E.emp1A])).rows[0]);
+    expect(alloc.status).toBe("approved");
   });
 
-  it("owner can re-open an approved month with a reason; manager cannot", async () => {
-    const e = await pgError(db.as(U.managerA, (q) => q.query("select public.return_statement($1, 'nochmal öffnen')", [octId])));
+  it("re-approval stores recalculated figures; employee sees the status and the history", async () => {
+    const before = (await db.admin.query("select worked_minutes from public.monthly_statements where id = $1", [octId])).rows[0];
+    const mine = await db.as(U.emp1A, async (q) => (await q.query("select status, review_note from public.monthly_statements where id = $1", [octId])).rows[0]);
+    expect(mine).toEqual({ status: "reopened", review_note: "Nachtrag Urlaubstag" });
+    const s = await db.as(U.managerA, async (q) => (await q.query("select * from public.approve_statement($1)", [octId])).rows[0], { commit: true });
+    expect(s.status).toBe("approved");
+    expect(s.worked_minutes).toBe(before.worked_minutes + 30); // end 15:00 → 15:30
+    const ev = await db.as(U.emp1A, async (q) => (await q.query("select action from public.monthly_statement_events where statement_id = $1 order by created_at, id", [octId])).rows);
+    expect(ev.map((x) => x.action).slice(-3)).toEqual(["approve", "reopen", "approve"]);
+    for (const user of [U.emp2A, U.ownerB, U.superAdmin]) {
+      const rows = await db.as(user, async (q) => (await q.query("select * from public.monthly_statement_events where statement_id = $1", [octId])).rows);
+      expect(rows).toEqual([]);
+    }
+    // history is append-only
+    const e = await pgError(db.admin.query("update public.monthly_statement_events set reason = 'x' where statement_id = $1", [octId]));
     expect(e.code).toBe("42501");
-    const r = await db.as(U.ownerA, async (q) => (await q.query("select * from public.return_statement($1, 'Nachtrag Urlaubstag')", [octId])).rows[0], { commit: true });
-    expect(r.status).toBe("returned");
+    const e2 = await pgError(db.admin.query("delete from public.monthly_statement_events where statement_id = $1", [octId]));
+    expect(e2.code).toBe("42501");
+    // finally: re-open, return to the employee, employee can change again
+    await db.as(U.ownerA, (q) => q.query("select public.reopen_statement($1, 'Nachtrag Urlaubstag')", [octId]), { commit: true });
+    const ret = await db.as(U.ownerA, async (q) => (await q.query("select * from public.return_statement($1, 'Bitte selbst ergänzen')", [octId])).rows[0], { commit: true });
+    expect(ret.status).toBe("returned");
     const ok = await db.as(U.emp1A, async (q) => (await q.query("select * from public.update_time_entry('ae000000-0000-4000-8000-000000000003', 'demo-a03-20261005', '{\"note\":\"ok\"}', 1)")).rows[0]);
     expect(ok.version).toBe(2);
   });

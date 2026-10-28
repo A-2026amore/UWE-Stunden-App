@@ -19,6 +19,25 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
     der Monatsübersicht, Darstellung im Profil.
   - PDF-Stundennachweis: Infofeld, farbiger Tabellenkopf, Zebra-Streifen, Wochentage, Summenblock, Fußzeile mit
     Erstellungsdatum, Produktname und „Seite x von y“ – weiterhin mehrseitig mit unveränderten Seitenumbrüchen.
+  - Statusanzeigen für „Wieder geöffnet“, „Storniert“, „Stornorechnung“, „Ausgestellt“; Super-Admin „Rechnungen“ in
+    der Seitenleiste (Gruppe „Kunden“), Verlauf, Wiederöffnung und Rechnungen im neuen Design.
+- Wiederöffnung, Sperr-Abrechnung und Rechnungen (Branch `feature/wiedereroeffnung-rechnungen`, Migrationen
+  `0017_statement_reopen.sql`, `0018_tenant_status_billing.sql`, `0019_invoices.sql`; Entscheidungen vom 28.10.2026):
+  - N1 entschieden: Ein freigegebener Monat ist für alle gesperrt – auch für Korrekturen der Leitung und angenommene
+    Korrekturanfragen (`PT423` in der Datenbank). Chef-Portal „Monat wieder öffnen“ (Begründung Pflicht, Audit), danach
+    Korrekturen und „Erneut freigeben“ bzw. Zurückgeben; die Zahlen werden bei jeder Freigabe neu berechnet. Verlauf je
+    Nachweis (`monthly_statement_events`, Chef-Portal „Verlauf“), Mitarbeiter-App zeigt „Wieder geöffnet“ mit Grund.
+    Die Abrechnung ändert sich durch eine Wiederöffnung nicht. API `POST /api/statements/:id/reopen`,
+    `GET /api/statements/:id/events`.
+  - Gesperrte/deaktivierte Firmen kosten ab dem Folgemonat 0 € (Statushistorie `tenant_status_history`, Monatsgrenzen
+    Europe/Berlin). Super-Admin „Umsatz“ zeigt Datum und Grund, Chef-Portal „Abrechnung“ den Hinweis ohne Grund.
+  - Rechnungen: Super-Admin „Rechnungen“ (Absenderangaben nach § 14 UStG, Entwurf, Rechnung erzeugen, PDF, Storno mit
+    Grund), Nummern `SW-JJJJ-000001` lückenlos je Jahr, Storno mit eigener Nummer, Inhalte eingefroren, USt 19 % mit
+    Hinweis „vom Auftraggeber zu bestätigen“, Zahlungsziel als Einstellung; ohne Pflichtangaben nur Entwurf mit
+    Wasserzeichen. PDF mehrseitig (`platform/src/core/invoice.ts`). Inhaber sieht eigene Rechnungen unter „Abrechnung“.
+    Kein Versand, keine Zahlungsabwicklung.
+  - Geändert: „Zurückgeben“ gibt freigegebene Nachweise nicht mehr zurück (409) – dafür „Monat wieder öffnen“. Die
+    Kennzeichnung „nach Freigabe korrigiert“ bleibt nur für Altfälle.
 - Datenschutz, Sicherheit und Wiederherstellbarkeit (Branch `feature/sicherheit-dsgvo-backup`, Migration
   `0016_privacy.sql`, Doku `docs/datenschutz.md` – Entwurf, rechtlich prüfen):
   - Datenauskunft (Art. 15/20 DSGVO): Mitarbeiter-App → Einstellungen → „Meine Daten“ (CSV oder JSON, inkl.

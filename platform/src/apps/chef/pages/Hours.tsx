@@ -178,14 +178,14 @@ function EmployeeMonth({ row, employee, month, days, issues, withAccount, busy, 
         <div class="row-between" style={{ marginBottom: "var(--space-4)" }} data-testid="statement-status">
           <div class="row">
             <span class="small"><strong>Monatsnachweis:</strong></span>
-            <StatusPill status={st?.status ?? "none"} label={st ? undefined : STATEMENT_STATUS_LABEL.none} />
+            <StatusPill status={st?.status ?? "none"} label={st ? (st.status === "reopened" ? STATEMENT_STATUS_LABEL.reopened : undefined) : STATEMENT_STATUS_LABEL.none} />
             {st?.submittedAt && <span class="xsmall muted">eingereicht {dateTimeDE(st.submittedAt)}</span>}
             {st?.status === "returned" && st.reviewNote && <span class="xsmall">Grund: {st.reviewNote}</span>}
           </div>
-          {st && (st.status === "submitted" || st.status === "approved") && (
+          {st && (st.status === "submitted" || st.status === "approved" || st.status === "reopened") && (
             <div class="btn-row">
-              {st.status === "submitted" && <Button size="sm" icon="check" onClick={() => onApprove(r)}>Freigeben</Button>}
-              <Button size="sm" variant="secondary" icon="undo" onClick={() => onReturn(r)}>{st.status === "approved" ? "Freigabe zurücknehmen" : "Zurückgeben"}</Button>
+              {(st.status === "submitted" || st.status === "reopened") && <Button size="sm" icon="check" onClick={() => onApprove(r)}>{st.status === "reopened" ? "Erneut freigeben" : "Freigeben"}</Button>}
+              <Button size="sm" variant="secondary" icon="undo" onClick={() => onReturn(r)}>{st.status === "approved" ? "Monat wieder öffnen" : "Zurückgeben"}</Button>
             </div>
           )}
         </div>

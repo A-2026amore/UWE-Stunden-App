@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMidnight, berlinMonthOf,
-  formatEuro, monthBounds, monthsBack, parseEuro, revenueTotals, type LicenseCondition, type StatusPeriod,
+  formatEuro, monthBounds, monthsBack, parseEuro, revenueTotals, tenantBlockFor, type LicenseCondition, type StatusPeriod, type TenantStatusPeriod,
 } from "./billing";
 
 const active = (from: string, to: string | null = null, role: StatusPeriod["role"] = "employee"): StatusPeriod => ({ status: "active", role, from, to });
@@ -114,5 +114,27 @@ describe("revenue totals", () => {
       { isDemo: true, status: "open", billableCount: 3, amountCents: 1500 },
     ]);
     expect(t).toEqual({ billableCount: 34, amountCents: 12500, waivedCents: 1000, demoAmountCents: 1500 });
+  });
+});
+
+describe("blocked tenants (decision 28.10.2026)", () => {
+  const P = (status: TenantStatusPeriod["status"], from: string, to: string | null): TenantStatusPeriod => ({ status, from, to });
+  it("block on 10.11.: November billed, December not", () => {
+    const h = [P("active", "2026-06-01T00:00:00+02:00", "2026-11-10T09:00:00+01:00"), P("suspended", "2026-11-10T09:00:00+01:00", null)];
+    expect(tenantBlockFor(h, "2026-11")).toBeNull();
+    expect(tenantBlockFor(h, "2026-12")).toMatchObject({ status: "suspended", since: "2026-11-10T09:00:00+01:00" });
+    expect(billingConditionFor(null, 500, "2026-12", tenantBlockFor(h, "2026-12"))).toEqual({ condition: "tenant_suspended", unitPriceCents: 0 });
+    expect(billingConditionFor(null, 500, "2026-11", tenantBlockFor(h, "2026-11"))).toEqual({ condition: "standard", unitPriceCents: 500 });
+  });
+  it("Berlin month boundaries and reactivation", () => {
+    const late = [P("active", "2026-06-01T00:00:00+02:00", "2026-09-30T23:30:00+02:00"), P("deactivated", "2026-09-30T23:30:00+02:00", null)];
+    expect(tenantBlockFor(late, "2026-09")).toBeNull();
+    expect(tenantBlockFor(late, "2026-10")?.status).toBe("deactivated");
+    const early = [P("active", "2026-06-01T00:00:00+02:00", "2026-10-01T00:30:00+02:00"), P("deactivated", "2026-10-01T00:30:00+02:00", null)];
+    expect(tenantBlockFor(early, "2026-10")).toBeNull();
+    const back = [P("suspended", "2026-07-03T12:00:00+02:00", "2026-09-15T12:00:00+02:00"), P("active", "2026-09-15T12:00:00+02:00", null)];
+    expect(tenantBlockFor(back, "2026-08")?.status).toBe("suspended");
+    expect(tenantBlockFor(back, "2026-09")).toBeNull();
+    expect(tenantBlockFor([], "2026-09")).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { shiftMonth } from "../../../data/demo";
 import { useEmployee } from "../context";
 import { InstallBanner } from "../InstallHint";
 
-export const STATEMENT_WORD: Record<string, string> = { draft: "offen", submitted: "eingereicht", approved: "freigegeben", returned: "zurückgegeben" };
+export const STATEMENT_WORD: Record<string, string> = { draft: "offen", submitted: "eingereicht", approved: "freigegeben", returned: "zurückgegeben", reopened: "wieder geöffnet" };
 
 export function StartPage() {
   const { repo, me, tenant, version } = useEmployee();

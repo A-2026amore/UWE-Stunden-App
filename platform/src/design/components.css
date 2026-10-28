@@ -110,6 +110,8 @@ img { max-width: 100%; }
 .btn-icon { padding: var(--space-2); }
 
 .btn-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.btn-row-end { justify-content: flex-end; }
+.fieldset-plain { border: 0; padding: 0; margin: 0; min-width: 0; }
 @media (max-width: 479px) { .btn-row-stack > .btn { flex: 1 1 100%; } }
 
 /* ------------------------------------------------------------ Card */
