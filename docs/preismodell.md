@@ -74,7 +74,7 @@ mit Anzahl, Preis je Person, Summe netto und Status; Liste der berechneten Perso
 | Status | Bedeutung |
 |---|---|
 | Offen | noch nicht abgerechnet – Werte sind vorläufig |
-| In Rechnung gestellt | Rechnung verschickt (Notiz z. B. Rechnungsnummer) |
+| In Rechnung gestellt | Rechnung erzeugt (automatisch beim Erzeugen, Notiz „Rechnung SW-…“) oder manuell gesetzt |
 | Bezahlt | Zahlung eingegangen |
 | Erlassen | wird nicht berechnet – **Grund ist Pflicht** |
 
@@ -97,6 +97,43 @@ Warum nicht nur aus der Historie? Die Historie selbst ist stabil, aber Preise, K
 (gelöschte) Arbeitszeiten der Leitung können sich nachträglich ändern. Die festgeschriebene Rechnung
 muss dagegen exakt so bleiben, wie sie verschickt wurde.
 
+## Gesperrte und deaktivierte Firmen (Entscheidung 28.10.2026)
+
+Eine Firma, die gesperrt („vorübergehend gesperrt“) oder deaktiviert („Vertrag beendet“) wird, kostet
+**ab dem Folgemonat 0 €**. Der Monat, in dem gesperrt wurde, wird noch voll berechnet.
+
+- Beispiel: gesperrt am 10.11. → November wird berechnet, Dezember 0 €.
+- Wird die Firma im Laufe eines Monats wieder aktiviert, wird dieser Monat wieder berechnet.
+- Grundlage ist die Statushistorie der Firma (seit Migration 0018); Monatsgrenzen nach deutscher Zeit.
+- **Super-Admin → Umsatz** zeigt in der Spalte Kondition „Firma gesperrt – nicht berechnet“ mit Datum und
+  Grund der Sperre. **Chef-Portal → Abrechnung** zeigt dem Kunden den Hinweis mit Datum, ohne den internen Grund.
+- Die Zahl der Personen wird zur Information weiter angezeigt; der Betrag ist 0 €.
+- Bereits festgeschriebene Monate ändern sich nicht.
+
+## Rechnungen (Super-Admin → Rechnungen)
+
+- **Rechnungsnummer** `SW-2026-000001`: Präfix (Einstellung), Jahr des Rechnungsdatums, laufende Nummer je Jahr.
+  Lückenlos und eindeutig, auch wenn zwei Rechnungen gleichzeitig erzeugt werden; eine Nummer wird nie
+  wiederverwendet. Entwürfe bekommen keine Nummer.
+- **Inhalt eingefroren:** Absender, Empfänger, Positionen („Zeiterfassung – abrechenbare Mitarbeitende MM/JJJJ“,
+  Anzahl × Preis), USt-Satz, Beträge, Rechnungs- und Fälligkeitsdatum. Keine Namen von Mitarbeitenden.
+- **Storno:** erzeugt eine Stornorechnung mit eigener Nummer und negativen Beträgen; die ursprüngliche Rechnung
+  bleibt erhalten und wird als storniert gekennzeichnet. Gelöscht wird nichts. Danach kann für den Monat eine neue
+  Rechnung erzeugt werden.
+- **Umsatzsteuer:** voreingestellt 19 %. Solange der Satz nicht als „vom Auftraggeber bestätigt“ markiert ist,
+  steht auf jeder Rechnung der Hinweis „USt-Satz vom Auftraggeber zu bestätigen“.
+- **Zahlungsziel** (Standard 14 Tage) und Zahlungshinweis (z. B. Bankverbindung) sind Einstellungen.
+- **Pflichtangaben nach § 14 UStG** (Name und Anschrift des Absenders, Steuernummer oder USt-IdNr.) trägt der
+  Super-Admin ein. Fehlt etwas – auch die Anschrift des Kunden im Firmenprofil –, ist nur ein **Entwurf** mit dem
+  Wasserzeichen „Entwurf – Pflichtangaben fehlen“ möglich.
+- Beim Erzeugen wird ein noch offener Monat als „In Rechnung gestellt“ festgeschrieben. Für den laufenden Monat,
+  erlassene Monate und 0-€-Monate gibt es keine Rechnung.
+- PDF mehrseitig bei Bedarf („Seite x von y“). Der Kunde (Inhaber) sieht seine Rechnungen im Chef-Portal unter
+  „Abrechnung“ und kann sie als PDF laden.
+- Kein Versand, keine Zahlungsabwicklung, kein externer Dienst.
+- Eine **Wiederöffnung eines Monatsnachweises** (Korrektur nach Freigabe) ändert weder die festgeschriebene
+  Abrechnung noch eine Rechnung: Berechnet werden Personen, nicht Stunden.
+
 ## Zahlungsdienstleister
 
 Nur vorbereitet: Schnittstelle `PaymentProvider` in `server/src/payment.ts` mit der einzigen
@@ -115,9 +152,6 @@ Datenschutzprüfung und eine eigene Umsetzung mit Tests.
 
 ## Offene Punkte (Entscheidung des Auftraggebers)
 
-- Rechnungsstellung selbst (Rechnungsnummern, PDF-Rechnung, Versand) ist nicht Teil dieser Umsetzung;
-  der Status wird manuell gepflegt.
-- Gesperrter Mandant (Firmenzugang gesperrt): Die Berechnung richtet sich nur nach dem Status der
-  Mitarbeitenden. Soll ein gesperrter Kunde nicht berechnet werden, Monat auf „Erlassen“ setzen oder
-  „Kostenloses Konto“ mit Gültigkeit eintragen.
+- Rechnungen werden erzeugt (siehe oben), aber nicht versendet; Zahlungseingang wird manuell als „Bezahlt“ gepflegt.
+- USt-Satz 19 % ist vom Auftraggeber zu bestätigen; Absenderangaben (§ 14 UStG) sind einzutragen.
 - Umsatzsteuer: Es werden nur Nettobeträge mit dem Hinweis „zzgl. gesetzlicher USt.“ angezeigt.

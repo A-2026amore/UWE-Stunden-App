@@ -60,7 +60,9 @@ Unbekannte Schlüssel werden abgelehnt (`22023`). Zeiteinträge werden immer üb
 | `review_allocation(employee_id, month, 'approved'/'rejected', reason?)` – Ablehnung mit Begründung | definer | `reviewAllocation` |
 | `submit_statement(employee_id, month)` | definer | `submitStatement` |
 | `approve_statement(statement_id)` | definer | `approveStatement` |
-| `return_statement(statement_id, reason)` – Begründung Pflicht; freigegebene nur Inhaber | definer | `returnStatement` |
+| `return_statement(statement_id, reason)` – Begründung Pflicht; aus `submitted`/`reopened` (freigegebene: `55000`, seit 0017) | definer | `returnStatement` |
+| `reopen_statement(statement_id, reason)` – Leitung, Begründung ≥ 5 Zeichen, nur aus `approved` (0017) | definer | `reopenStatement` |
+| `platform_invoice_settings()` / `platform_set_invoice_settings(jsonb, reason)` / `platform_invoice_draft(tenant_id, month)` / `platform_issue_invoice(tenant_id, month)` / `platform_cancel_invoice(invoice_id, reason)` (0019, siehe `docs/database.md`) | definer | Rechnungen |
 | `set_employee_status(employee_id, 'active'/'locked'/'deactivated', reason)` – `locked` nur aus `active` (sonst `55000`); `active` entsperrt/reaktiviert | invoker | `setEmployeeStatus` |
 | `create_invitation(employee_id, valid_days=7) → {invitationId, token, expiresAt}` | definer | `inviteEmployee` (nach Insert in `employees`) |
 | `create_correction_request(employee_id, kind, entry_id, proposed, reason) → correction_requests` – nur eigene Einträge | definer | `createCorrectionRequest` |
@@ -194,6 +196,8 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | `listTimeEntryRevisions` | `GET /api/employees/:id/time-entries/:entryId/revisions` → Versionen (älteste zuerst): `{version, operation, isCorrection, changedAt, changedByName, reason, values, deleted, source}` |
 | `submitStatement` | `POST /api/employees/:id/statements/:month/submit` |
 | `approveStatement` / `returnStatement` | `POST /api/statements/:id/approve` · `POST /api/statements/:id/return` `{reason}` |
+| `reopenStatement` | `POST /api/statements/:id/reopen` `{reason}` → `MonthlyStatement` (`reopened`) · 400 ohne Begründung · 409 nicht freigegeben · 403 (0017) |
+| `listStatementEvents` | `GET /api/statements/:id/events` → `StatementEvent[]` (Verlauf; `actorName` nur sichtbar, wenn die Person die Leitung sehen darf, sonst `null`) |
 | `listAudit` | `GET /api/tenants/:tenantId/audit?limit=` |
 | `listTenants` / `createTenant` | `GET`/`POST /api/platform/tenants` – `POST` `{name, slug, plan, isDemo, ownerEmail, ownerName?, freeOfCharge?, conditionNote?, conditionValidUntil?}`: mit `freeOfCharge: true` (nicht bei `pilot_free`) entsteht in derselben Transaktion ein **kostenloser Testkunde** (Sonderkondition „kostenloses Konto“, optional befristet; Audit-Grund „Kostenloser Testkunde bei Anlage“) |
 | `setTenantStatus` / `setLicense` | `POST /api/platform/tenants/:id/status` `{status: "active" \| "suspended" \| "pending" \| "deactivated", reason}` (Super-Admin; `deactivated` seit 0015: Vertrag beendet, keine Anmeldung, keine Daten gelöscht) · `PUT /api/platform/tenants/:id/license` `{plan, maxEmployees?, validUntil?, note?, features?, employeePriceCents?, freeOfCharge?, conditionNote?, conditionValidFrom?, conditionValidUntil?, reason?}` (Sonderkondition seit 0012; nur gesendete Felder werden geändert, `reason` landet im Audit) |
@@ -220,6 +224,21 @@ Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …
 | `getPlatformRevenue` | `GET /api/platform/billing?month=` → `{month, defaultPriceCents, rows: PlatformRevenueRow[], totals: {billableCount, amountCents, waivedCents, demoAmountCents}, paymentProvider: "none"}` – nur Zahlen | Super-Admin, Support |
 | `getBillingSettings` / `setDefaultPrice` | `GET` / `PUT /api/platform/billing/settings` `{defaultPriceCents, reason}` | lesen: Plattform; ändern: Super-Admin |
 | `setBillingStatus` | `PUT /api/platform/tenants/:tenantId/billing/:month` `{status, note?}` → `BillingMonthSummary` · 409 laufender/künftiger Monat · 400 ohne Grund bei `waived`/Wiederöffnen | Super-Admin |
+
+**Rechnungen (0019, `docs/preismodell.md`)**
+
+| Repository | HTTP | Wer |
+|---|---|---|
+| `getInvoiceSettings` | `GET /api/platform/invoice-settings` → `InvoiceSettings` (+ `missing[]`) | Super-Admin, Support |
+| `updateInvoiceSettings` | `PUT /api/platform/invoice-settings` `{…Felder, reason}` → `InvoiceSettings` | Super-Admin |
+| `listInvoices` | `GET /api/platform/invoices?tenantId=&month=` → `Invoice[]` | Super-Admin, Support |
+| `getInvoiceDraft` | `GET /api/platform/tenants/:tenantId/invoices/:month/draft` → `InvoiceDraft` (ohne Nummer, `missing[]`) | Super-Admin, Support |
+| `issueInvoice` | `POST /api/platform/tenants/:tenantId/invoices/:month` `{}` → 201 `Invoice` · 409 bestehende Rechnung/laufender Monat/erlassen/0 € · 400 Pflichtangaben fehlen | Super-Admin |
+| `cancelInvoice` | `POST /api/platform/invoices/:invoiceId/cancel` `{reason}` → 201 `Invoice` (Stornorechnung) · 400 ohne Grund · 409 bereits storniert | Super-Admin |
+| `listTenantInvoices` | `GET /api/tenants/:tenantId/invoices` → `Invoice[]` (nur eigene Firma) | Inhaber |
+
+`getTenantBilling` liefert zusätzlich `tenantBlock: {status, since} | null` (gesperrte Firma, ohne Grund);
+`getPlatformRevenue` je Zeile `blockSince`/`blockReason` (0018).
 
 `setEmployeeStatus` (`POST /api/employees/:id/status`) akzeptiert seit 0012 `{status: "active" | "locked" | "deactivated", reason}`.
 Gesperrte Personen haben sofort keinen Zugriff mehr (bestehende Sitzungen: 403), die Anmeldung antwortet wie bei

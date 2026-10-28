@@ -1777,7 +1777,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         assertPlatform(s);
         return db.audit
           .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant"
-            || e.entity === "billing_period" || e.entity === "billing_settings")
+            || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, limit);
       });

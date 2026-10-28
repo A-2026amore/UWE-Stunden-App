@@ -175,7 +175,8 @@ describe("manager scope", () => {
     expect((await t.call("PATCH", `/api/tenants/${A}/settings`, { cookie: c, body: { breakPolicy: { maxShiftMinutes: 600 } } })).status).toBe(403);
     expect((await t.call("PATCH", `/api/employees/${E.emp1A}`, { cookie: c, body: { role: "manager" } })).status).toBe(403);
     expect((await t.call("PUT", `/api/tenants/${A}/support-grant`, { cookie: c, body: { hours: 1 } })).status).toBe(403);
-    expect((await t.call("POST", `/api/statements/${statementA}/return`, { cookie: c, body: { reason: "Wieder öffnen" } })).status).toBe(403);
+    // since 0017 nobody returns an approved statement (re-opening is POST …/reopen, tested in entries/corrections)
+    expect((await t.call("POST", `/api/statements/${statementA}/return`, { cookie: c, body: { reason: "Wieder öffnen" } })).status).toBe(409);
   });
 });
 
