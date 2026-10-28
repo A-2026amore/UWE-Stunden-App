@@ -29,7 +29,15 @@ test("employee requests a correction in the approved month, the manager accepts 
   await expect(card).toContainText("Sam Probe");
   await expect(card).toContainText("Monat freigegeben");
   await card.getByRole("button", { name: "Anfrage von Sam Probe annehmen" }).click();
-  await chef.getByRole("dialog").getByRole("button", { name: "Annehmen", exact: true }).click();
+  // decision 28.10.2026: an approved month is re-opened first (mandatory reason), then corrected
+  await expect(chef.getByRole("dialog")).toContainText("erst nach einer dokumentierten Wiederöffnung");
+  await chef.getByRole("dialog", { name: "Monat ist freigegeben" }).getByRole("button", { name: "Monat wieder öffnen", exact: true }).click();
+  const reopen = chef.getByRole("dialog", { name: "Monat wieder öffnen" });
+  await reopen.getByLabel("Begründung (Pflicht, mind. 5 Zeichen)").fill("Korrekturanfrage Fahrtenbuch");
+  await reopen.getByRole("button", { name: "Wieder öffnen", exact: true }).click();
+  const confirm = chef.getByRole("dialog", { name: "Korrekturanfrage annehmen?" });
+  await expect(confirm).toContainText("Der Monat ist wieder geöffnet.");
+  await confirm.getByRole("button", { name: "Annehmen", exact: true }).click();
   await expect(chef.getByText("Keine offenen Korrekturanfragen")).toBeVisible();
 
   const entry = await rows(stack.db,
@@ -38,7 +46,12 @@ test("employee requests a correction in the approved month, the manager accepts 
 
   await go(chef, "#/nachweise");
   await chef.getByLabel("Monat wählen").fill("2026-09");
-  await expect(chef.getByRole("row", { name: /Sam Probe/ })).toContainText("nach Freigabe korrigiert");
+  const row = chef.getByRole("row", { name: /Sam Probe/ });
+  await expect(row).toContainText("Wieder geöffnet");
+  await expect(row).toContainText("Korrekturanfrage Fahrtenbuch");
+  const events = await rows(stack.db,
+    "select action, reason from public.monthly_statement_events where employee_id = $1 and action = 'reopen'", [IDS.employees.emp1A]);
+  expect(events).toEqual([{ action: "reopen", reason: "Korrekturanfrage Fahrtenbuch" }]);
   await ctx.close();
 
   await page.reload();
