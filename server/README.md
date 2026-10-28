@@ -25,7 +25,8 @@ Browser ──HTTPS──▶ Caddy ──▶ Node-API (127.0.0.1:3000) ──▶
 | `src/twoFactor.ts` | Zwei-Faktor-Anmeldung (TOTP): Verschlüsselung des Geheimnisses, Code-Prüfung mit Replay-Schutz, Wiederherstellungscodes, zweiter Anmeldeschritt |
 | `src/static.ts` | Optional: Auslieferung von `platform/dist` (`STATIC_DIR`) mit eigener CSP |
 | `src/mailer.ts` | E-Mail (minimaler SMTP-Client; ohne SMTP: Ausgabe ins Log nur in Entwicklung) |
-| `src/cli.ts` | Betriebsbefehl `set-password` |
+| `src/cli.ts` | Betriebsbefehle `set-password` und `invite-link` |
+| `src/operator.ts` | Einladungslink für den Betrieb ohne E-Mail (`invite-link`), Link-Aufbau |
 | `src/migrate.ts` | Migrationsjob: `db/migrations` als Eigentümer einspielen (Versionstabelle `ops.schema_migrations` mit Prüfsumme), Passwort für `app_api` setzen (`deploy/README.md`) |
 | `register.mjs`, `resolve-ts.mjs` | Lädt TypeScript direkt (Node-Typ-Entfernung) inkl. `platform/src/core` |
 
@@ -54,6 +55,19 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 
 Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **nur** wenn
 `NODE_ENV` nicht `production` ist. In Produktion ohne SMTP wird nur eine Warnung ohne Inhalt geloggt.
+
+**Einladung ohne E-Mail (Betrieb ohne SMTP, z. B. Testumgebung):** Der Betreiber erzeugt den Link auf der
+Server-Konsole. Er erscheint nur dort (stdout), nie im Log und nie in einer API-Antwort:
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs   server/src/cli.ts invite-link <mandant-kurzname> <email> <employee|manager|owner> [--days=7] [--name="Vorname Name"]
+```
+
+Gibt es im Mandanten schon eine offene Einladung für die Adresse (z. B. Inhaber nach dem Anlegen des Mandanten),
+wird sie erneuert (gleiche Rolle nötig, ältere Links werden ungültig); sonst entsteht ein neuer Zugang im Status
+`invited` mit Personalnummer `CLI-…` (später im Chef-Portal änderbar). Bereits verknüpfte oder deaktivierte Zugänge
+werden abgelehnt. Benötigt `DATABASE_URL` und `PUBLIC_ORIGIN` (wie die API). Den Link nur persönlich bzw. über einen
+sicheren Kanal weitergeben; Terminal-Verlauf/Mitschnitte beachten.
 
 ## Umgebungsvariablen
 

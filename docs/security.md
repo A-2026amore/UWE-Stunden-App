@@ -40,7 +40,9 @@ nur der Inhaber. Vier-Augen-Prinzip: Leitung gibt eigene Abschlüsse/Zuweisungen
 Anfragerollen nur lesbar.
 
 **Plattformrollen** (`platform_admins.role`): `super_admin` verwaltet Mandanten und Lizenzen;
-`support` hat nur Lesezugriff auf Metadaten. Beide sehen **ohne Freigabe keine personenbezogenen
+`support` hat nur Lesezugriff auf Metadaten. Das Firmenprofil (Name, Branding, Kontakt, Einstellungen)
+eines Mandanten ändert **nur der Inhaber** – Plattformpersonal auch nicht mit Support-Freigabe (seit
+Migration 0011; Status nur über `set_tenant_status`, Anlage über `create_tenant`). Beide sehen **ohne Freigabe keine personenbezogenen
 Daten** (Mitarbeiter, Zeiten, Konten, Abschlüsse, Revisionen) – nur Mandanten-Metadaten, Lizenz
 und Mitarbeiterzahlen (`platform_list_tenants()`).
 
@@ -137,6 +139,12 @@ damit er sich nicht aussperrt.
   (`RATE_LIMIT_2FA_PER_IP`, Standard 50); Antwort 429 mit `Retry-After`.
 - Keine Kontenaufzählung: Falsches Passwort ergibt dieselbe Antwort wie bisher, egal ob 2FA eingerichtet ist;
   der zweite Schritt wird nur nach richtigem Passwort angeboten.
+- Gesperrter Zugang (Mitarbeiter deaktiviert, Mandant gesperrt) bei eingerichteter 2FA: Der Passwortschritt
+  antwortet genau wie bei einem aktiven Konto (Challenge); „gesperrt“ (403) meldet die API erst nach dem richtigen
+  zweiten Faktor. Ohne 2FA verrät die Anmeldung die Sperre nie: Die Antwort ist dieselbe wie bei falschem
+  Passwort (401, gleicher Text, zählt für die Anmeldesperre, ähnliche Laufzeit: Fehlversuche führen dieselben zwei
+  lesenden Datenbankabfragen aus – Mitgliedschaft und 2FA-Zustand), eine Sitzung entsteht nicht (QA 2026-10-28, B4). Eine bereits bestehende Sitzung erhält bei
+  der nächsten Anfrage weiterhin die verständliche Meldung (403 `tenant_suspended` bzw. `forbidden`).
 - Vergleiche in konstanter Zeit (`timingSafeEqual`), alle Kandidaten des Toleranzfensters werden berechnet.
 - Aktivieren beendet alle **anderen** Sitzungen des Kontos. Deaktivieren und neue Wiederherstellungscodes
   verlangen Passwort **und** Code.

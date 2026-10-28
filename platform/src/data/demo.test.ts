@@ -66,6 +66,18 @@ describe("demo repository – tenant isolation", () => {
     await expect(repo.createTimeEntry(ANNA, { id: "x1", date: "2026-10-20", start: "08:00", end: "10:00", pauseMinutes: 0, note: "" })).rejects.toBeInstanceOf(AccessDeniedError);
   });
 
+  it("only the owner changes the company profile and settings – not managers (like the API, QA B3)", async () => {
+    const manager = await as("dispo@demo-kt.example");
+    await expect(manager.repo.updateBranding(DEMO_TENANT_IDS.kt, { primaryColor: "#000000" })).rejects.toThrow("Firmendaten darf nur der Inhaber ändern.");
+    await expect(manager.repo.updateContact(DEMO_TENANT_IDS.kt, { city: "Leitungsstadt" })).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(manager.repo.updateSettings(DEMO_TENANT_IDS.kt, { workAccount: { enabled: false } as never })).rejects.toThrow("Einstellungen darf nur der Inhaber ändern.");
+    expect((await manager.repo.getTenant(DEMO_TENANT_IDS.kt)).branding.primaryColor).not.toBe("#000000");
+
+    const owner = await as("chef@demo-kt.example");
+    expect((await owner.repo.updateBranding(DEMO_TENANT_IDS.kt, { primaryColor: "#112233" })).branding.primaryColor).toBe("#112233");
+    expect((await owner.repo.updateContact(DEMO_TENANT_IDS.kt, { city: "Aachen" })).contact.city).toBe("Aachen");
+  });
+
   it("lets employees see only their own data", async () => {
     const { repo } = await as("anna@demo-kt.example");
     const list = await repo.listEmployees(DEMO_TENANT_IDS.kt);

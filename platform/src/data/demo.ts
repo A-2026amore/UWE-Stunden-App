@@ -548,6 +548,11 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     assertMember(s, tenantId);
     if (!isManager(s)) throw new AccessDeniedError("Diese Funktion ist nur für Vorgesetzte freigegeben.");
   }
+  /** Company profile and settings: owner only, like the API (RLS tenants_update, migration 0011; QA B3). */
+  function assertOwner(s: Session, tenantId: UUID, message: string) {
+    assertMember(s, tenantId);
+    if (s.role !== "owner") throw new AccessDeniedError(message);
+  }
   /** Personal data: own record (employee), whole tenant (manager) or platform support with active grant (read only). */
   function assertEmployeeRead(db: DemoDb, s: Session, employeeId: UUID): Employee {
     const emp = db.employees.find((e) => e.id === employeeId);
@@ -773,7 +778,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     },
     async updateBranding(tenantId, branding: Partial<Branding>) {
       return tx((db, s) => {
-        assertManager(s, tenantId);
+        assertOwner(s, tenantId, "Firmendaten darf nur der Inhaber ändern.");
         const t = tenantById(db, tenantId);
         for (const key of ["primaryColor", "secondaryColor", "accentColor"] as const) {
           const v = branding[key];
@@ -789,7 +794,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     },
     async updateContact(tenantId, contact: Partial<CompanyContact>) {
       return tx((db, s) => {
-        assertManager(s, tenantId);
+        assertOwner(s, tenantId, "Firmendaten darf nur der Inhaber ändern.");
         const t = tenantById(db, tenantId);
         if (contact.whatsapp && !/^\d{8,15}$/.test(contact.whatsapp)) throw new Error("WhatsApp-Nummer bitte nur als Ziffern mit Ländervorwahl angeben, z. B. 492411234567.");
         if (contact.email && !/^\S+@\S+\.\S+$/.test(contact.email)) throw new Error("Bitte eine gültige E-Mail-Adresse angeben.");
@@ -803,13 +808,10 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     },
     async updateSettings(tenantId, settings: Partial<TenantSettings>) {
       return tx((db, s) => {
-        assertManager(s, tenantId);
+        assertOwner(s, tenantId, "Einstellungen darf nur der Inhaber ändern.");
         const t = tenantById(db, tenantId);
         const before = clone(t.settings);
-        if (settings.breakPolicy) {
-          if (s.role !== "owner") throw new AccessDeniedError("Pausenregeln darf nur der Inhaber ändern.");
-          t.settings.breakPolicy = settings.breakPolicy;
-        }
+        if (settings.breakPolicy) t.settings.breakPolicy = settings.breakPolicy;
         if (settings.workAccount) {
           const w = { ...t.settings.workAccount, ...settings.workAccount };
           if (!Number.isSafeInteger(w.openingMinutes) || Math.abs(w.openingMinutes) > 60000) throw new Error("Ungültiger Startsaldo.");

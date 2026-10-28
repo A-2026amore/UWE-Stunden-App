@@ -126,7 +126,7 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 
 | Methode, Pfad | Body | Antwort |
 |---|---|---|
-| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · mit eingerichteter 2FA stattdessen 200 `{twoFactorRequired: true}` + Cookie `__Host-tfa` (keine Sitzung) · 401 einheitlicher Text · 403 Zugang inaktiv bzw. `tenant_suspended` · 429 |
+| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · mit eingerichteter 2FA stattdessen 200 `{twoFactorRequired: true}` + Cookie `__Host-tfa` (keine Sitzung) · 401 einheitlicher Text · gesperrter Zugang ohne 2FA: dieselbe 401 wie bei falschem Passwort; mit 2FA Challenge wie üblich, 403 `tenant_suspended`/`forbidden` erst bei `2fa/verify` · 429 |
 | `POST /api/auth/logout` | `{}` | 204, Cookies (Sitzung, ausstehender 2FA-Schritt) gelöscht, Sitzung widerrufen |
 | `GET /api/auth/session` | – | 200 `Session` oder `null` (Session enthält zusätzlich `memberships`) |
 | `POST /api/auth/password-reset` | `{email}` | immer 204 (keine Kontenaufzählung); Link `PUBLIC_ORIGIN + RESET_LINK_PATH#token=…` |
@@ -171,7 +171,7 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | Einladung erneut senden | `POST /api/employees/:id/invitation` → `{expiresAt, delivery}` (`delivery`: `sent` · `logged` · `failed`). Der Einladungslink wird nie an die Leitung zurückgegeben, nur an die eingeladene Adresse gesendet. Auch `inviteEmployee` liefert zusätzlich `invitation: {expiresAt, delivery}`. |
 | `listTimeEntries` | `GET /api/employees/:id/time-entries?month=YYYY-MM` |
 | `listTenantTimeEntries` | `GET /api/tenants/:tenantId/time-entries?from=YYYY-MM-DD&to=YYYY-MM-DD` (max. 400 Tage) |
-| `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |
+| `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App, **nur für eigene Einträge**, sonst 403), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |
 | `updateTimeEntry` | `PATCH /api/employees/:id/time-entries/:entryId` oder `PATCH /api/time-entries/:entryId` – `{patch, expectedVersion, reason?}` |
 | `deleteTimeEntry` | `DELETE` (gleiche Pfade) – `{expectedVersion, reason?}` (Soft-Delete) |
 | `listAllocations` / `setAllocation` | `GET /api/employees/:id/allocations` · `PUT /api/employees/:id/allocations/:month` `{minutes}` |

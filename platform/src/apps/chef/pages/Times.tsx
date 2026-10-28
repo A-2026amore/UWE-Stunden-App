@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { activeShifts, addDays, isRealDate, netMinutes } from "../../../core/time";
+import { csvRow } from "../../../core/csv";
 import { evaluateDay, issueForDay } from "../../../core/breaks";
 import type { Employee, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
@@ -42,11 +43,6 @@ function rangeLabel(view: View, date: string): string {
 
 const net = (e: TimeEntry) => netMinutes({ ...e, pause: e.pauseMinutes });
 
-function csvCell(v: string | number): string {
-  const s = String(v);
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
 export function TimesPage() {
   const { repo, tenant, version, changed } = useChef();
   const toast = useToast();
@@ -71,9 +67,11 @@ export function TimesPage() {
     const head = ["Personalnummer", "Name", "Datum", "Beginn", "Ende", "Pause (Min.)", "Stunden", "Bemerkung", "Quelle"];
     const lines = rows.map((e) => {
       const emp = byId.get(e.employeeId);
-      return [emp?.personnelNumber ?? "", emp?.displayName ?? "", formatDateDE(e.date), e.start, e.end, e.pauseMinutes, (net(e) / 60).toFixed(2).replace(".", ","), e.note, e.source === "correction" ? "Korrektur" : "App"].map(csvCell).join(";");
+      // csvRow neutralises formula-like free texts (notes, names) – QA B6.
+      return csvRow([emp?.personnelNumber ?? "", emp?.displayName ?? "", formatDateDE(e.date), e.start, e.end, e.pauseMinutes, (net(e) / 60).toFixed(2).replace(".", ","), e.note,
+        e.source === "correction" ? "Korrektur" : e.source === "migration" ? "Übernahme" : "App"]);
     });
-    const csv = "﻿" + [head.join(";"), ...lines].join("\r\n");
+    const csv = "﻿" + [csvRow(head), ...lines].join("\r\n");
     const who = employeeId === "all" ? "alle" : (byId.get(employeeId)?.personnelNumber ?? "mitarbeiter");
     downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `Arbeitszeiten_${tenant.slug}_${from}_${to}_${who}.csv`);
     toast("CSV-Datei wurde erstellt.");

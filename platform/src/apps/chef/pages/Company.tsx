@@ -20,7 +20,9 @@ function readFile(file: File): Promise<string> {
 }
 
 export function CompanyPage() {
-  const { repo, tenant, setTenant, changed } = useChef();
+  const { repo, tenant, setTenant, changed, me } = useChef();
+  // Company profile: owner only (API since migration 0011, QA B3); managers see it read-only.
+  const canEdit = me.role === "owner";
   const toast = useToast();
   const [branding, setBranding] = useState<Branding>(tenant.branding);
   const [contact, setContact] = useState<CompanyContact>(tenant.contact);
@@ -76,8 +78,9 @@ export function CompanyPage() {
     <form class="stack" onSubmit={save} noValidate>
       <div class="row-between">
         <h1 class="page-title">Firmenprofil</h1>
-        <Button type="submit" icon="check" busy={busy}>Speichern</Button>
+        <Button type="submit" icon="check" busy={busy} disabled={!canEdit}>Speichern</Button>
       </div>
+      {!canEdit && <Alert tone="info">Firmendaten darf nur der Inhaber ändern.</Alert>}
       {error && <Alert tone="danger" live>{error}</Alert>}
       <div class="grid-2" style={{ alignItems: "start" }}>
         <div class="stack">

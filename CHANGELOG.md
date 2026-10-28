@@ -5,6 +5,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Betreiberbefehl `cli.ts invite-link <mandant> <email> <rolle>` (QA 2026-10-28, B1): Einladungslink ohne
+  E-Mail, Ausgabe nur auf der Konsole; Migration `0010_operator_invitation.sql`.
 - Container-Betrieb: mehrstufiges `Dockerfile` (Node 22, Lockfile, Nicht-root, API liefert die gebauten
   Oberflächen aus), `deploy/docker-compose.yml` mit PostgreSQL 16 im internen Netz, externem Netz `proxy`,
   Backup-Label und Healthchecks, `deploy/.env.example`, `deploy/README.md`. Migrationsjob
@@ -39,6 +41,21 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Demo: Geheimnis im Browser, Schaltfläche „Demo: aktuellen Code einsetzen“.
 - Tests: 284 Unit-, 209 Datenbank-/API-, 122 Browsertests (Demo-Build und Alt-App, Chromium Desktop und
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
+
+### Sicherheit (QA 2026-10-28)
+- B3: Firmenprofil (Branding, Kontakt, Einstellungen, Name) ändert nur noch der Inhaber. Plattformpersonal hat
+  keinen Schreibzugriff mehr auf Mandantenzeilen, auch nicht mit Support-Freigabe; Statuswechsel nur über
+  `set_tenant_status` (jetzt SECURITY DEFINER mit Super-Admin-Prüfung). Migration `0011_tenant_profile_owner_only.sql`.
+  Demo-Repository und Chef-Portal angeglichen: Firmenprofil und Einstellungen nur für den Inhaber, Leitung sieht das
+  Firmenprofil schreibgeschützt.
+- B4: Anmeldung eines gesperrten Kontos verrät die Sperre (und damit das richtige Passwort) nicht mehr: mit 2FA
+  folgt die 403-Meldung erst nach dem richtigen Code, ohne 2FA lautet die Antwort wie bei falschem Passwort (401).
+- B5: Herkunft `source: "migration"` (Altdaten-Übernahme) nur noch für eigene Einträge der angemeldeten Person;
+  Leitung kann Einträge anderer nicht als „Übernahme“ markieren (403).
+- B6: CSV-Export der Arbeitszeiten (Chef-Portal) schützt vor Formel-Injektion: Freitexte, die mit `=`, `+`, `-`,
+  `@` (auch nach führendem Leerraum), Tab oder CR beginnen, erhalten ein vorangestelltes `'` (`platform/src/core/csv.ts`); Quelle „Übernahme“
+  wird im Export ausgewiesen.
+- B7: Stilllegen/Löschen von Mandanten dokumentiert (`docs/betrieb.md`, 6.1a); weiterhin kein API-Endpunkt.
 
 ### Bekannte Fehler der Alt-App (dokumentiert, nicht geändert)
 - Überschneidung über Mitternacht wird nicht erkannt.

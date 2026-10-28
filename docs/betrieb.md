@@ -74,6 +74,8 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
   optional `SMTP_*`); vollständige Liste, systemd-Unit, Caddy-Beispiel und Backup-Hinweise in
   `server/README.md`.
 - Passwörter setzt der Betrieb mit `server/src/cli.ts set-password <email>` (Passwort über stdin).
+- Einladungslinks ohne E-Mail (kein SMTP): `server/src/cli.ts invite-link <mandant-kurzname> <email> <rolle>`.
+  Der Link erscheint nur auf der Konsole, nie im Log oder in der API (Details `server/README.md`).
 - Ohne SMTP werden E-Mails nur in der Entwicklung ins Log geschrieben; in Produktion nie.
 - Rate-Limits liegen im Prozessspeicher: **eine** API-Instanz betreiben (oder gemeinsamen Speicher ergänzen).
 - Tests: `npx vitest run --project db --no-file-parallelism tests/server`.
@@ -122,6 +124,30 @@ update auth.sessions set revoked_at = now()
 ```
 
 Danach meldet sich die Person nur mit Passwort an; ist 2FA für sie Pflicht, sieht sie direkt die Neueinrichtung.
+
+### 6.1a Mandanten stilllegen bzw. löschen (QA 2026-10-28, B7)
+
+- Die API hat **bewusst keinen** Lösch- oder Archivierungsendpunkt für Mandanten. Stilllegen = Status
+  `suspended` (Super-Admin im Admin-Portal bzw. `POST /api/platform/tenants/:id/status` mit Grund). Gesperrte
+  Mandanten sind für ihre Mitglieder vollständig gesperrt und öffentlich nicht mehr auffindbar (404).
+- Physisches Löschen ist eine **Wartungsarbeit** des Betreibers direkt in der Datenbank (Eigentümerrolle, nicht
+  `app_api`), nur nach Backup und nur für Test-/Demo-Mandanten (`is_demo = true`). Echte Mandanten unterliegen
+  Aufbewahrungsfristen (`docs/security.md`, Abschnitt 7) – vor einer Löschung Freigabe des
+  Auftraggebers einholen.
+- Das Audit-Log ist append-only und hat keinen Fremdschlüssel auf `tenants`: Einträge eines gelöschten Mandanten
+  bleiben erhalten (gewollt, Nachweis).
+- Ablauf (nicht automatisiert getestet – zuerst in einer Kopie der Datenbank ausprobieren):
+
+```sql
+begin;
+-- nur Demo-Mandanten; Kurzname genau prüfen
+select id, name, is_demo, status from public.tenants where slug = 'qa-testfirma-a';
+delete from public.tenants where slug = 'qa-testfirma-a' and is_demo;   -- Fremdschlüssel löschen abhängige Zeilen mit
+-- Anzahl prüfen (erwartet: 1), sonst rollback;
+commit;
+```
+
+Ein eigenes Aufräum-Skript für `is_demo`-Mandanten der Testumgebung ist ein offener Punkt.
 
 ## 6.2 Container-Betrieb (Docker Compose)
 
