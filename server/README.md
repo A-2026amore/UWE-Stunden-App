@@ -93,6 +93,7 @@ sicheren Kanal weitergeben; Terminal-Verlauf/Mitschnitte beachten.
 | `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel | 32 Byte (Base64 oder 64 Hex), verschlüsselt die TOTP-Geheimnisse. Erzeugen: `openssl rand -base64 32`. Getrennt von DB-Backups sichern; Rotation: `docs/betrieb.md` Abschnitt 6.1. |
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel (kommagetrennt), nur zum Entschlüsseln während einer Rotation. |
 | `TOTP_ISSUER` | – | `Stundenwerk` | Anzeigename in der Authenticator-App. |
+| `PAYMENT_PROVIDER` | – | `none` | Zahlungsdienstleister. Nur `none` (keine Abbuchungen, keine externen Aufrufe, `src/payment.ts`); jeder andere Wert verhindert den Start. |
 
 Ein `SESSION_SECRET` wird nicht benötigt: Sitzungs-Token sind 32 zufällige Bytes, die Datenbank
 speichert nur ihren SHA-256-Hash.

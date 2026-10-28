@@ -18,6 +18,8 @@ export const ACTION_LABEL: Record<string, string> = {
   "employee.activated": "Zugang aktiviert",
   "employee.deactivated": "Zugang deaktiviert",
   "employee.activated_by_login": "Erste Anmeldung",
+  "employee.locked": "Zugang gesperrt",
+  "employee.unlocked": "Zugang entsperrt",
   "allocation.set": "Kontoaufteilung gespeichert",
   "allocation.approved": "Kontoaufteilung bestätigt",
   "allocation.rejected": "Kontoaufteilung abgelehnt",
@@ -34,4 +36,6 @@ export const ACTION_LABEL: Record<string, string> = {
   "license.updated": "Lizenz geändert",
   "support_grant.granted": "Supportzugriff freigegeben",
   "support_grant.revoked": "Supportzugriff beendet",
+  "billing_period.status": "Abrechnungsstatus geändert",
+  "billing_settings.default_price": "Standardpreis geändert",
 };

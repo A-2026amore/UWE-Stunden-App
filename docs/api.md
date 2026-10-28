@@ -61,7 +61,7 @@ Unbekannte Schlüssel werden abgelehnt (`22023`). Zeiteinträge werden immer üb
 | `submit_statement(employee_id, month)` | definer | `submitStatement` |
 | `approve_statement(statement_id)` | definer | `approveStatement` |
 | `return_statement(statement_id, reason)` – Begründung Pflicht; freigegebene nur Inhaber | definer | `returnStatement` |
-| `set_employee_status(employee_id, 'active'/'deactivated', reason)` | invoker | `setEmployeeStatus` |
+| `set_employee_status(employee_id, 'active'/'locked'/'deactivated', reason)` – `locked` nur aus `active` (sonst `55000`); `active` entsperrt/reaktiviert | invoker | `setEmployeeStatus` |
 | `create_invitation(employee_id, valid_days=7) → {invitationId, token, expiresAt}` | definer | `inviteEmployee` (nach Insert in `employees`) |
 | `create_correction_request(employee_id, kind, entry_id, proposed, reason) → correction_requests` – nur eigene Einträge | definer | `createCorrectionRequest` |
 | `withdraw_correction_request(id)` – eigene offene Anfrage | definer | `withdrawCorrectionRequest` |
@@ -69,7 +69,12 @@ Unbekannte Schlüssel werden abgelehnt (`22023`). Zeiteinträge werden immer üb
 | `grant_support_access(tenant_id, hours, reason, grantee?)`, `revoke_support_access(grant_id)` | definer | Inhaber-Einstellungen |
 | `platform_list_tenants()` – nur Metadaten und Zahlen | definer | `listTenants` |
 | `create_tenant(name, slug, plan, is_demo, owner_email, owner_name?, contact?) → {tenantId, licenseId, ownerEmployeeId, invitationToken}` | definer | `createTenant` |
-| `set_tenant_status(tenant_id, status, reason)` | invoker | `setTenantStatus` |
+| `set_tenant_status(tenant_id, status, reason)` | definer (seit 0011) | `setTenantStatus` |
+| `tenant_billing(tenant_id, month) → jsonb` `{tenantId, month, isCurrentMonth, status, final, condition, plan, unitPriceCents, billableCount, amountCents, currency, closedAt, lines[{employeeId, displayName, personnelNumber, role, status, reason}]}` – nur Leitung des Mandanten; künftige Monate `22023` | definer (0012) | `getTenantBilling` |
+| `tenant_billing_history(tenant_id, limit=12) → (month, status, final, condition, unit_price_cents, billable_count, amount_cents)` – ab laufendem Monat rückwärts, nicht vor Anlage des Mandanten | definer (0012) | `listTenantBillingHistory` |
+| `platform_billing_overview(month)` – je Mandant nur Zahlen (keine Namen) | definer (0012) | `getPlatformRevenue` |
+| `platform_set_billing_status(tenant_id, month, 'open'/'invoiced'/'paid'/'waived', note?)` – nur vergangene Monate (`55000`), Verlassen von `open` schreibt fest, `waived` und Wiederöffnen brauchen eine Begründung, Audit | definer (0012) | `setBillingStatus` |
+| `platform_set_default_price(cents, reason)` – nur Super-Admin, Audit | definer (0012) | `setDefaultPrice` |
 
 Direkter Tabellenzugriff (unter RLS) für die übrigen Methoden, z. B.
 `getTenant` → `select … from tenants where id = $1`; `updateBranding/Contact/Settings` →
@@ -189,8 +194,25 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | `approveStatement` / `returnStatement` | `POST /api/statements/:id/approve` · `POST /api/statements/:id/return` `{reason}` |
 | `listAudit` | `GET /api/tenants/:tenantId/audit?limit=` |
 | `listTenants` / `createTenant` | `GET`/`POST /api/platform/tenants` |
-| `setTenantStatus` / `setLicense` | `POST /api/platform/tenants/:id/status` · `PUT /api/platform/tenants/:id/license` |
-| Plattform-Audit (UI) | `GET /api/platform/audit?limit=` |
+| `setTenantStatus` / `setLicense` | `POST /api/platform/tenants/:id/status` · `PUT /api/platform/tenants/:id/license` `{plan, maxEmployees?, validUntil?, note?, features?, employeePriceCents?, freeOfCharge?, conditionNote?, conditionValidFrom?, conditionValidUntil?, reason?}` (Sonderkondition seit 0012; nur gesendete Felder werden geändert, `reason` landet im Audit) |
+| Plattform-Audit (UI) | `GET /api/platform/audit?limit=` (Mandant, Lizenz, Supportfreigabe, Abrechnungsstatus, Standardpreis) |
+
+**Abrechnung (Preismodell, `docs/preismodell.md`)**
+
+| Repository-Methode | Methode, Pfad | Wer |
+|---|---|---|
+| `getTenantBilling` | `GET /api/tenants/:tenantId/billing?month=YYYY-MM` → `TenantBillingMonth` (mit Namen) · 400 künftiger Monat | Inhaber, Leitung |
+| `listTenantBillingHistory` | `GET /api/tenants/:tenantId/billing/history?limit=1–36` → `BillingMonthSummary[]` | Inhaber, Leitung |
+| `getPlatformRevenue` | `GET /api/platform/billing?month=` → `{month, defaultPriceCents, rows: PlatformRevenueRow[], totals: {billableCount, amountCents, waivedCents, demoAmountCents}, paymentProvider: "none"}` – nur Zahlen | Super-Admin, Support |
+| `getBillingSettings` / `setDefaultPrice` | `GET` / `PUT /api/platform/billing/settings` `{defaultPriceCents, reason}` | lesen: Plattform; ändern: Super-Admin |
+| `setBillingStatus` | `PUT /api/platform/tenants/:tenantId/billing/:month` `{status, note?}` → `BillingMonthSummary` · 409 laufender/künftiger Monat · 400 ohne Grund bei `waived`/Wiederöffnen | Super-Admin |
+
+`setEmployeeStatus` (`POST /api/employees/:id/status`) akzeptiert seit 0012 `{status: "active" | "locked" | "deactivated", reason}`.
+Gesperrte Personen haben sofort keinen Zugriff mehr (bestehende Sitzungen: 403), die Anmeldung antwortet wie bei
+falschem Passwort (B4).
+
+Zahlungsdienstleister: `PAYMENT_PROVIDER` (nur `none`, Standard) – siehe `server/src/payment.ts`; es gibt keinen
+Endpunkt, der Zahlungen auslöst.
 
 **Fachregeln in der API**
 - **Korrekturanfragen** (seit 0013) laufen nie über die Offline-Warteschlange der Mitarbeiter-App: ohne Verbindung

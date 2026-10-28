@@ -26,6 +26,16 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   `/api/correction-requests/:id/withdraw|decide`, `/api/employees/:id/time-entries/:entryId/revisions`; Statements mit
   `correctedAfterApproval`. Anfragen nur online (klare Meldung offline). Bedienung: `docs/bedienung-korrekturen.md`.
   Demo: Löschen durch die Leitung setzt wie auf dem Server die Herkunft „Korrektur“; Verlauf wird ab jetzt aufgezeichnet.
+- Preismodell (Entscheidung vom 28.10.2026, `docs/preismodell.md`): 5,00 € netto je abrechenbarem Mitarbeiter
+  und Monat, keine Grundgebühr/Mindestanzahl/Staffeln. Migration `0012_billing.sql`: Mitarbeiterstatus „gesperrt“
+  (`locked`), Statushistorie per Trigger (Bestand aus dem Audit-Log), Standardpreis (`billing_settings`),
+  Sonderkonditionen in `licenses` (Sonderpreis, kostenloses Konto, Notiz, Gültigkeit; `pilot_free` bleibt
+  kostenlos), Abrechnungsfunktionen in SQL (Europe/Berlin), Abrechnungsstatus je Mandant und Monat
+  (offen/in Rechnung gestellt/bezahlt/erlassen) mit Festschreibung beim Abschluss und Audit.
+  Fachlogik `platform/src/core/billing.ts`, API-Routen `/api/tenants/:id/billing*`, `/api/platform/billing*`,
+  Chef-Portal „Abrechnung“ und Sperren/Entsperren, Super-Admin „Umsatz“ und „Preismodell“, Sonderkonditionen je
+  Mandant. Zahlungsdienstleister nur vorbereitet (`server/src/payment.ts`, einzige Umsetzung `none`,
+  `PAYMENT_PROVIDER`). Tests: DB, Server, Unit, E2E (Demo).
 - Betreiberbefehl `cli.ts invite-link <mandant> <email> <rolle>` (QA 2026-10-28, B1): Einladungslink ohne
   E-Mail, Ausgabe nur auf der Konsole; Migration `0010_operator_invitation.sql`.
 - Container-Betrieb: mehrstufiges `Dockerfile` (Node 22, Lockfile, Nicht-root, API liefert die gebauten

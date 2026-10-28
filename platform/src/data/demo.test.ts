@@ -276,3 +276,94 @@ describe("demo repository – two-factor authentication", () => {
     await expect(anna.setTwoFactorRequirement(DEMO_TENANT_IDS.kt, false)).rejects.toBeInstanceOf(AccessDeniedError);
   });
 });
+
+describe("demo repository – price model (billing)", () => {
+  const DISPO = "30000000-0000-4000-8000-000000000107";
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("owner sees the own month with names: pilot is free, leadership without own times is free", async () => {
+    const { repo } = await as("chef@demo-kt.example");
+    const b = await repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-10");
+    expect(b).toMatchObject({ condition: "pilot_free", unitPriceCents: 0, amountCents: 0, billableCount: 4, isCurrentMonth: true, final: false, status: "open" });
+    expect(b.lines.map((l) => l.displayName)).toEqual(["Anna Beispiel", "Ben Muster", "Carla Probe", "Deniz Test"]);
+    // Emil left on 21 September: billed in September, not in October.
+    const sept = await repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-09");
+    expect(sept.lines.map((l) => l.displayName)).toContain("Emil Platzhalter");
+    await expect(repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-12")).rejects.toThrow("zukünftige");
+    const hist = await repo.listTenantBillingHistory(DEMO_TENANT_IDS.kt);
+    expect(hist.map((h) => h.month)).toEqual(["2026-10", "2026-09", "2026-08"]);
+  });
+
+  it("standard customer: 3 employees × 5,00 € = 15,00 € net", async () => {
+    const { repo } = await as("leitung@muster-pflege.example");
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 3, amountCents: 1500 });
+  });
+
+  it("no foreign billing, no billing for employees", async () => {
+    const chef = await as("chef@demo-kt.example");
+    await expect(chef.repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(chef.repo.getPlatformRevenue("2026-10")).rejects.toBeInstanceOf(AccessDeniedError);
+    const anna = await as("anna@demo-kt.example");
+    await expect(anna.repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-10")).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("locking: no sign-in, still billed for the month of the lock, not for the next one; unlock works", async () => {
+    const { repo, storage } = await as("chef@demo-kt.example");
+    await repo.setEmployeeStatus(ANNA, "locked", "Diensthandy verloren");
+    await expect(repo.setEmployeeStatus(ANNA, "locked", "nochmal")).rejects.toThrow("Nur aktive");
+    const other = createDemoRepository(storage, { now: NOW, sessionKey: "other" });
+    await expect(other.signIn("anna@demo-kt.example", DEMO_PASSWORD)).rejects.toThrow("gesperrt");
+    expect((await repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-10")).lines.map((l) => l.displayName)).toContain("Anna Beispiel");
+    vi.setSystemTime(new Date("2026-11-05T10:00:00"));
+    expect((await repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-11")).lines.map((l) => l.displayName)).not.toContain("Anna Beispiel");
+    await repo.setEmployeeStatus(ANNA, "active", "Neues Handy");
+    expect((await repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-11")).lines.map((l) => l.displayName)).toContain("Anna Beispiel");
+    expect((await repo.listAudit(DEMO_TENANT_IDS.kt)).map((e) => e.action)).toEqual(expect.arrayContaining(["employee.locked", "employee.unlocked"]));
+  });
+
+  it("leadership with own time entries in the month is billable", async () => {
+    const { repo } = await as("dispo@demo-kt.example");
+    await repo.createTimeEntry(DISPO, { id: "dispo-1", date: "2026-10-20", start: "08:00", end: "12:00", pauseMinutes: 0, note: "" });
+    const b = await repo.getTenantBilling(DEMO_TENANT_IDS.kt, "2026-10");
+    expect(b.lines.find((l) => l.employeeId === DISPO)?.reason).toBe("leader_with_time");
+    expect(b.billableCount).toBe(5);
+  });
+
+  it("platform: revenue numbers without names, frozen months, default price and special price", async () => {
+    const { repo } = await as("admin@plattform.example");
+    const rev = await repo.getPlatformRevenue("2026-09");
+    expect(rev.paymentProvider).toBe("none");
+    expect(JSON.stringify(rev)).not.toMatch(/Anna|Mia|Emil/);
+    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1500, status: "open" });
+    expect(rev.totals).toMatchObject({ amountCents: 0, demoAmountCents: 1500 }); // both seed tenants are demo tenants
+
+    await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-10", "invoiced")).rejects.toThrow("Monatsende");
+    await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "waived")).rejects.toThrow("Grund");
+    expect(await repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "invoiced", "RE-1")).toMatchObject({ status: "invoiced", final: true, amountCents: 1500 });
+
+    await repo.setDefaultPrice(600, "Preisanpassung Test");
+    expect((await repo.getBillingSettings()).defaultPriceCents).toBe(600);
+    const after = await repo.getPlatformRevenue("2026-09");
+    expect(after.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1500); // frozen
+    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1800);
+
+    await repo.setLicense(DEMO_TENANT_IDS.pflege, "standard", { employeePriceCents: 400, conditionNote: "Rabatt", conditionValidFrom: "2026-10-01" });
+    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ condition: "special", amountCents: 1200 });
+    await repo.setLicense(DEMO_TENANT_IDS.pflege, "standard", { freeOfCharge: true });
+    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ condition: "free", amountCents: 0 });
+
+    const actions = (await repo.listPlatformAudit()).map((e) => e.action);
+    expect(actions).toEqual(expect.arrayContaining(["billing_period.status", "billing_settings.default_price", "license.updated"]));
+
+    const support = await as("support@plattform.example");
+    expect((await support.repo.getPlatformRevenue("2026-10")).rows).toHaveLength(2);
+    await expect(support.repo.setBillingStatus(DEMO_TENANT_IDS.kt, "2026-09", "paid")).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(support.repo.setDefaultPrice(1, "Test")).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+});

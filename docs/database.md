@@ -17,6 +17,7 @@ Kein Supabase, kein PostgREST: Davor sitzt eine eigene Node-API (siehe `docs/api
 | `0009_two_factor.sql` | Zwei-Faktor-Anmeldung (TOTP), Wiederherstellungscodes, Pflicht für Leitung/Plattform |
 | `0010_operator_invitation.sql` | `auth.operator_create_invitation` für den Betreiberbefehl `invite-link` (nur `app_auth`) |
 | `0011_tenant_profile_owner_only.sql` | `tenants_update` nur noch für den Inhaber; `set_tenant_status` als SECURITY DEFINER (nur Super-Admin); `tenants_guard` ohne Ausnahme für Plattformpersonal |
+| `0012_billing.sql` | Preismodell (`docs/preismodell.md`): Mitarbeiterstatus `locked`, Statushistorie, Standardpreis, Sonderkonditionen in `licenses`, Abrechnungsfunktionen (Europe/Berlin), Abrechnungsstatus mit festgeschriebenen Monaten |
 | `0013_correction_requests.sql` | Korrekturanfragen der Mitarbeitenden (`correction_requests`, RPCs anlegen/zurückziehen/entscheiden), Sicht `statement_correction_flags` („nach Freigabe korrigiert“) |
 | `0014_break_policy_statutory.sql` | CHECK `tenants_break_policy_statutory`: Pausenregel eines Mandanten nie laxer als § 4 ArbZG (`private.break_policy_meets_statute`), siehe [pausenregeln.md](pausenregeln.md) |
 
@@ -41,14 +42,17 @@ auth.users ─┬─< auth.sessions
             ├─< public.platform_admins (super_admin | support)
             └─< public.employees.user_id (0..1 je Mandant)
 
-public.tenants ─┬─< licenses            (max. 1 aktive je Mandant)
+public.tenants ─┬─< licenses            (max. 1 aktive je Mandant, inkl. Sonderkondition)
                 ├─< support_access_grants
+                ├─< billing_periods ─< billing_period_lines >── employees
                 └─< employees ─┬─< invitations
+                               ├─< employee_status_history
                                ├─< time_entries ─< time_entry_revisions
                                ├─< work_account_allocations
                                ├─< correction_requests  (entry_id → time_entries.id, ohne FK)
                                └─< monthly_statements
 public.audit_log   (tenant_id ohne FK – bleibt erhalten)
+public.billing_settings (eine Zeile: Standardpreis)
 ```
 
 Alle mandantenbezogenen Kindtabellen referenzieren `(employee_id, tenant_id)` → `employees(id, tenant_id)`.
@@ -59,8 +63,8 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 | Tabelle | Zweck / wichtige Regeln |
 |---|---|
 | `tenants` | Mandant. `slug` eindeutig, `status` active/suspended/pending (nur `active` gibt Mitgliedern Zugriff), `is_demo`. `branding`, `contact`, `settings` als jsonb mit Prüffunktion (Farben `#RRGGBB`; Bild-URLs nur `https://`, relativer Pfad ohne `//`/`..` oder `data:image/png|jpeg|webp;base64` – **kein SVG** seit 0008; WhatsApp nur Ziffern mit Ländervorwahl). Bereits gespeicherte SVG-Data-URLs (vor 0008) werden erst beim nächsten Ändern des Brandings abgelehnt. |
-| `licenses` | Tarif `pilot_free/standard/business/enterprise`, `status`, `price_cents`, `billing none/manual/provider`, `valid_until` NULL = unbegrenzt. CHECK: `pilot_free` ⇒ `price_cents = 0` und `billing = 'none'`. Keine automatische Umstellung (kein Trigger/Job ändert den Tarif). |
-| `employees` | Mitgliedschaft einer Person in einem Mandanten: `role` employee/manager/owner, `status` invited/active/deactivated, `personnel_number` eindeutig je Mandant, `user_id` → `auth.users` (erst nach Annahme der Einladung). `email` ist änderbar, solange kein Konto verknüpft ist; danach gesperrt (Anmelde-Adresse liegt in `auth.users`, siehe `docs/security.md`). |
+| `licenses` | Tarif `pilot_free/standard/business/enterprise`, `status`, `price_cents` (veraltet, immer 0, ohne Wirkung), `billing none/manual/provider`, `valid_until` NULL = unbegrenzt. CHECK: `pilot_free` ⇒ `price_cents = 0` und `billing = 'none'`. Keine automatische Umstellung (kein Trigger/Job ändert den Tarif). Seit 0012 Sonderkondition: `employee_price_cents` (NULL = Standardpreis, 0–100000), `free_of_charge`, `condition_note`, `condition_valid_from/until` (gilt für jeden berührten Monat). Trigger: `pilot_free` ⇒ `free_of_charge = true` (CHECK); Wechsel weg von `pilot_free` setzt `free_of_charge` zurück, wenn es nicht ausdrücklich mitgeändert wird. |
+| `employees` | Mitgliedschaft einer Person in einem Mandanten: `role` employee/manager/owner, `status` invited/active/locked/deactivated (`locked` = vorübergehend gesperrt, seit 0012), `personnel_number` eindeutig je Mandant, `user_id` → `auth.users` (erst nach Annahme der Einladung). `email` ist änderbar, solange kein Konto verknüpft ist; danach gesperrt (Anmelde-Adresse liegt in `auth.users`, siehe `docs/security.md`). |
 | `platform_admins` | Plattformpersonal `super_admin` / `support`. Nur per Wartungszugang pflegbar. |
 | `support_access_grants` | Vom Inhaber erteilte, befristete Freigabe (max. 30 Tage, per RPC max. 168 h) für Plattformpersonal; optional an eine Person gebunden; widerrufbar. |
 | `invitations` | Einladung je Mitarbeiter (Ablauf, angenommen, widerrufen). Der Token liegt nur gehasht in `auth.one_time_tokens`. |
@@ -70,6 +74,10 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 | `monthly_statements` | Monatsabschluss draft/submitted/approved/returned; Zahlen (`worked/allocated/billing_minutes`) berechnet die DB. `returned` ⇒ `review_note` Pflicht (CHECK). |
 | `correction_requests` | Korrekturanfrage (seit 0013): `kind` change/delete/add, `entry_id` + `entry_version` (change/delete), `before`/`proposed` als `{date,start,end,pauseMinutes,note}`, `reason` (5–1000 Zeichen, Pflicht), `status` open/accepted/rejected/withdrawn, `decided_at`/`decided_by`/`decision_note` (Pflicht bei Ablehnung), `applied_entry_id`/`applied_version`. Höchstens eine offene Anfrage je Eintrag. Schreiben nur über die RPCs; entschiedene Anfragen sind unveränderlich (Trigger, auch für Wartungscode). |
 | `statement_correction_flags` (Sicht) | Freigegebene Monatsabschlüsse, deren Monat **nach** `reviewed_at` korrigiert wurde (Revisionen mit `is_correction`, altes oder neues Datum im Monat): `corrections`, `last_corrected_at`. `security_invoker`: RLS der Abschlüsse und Revisionen gilt. |
+| `employee_status_history` | Seit 0012. Gültigkeitszeiträume `[valid_from, valid_to)` von (`status`, `role`) je Mitarbeiter; gepflegt per Trigger `employees_status_history` (SECURITY DEFINER), keine Überschneidung (Exclusion-Constraint), höchstens ein offener Zeitraum. Bestand beim Einspielen aus dem Audit-Log rekonstruiert (`employee.insert/update`), sonst ab `created_at`. Grundlage für „im Monat aktiv“. |
+| `billing_settings` | Seit 0012. Genau eine Zeile: `default_price_cents` (Standard 500 = 5,00 € netto je abrechenbarem Mitarbeiter und Monat), `currency = 'EUR'`. Änderung nur über `platform_set_default_price`. |
+| `billing_periods` | Seit 0012. Abrechnungsstatus je Mandant und Monat `open/invoiced/paid/waived`. Außer `open` mit **festgeschriebenen** Zahlen (`billable_count`, `unit_price_cents`, `amount_cents = count × price`, `condition`, `plan`, `closed_at`) – CHECK. Nur über `platform_set_billing_status`. |
+| `billing_period_lines` | Seit 0012. Festgeschriebene abrechenbare Personen eines abgeschlossenen Monats (`employee_id`, `reason` employee/leader_with_time). Nur für die Leitung des Mandanten sichtbar. |
 | `audit_log` | Nur Anfügen. UPDATE/DELETE/TRUNCATE werden für **alle** Rollen per Trigger abgelehnt. |
 | `auth.users`, `auth.sessions`, `auth.one_time_tokens` | Anmeldung: E-Mail (klein geschrieben, eindeutig), Passwort-Hash (scrypt aus der API), Sitzungen und Einmal-Tokens **nur als SHA-256-Hash**. Nur Rolle `app_auth` und SECURITY-DEFINER-Funktionen. |
 
@@ -141,8 +149,18 @@ eigene Mitarbeiterzeile. Plattformpersonal sieht weiterhin Metadaten (und mit ak
 | work_account_allocations | L, A, Ä eigen (Status bleibt `proposed`) | L, A, Ä (prüfen) | L, A, Ä | – | – | L |
 | monthly_statements | L eigen (+ RPC einreichen) | L (+ RPC prüfen) | L (+ RPC, freigegebene wieder öffnen) | – | – | L |
 | correction_requests | L eigen (+ RPC anlegen, zurückziehen) | L (+ RPC entscheiden, nicht die eigene) | L (+ RPC entscheiden, auch die eigene) | – | – | L |
-| audit_log | – | L | L | L (Mandant/Lizenz/Freigabe-Ereignisse) | L (dto.) | L |
+| employee_status_history | L eigen | L | L | – | – | L |
+| billing_settings | – | – | – | L (Änderung per RPC) | L | – |
+| billing_periods | – | L | L | L (Änderung per RPC) | L | – |
+| billing_period_lines | – | L | L | – | – | – |
+| audit_log | – | L | L | L (Mandant/Lizenz/Freigabe/Abrechnungs-Ereignisse) | L (dto.) | L |
 | auth.* | – | – | – | – | – | – |
+
+Die Abrechnung (seit 0012) liefern SECURITY-DEFINER-Funktionen: `tenant_billing`/`tenant_billing_history`
+(nur Leitung des Mandanten, mit Namen), `platform_billing_overview` (Plattformpersonal, nur Zahlen),
+`platform_set_billing_status`/`platform_set_default_price` (nur Super-Admin, mit Audit). Regeln und
+Berechnung: `private.billing_lines` und `private.billing_condition` (Monatsgrenzen Europe/Berlin), siehe
+`docs/preismodell.md`.
 
 Statuswechsel von Monatsabschlüssen, Prüfung von Zuweisungen, Einladungen, Support-Freigaben und
 Korrekturen laufen ausschließlich über SECURITY-DEFINER-Funktionen mit expliziter Rechteprüfung

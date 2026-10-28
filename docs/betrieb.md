@@ -87,6 +87,7 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 | `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel (nur ohne `NODE_ENV=production`) | 32 Byte, Base64 oder 64 Hex-Zeichen. Verschlüsselt die TOTP-Geheimnisse (AES-256-GCM). Ohne Schlüssel startet die API in Produktion nicht. |
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel, kommagetrennt – nur zum Entschlüsseln während einer Rotation. |
 | `TOTP_ISSUER` | – | `Stundenwerk` | Name in der Authenticator-App (1–40 Zeichen, kein Doppelpunkt). |
+| `PAYMENT_PROVIDER` | – | `none` | Nur `none` erlaubt (Preismodell: manuelle Abrechnung, `docs/preismodell.md`). |
 | `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Codes je Konto bzw. IP im Zeitfenster `RATE_LIMIT_WINDOW_MINUTES`. |
 
 **Schlüssel erzeugen** (einmalig, nur in `/etc/uwe-zeit/api.env`, Rechte 600, nie ins Repository):

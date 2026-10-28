@@ -100,7 +100,10 @@ export interface License {
   tenantId: UUID;
   plan: LicensePlan;
   status: LicenseStatus;
-  /** Always 0 for pilot_free. Final prices are a business decision (not set). */
+  /**
+   * Legacy flat price of the licence (always 0). Not used for billing since the
+   * price model of 28.10.2026 – see employeePriceCents / BillingSettings.
+   */
   priceCents: number;
   /** "none" = no payment data, no invoices, no automatic conversion. */
   billing: "none" | "manual" | "provider";
@@ -110,13 +113,103 @@ export interface License {
   maxEmployees: number | null;
   features: string[];
   note: string | null;
+  /**
+   * Special condition (price model 2026-10-28): own net price per billable
+   * employee and month in cents; null = platform default price.
+   */
+  employeePriceCents: number | null;
+  /** Free customer account (e.g. pilot, test). Always true for pilot_free. */
+  freeOfCharge: boolean;
+  conditionNote: string | null;
+  /** Validity of the special condition (null = open). It applies to every month it overlaps. */
+  conditionValidFrom: ISODate | null;
+  conditionValidUntil: ISODate | null;
+}
+
+// ---------------------------------------------------------------- billing (price model 2026-10-28)
+
+/** Which price applies to a tenant in a month. */
+export type BillingCondition = "standard" | "special" | "free" | "pilot_free";
+/** Manual billing status of a tenant and month (platform operator). */
+export type BillingStatus = "open" | "invoiced" | "paid" | "waived";
+/** Why a person is billable: role employee, or leadership with own time entries in the month. */
+export type BillableReason = "employee" | "leader_with_time";
+
+export interface BillingSettings {
+  /** Net price per billable employee and month in cents (default 500 = 5,00 €). */
+  defaultPriceCents: number;
+  currency: "EUR";
+}
+
+/** One billable person (only visible to owner/manager of the tenant). */
+export interface BillingLine {
+  employeeId: UUID;
+  displayName: string;
+  personnelNumber: string;
+  role: TenantRole;
+  status: EmployeeStatus;
+  reason: BillableReason;
+}
+
+/** Numbers of one tenant and month (no names). */
+export interface BillingMonthSummary {
+  month: ISOMonth;
+  status: BillingStatus;
+  /** True when frozen by the platform operator (status other than "open"). */
+  final: boolean;
+  condition: BillingCondition;
+  unitPriceCents: number;
+  billableCount: number;
+  /** Net amount in cents (billableCount × unitPriceCents). */
+  amountCents: number;
+}
+
+/** Billing of a tenant for one month incl. the billable persons (owner/manager). */
+export interface TenantBillingMonth extends BillingMonthSummary {
+  tenantId: UUID;
+  isCurrentMonth: boolean;
+  plan: LicensePlan | null;
+  currency: "EUR";
+  closedAt: string | null;
+  lines: BillingLine[];
+}
+
+/** One row of the platform revenue overview – numbers only, never names. */
+export interface PlatformRevenueRow extends BillingMonthSummary {
+  tenantId: UUID;
+  tenantName: string;
+  slug: string;
+  isDemo: boolean;
+  tenantStatus: Tenant["status"];
+  plan: LicensePlan | null;
+  note: string | null;
+  closedAt: string | null;
+}
+
+export interface PlatformRevenue {
+  month: ISOMonth;
+  defaultPriceCents: number;
+  rows: PlatformRevenueRow[];
+  totals: {
+    /** Billable employees of all non-demo tenants. */
+    billableCount: number;
+    /** Net amount of all non-demo tenants, without waived months. */
+    amountCents: number;
+    /** Net amount of waived months (non-demo). */
+    waivedCents: number;
+    /** Net amount of demo tenants (not revenue). */
+    demoAmountCents: number;
+  };
+  /** Payment provider of the server: only "none" exists (nothing is charged automatically). */
+  paymentProvider: "none";
 }
 
 // ---------------------------------------------------------------- people
 
 export type TenantRole = "employee" | "manager" | "owner";
 export type PlatformRole = "super_admin" | "support";
-export type EmployeeStatus = "invited" | "active" | "deactivated";
+/** locked = temporarily blocked (no sign-in, data kept, reversible); deactivated = left the company. */
+export type EmployeeStatus = "invited" | "active" | "locked" | "deactivated";
 
 export interface Employee {
   id: UUID;

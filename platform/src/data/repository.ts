@@ -15,8 +15,9 @@
  * reject access to other tenants' data with AccessDeniedError.
  */
 import type {
-  AuditEvent, CompanyContact, Branding, CorrectionRequest, CorrectionStatus, Employee, EntryValues, ISOMonth, License, LicensePlan,
-  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
+  AuditEvent, BillingMonthSummary, BillingSettings, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
+  Employee, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
+  TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 
 export class AccessDeniedError extends Error {
@@ -144,7 +145,8 @@ export interface Repository {
   listEmployees(tenantId: UUID): Promise<Employee[]>;
   inviteEmployee(tenantId: UUID, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }): Promise<Employee>;
   updateEmployee(employeeId: UUID, patch: Partial<Pick<Employee, "displayName" | "personnelNumber" | "email" | "role">>): Promise<Employee>;
-  setEmployeeStatus(employeeId: UUID, status: "active" | "deactivated", reason: string): Promise<Employee>;
+  /** "locked" = temporarily blocked (only from "active"), "active" = unlock / reactivate. */
+  setEmployeeStatus(employeeId: UUID, status: "active" | "locked" | "deactivated", reason: string): Promise<Employee>;
 
   // ---- time entries
   listTimeEntries(employeeId: UUID, month: ISOMonth): Promise<TimeEntry[]>;
@@ -187,5 +189,33 @@ export interface Repository {
   listTenants(): Promise<TenantOverview[]>;
   createTenant(input: { name: string; slug: string; plan: LicensePlan; isDemo: boolean; ownerEmail: string }): Promise<TenantOverview>;
   setTenantStatus(tenantId: UUID, status: Tenant["status"], reason: string): Promise<Tenant>;
-  setLicense(tenantId: UUID, plan: LicensePlan, patch?: Partial<Pick<License, "maxEmployees" | "validUntil" | "note" | "features">>): Promise<License>;
+  setLicense(tenantId: UUID, plan: LicensePlan, patch?: LicensePatch): Promise<License>;
+}
+
+/** Changeable licence fields incl. the special billing condition (super_admin). */
+export type LicensePatch = Partial<Pick<License,
+  "maxEmployees" | "validUntil" | "note" | "features"
+  | "employeePriceCents" | "freeOfCharge" | "conditionNote" | "conditionValidFrom" | "conditionValidUntil">> & {
+  /** Optional reason for the audit log. */
+  reason?: string;
+};
+
+/**
+ * Price model (2026-10-28): billing views. Owner/manager see their own tenant
+ * with the billable persons; platform staff see numbers only (no names).
+ */
+export interface BillingApi {
+  getTenantBilling(tenantId: UUID, month: ISOMonth): Promise<TenantBillingMonth>;
+  /** Current month and previous months (newest first, not before the tenant was created). */
+  listTenantBillingHistory(tenantId: UUID, limit?: number): Promise<BillingMonthSummary[]>;
+  /** super_admin / support: revenue of all tenants for one month. */
+  getPlatformRevenue(month: ISOMonth): Promise<PlatformRevenue>;
+  getBillingSettings(): Promise<BillingSettings>;
+  /** super_admin: default net price per billable employee and month (cents), reason required. */
+  setDefaultPrice(cents: number, reason: string): Promise<BillingSettings>;
+  /**
+   * super_admin: manual billing status of a past month. Leaving "open" freezes
+   * the month; "waived" and reopening ("open") need a note.
+   */
+  setBillingStatus(tenantId: UUID, month: ISOMonth, status: BillingStatus, note?: string): Promise<BillingMonthSummary>;
 }
