@@ -28,7 +28,11 @@ Feature-Branches gehen per Draft-PR nach `release/1.0`. Nichts geht ohne Freigab
 
 ## Offene Entscheidungen
 - Pausenschwelle: entschieden 28.10.2026 – neue Mandanten gesetzlich, UWE streng (umgesetzt).
-- N1: Korrektur in freigegebenem Monat ändert Abrechnungszahlen nicht (siehe PR #4).
+- N1: entschieden 28.10.2026 – Korrektur nach Freigabe nur nach dokumentierter Wiederöffnung (Begründung) und erneuter
+  Freigabe; Zahlen werden neu berechnet; Abrechnung bleibt unverändert. Umgesetzt in `feature/wiedereroeffnung-rechnungen`
+  (Migration 0017), siehe `docs/database.md`.
+- Gesperrte Firmen ab Folgemonat 0 € (0018) und Rechnungen mit lückenlosen Nummern (0019): umgesetzt im selben Branch.
+  Offen: USt-Satz 19 % vom Auftraggeber bestätigen; Absenderangaben (§ 14 UStG) im Super-Admin eintragen.
 - PR #2 (Version 28 der Alt-App) wartet auf Freigabe.
 
 ## Hindernisse
