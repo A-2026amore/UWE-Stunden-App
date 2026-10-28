@@ -121,6 +121,7 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
   `app_user`-Transaktion `current_session_context()`: Hat die Person keine Mitgliedschaft in einem
   **aktiven** Mandanten (und keine Plattformrolle), antwortet jede Anfrage mit 403
   `tenant_suspended` „Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.“
+  (deaktivierter Mandant: „Der Firmenzugang ist deaktiviert. Bitte wende dich an deinen Arbeitgeber.“)
   (bestehende Sitzungen enden damit sofort; `GET /api/auth/session` liefert `null`).
 - POST/PUT/PATCH/DELETE: Pflicht `Content-Type: application/json` (sonst 415) und `Origin` aus
   `PUBLIC_ORIGIN` (sonst 403). Body-Limit 32 KB (Branding 1,2 MB).
@@ -174,9 +175,10 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | `getTenant` | `GET /api/tenants/:tenantId` |
 | `updateBranding` / `updateContact` / `updateSettings` | `PATCH /api/tenants/:tenantId/branding` · `/contact` · `/settings` (Teil-Objekte, zusammengeführt) |
 | Support-Freigabe (UI) | `GET`/`PUT /api/tenants/:tenantId/support-grant` (`{hours: 0–168, reason?}`, 0 = widerrufen) |
-| `listEmployees` / `inviteEmployee` | `GET`/`POST /api/tenants/:tenantId/employees` (mit E-Mail → Einladung per Mail) |
+| `renameTenant` | `PATCH /api/tenants/:tenantId/name` `{name}` (2–200 Zeichen) → 200 `Tenant` · 403 nicht Inhaber (seit 1.0, Chef-Portal „Firmenprofil“) |
+| `listEmployees` / `inviteEmployee` | `GET`/`POST /api/tenants/:tenantId/employees` `{displayName, personnelNumber, email, role, invitation?: "email" \| "link"}` – mit E-Mail → Einladung per Mail (Standard) oder mit `invitation: "link"` einmaliger Link zum Teilen (siehe unten) |
 | `updateEmployee` / `setEmployeeStatus` | `PATCH /api/employees/:id` · `POST /api/employees/:id/status` `{status, reason}` |
-| Einladung erneut senden | `POST /api/employees/:id/invitation` → `{expiresAt, delivery}` (`delivery`: `sent` · `logged` · `failed`). Der Einladungslink wird nie an die Leitung zurückgegeben, nur an die eingeladene Adresse gesendet. Auch `inviteEmployee` liefert zusätzlich `invitation: {expiresAt, delivery}`. |
+| `createInvitation` (Zugang senden) | `POST /api/employees/:id/invitation` `{channel?: "email" \| "link"}` → `{invitationId, expiresAt, delivery}`. Jede neue Einladung macht frühere Links der Person ungültig (`create_invitation`), Gültigkeit 7 Tage, einmal verwendbar. `channel: "email"` (Standard): Link nur per Mail an die eingeladene Adresse, `delivery` = `email` (SMTP) · `log` (Entwicklung, Server-Log) · `none` (Produktion ohne SMTP). `channel: "link"`: **keine** Mail, die Antwort enthält einmalig `link` (`PUBLIC_ORIGIN + INVITE_LINK_PATH#token=…`), `delivery: "link"` – für „Per WhatsApp teilen“/„Link kopieren“ im Chef-Portal. Nur Leitung des Mandanten (Leitungspersonen nur Inhaber), nur Status `invited` mit E-Mail-Adresse. Auch `inviteEmployee` liefert `invitation: {expiresAt, delivery, link?}`. Es wird nie ein Passwort versendet. |
 | `listTimeEntries` | `GET /api/employees/:id/time-entries?month=YYYY-MM` |
 | `listTenantTimeEntries` | `GET /api/tenants/:tenantId/time-entries?from=YYYY-MM-DD&to=YYYY-MM-DD` (max. 400 Tage) |
 | `createTimeEntry` | `POST /api/employees/:id/time-entries` `{id, date, start, end, pauseMinutes, note, source?}` → 201 neu, **200 bei bereits vorhandener ID** (idempotent). `source`: nur `"app"` (Standard) oder `"migration"` (Übernahme aus der Alt-App, **nur für eigene Einträge**, sonst 403), wird an `create_time_entry` übergeben; `correction` entsteht nur über Korrekturen |
@@ -193,9 +195,10 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | `submitStatement` | `POST /api/employees/:id/statements/:month/submit` |
 | `approveStatement` / `returnStatement` | `POST /api/statements/:id/approve` · `POST /api/statements/:id/return` `{reason}` |
 | `listAudit` | `GET /api/tenants/:tenantId/audit?limit=` |
-| `listTenants` / `createTenant` | `GET`/`POST /api/platform/tenants` |
-| `setTenantStatus` / `setLicense` | `POST /api/platform/tenants/:id/status` · `PUT /api/platform/tenants/:id/license` `{plan, maxEmployees?, validUntil?, note?, features?, employeePriceCents?, freeOfCharge?, conditionNote?, conditionValidFrom?, conditionValidUntil?, reason?}` (Sonderkondition seit 0012; nur gesendete Felder werden geändert, `reason` landet im Audit) |
+| `listTenants` / `createTenant` | `GET`/`POST /api/platform/tenants` – `POST` `{name, slug, plan, isDemo, ownerEmail, ownerName?, freeOfCharge?, conditionNote?, conditionValidUntil?}`: mit `freeOfCharge: true` (nicht bei `pilot_free`) entsteht in derselben Transaktion ein **kostenloser Testkunde** (Sonderkondition „kostenloses Konto“, optional befristet; Audit-Grund „Kostenloser Testkunde bei Anlage“) |
+| `setTenantStatus` / `setLicense` | `POST /api/platform/tenants/:id/status` `{status: "active" \| "suspended" \| "pending" \| "deactivated", reason}` (Super-Admin; `deactivated` seit 0015: Vertrag beendet, keine Anmeldung, keine Daten gelöscht) · `PUT /api/platform/tenants/:id/license` `{plan, maxEmployees?, validUntil?, note?, features?, employeePriceCents?, freeOfCharge?, conditionNote?, conditionValidFrom?, conditionValidUntil?, reason?}` (Sonderkondition seit 0012; nur gesendete Felder werden geändert, `reason` landet im Audit) |
 | Plattform-Audit (UI) | `GET /api/platform/audit?limit=` (Mandant, Lizenz, Supportfreigabe, Abrechnungsstatus, Standardpreis) |
+| `getSystemOverview` | `GET /api/platform/system` (Super-Admin, Support) → `{version, commit, serverTime, uptimeSeconds, nodeVersion, production, database: {reachable, time}, migrations: {count, latest, appliedAt} \| null, activeSessions, tenants: {<status>: Anzahl}, mail: {configured, delivery}, paymentProvider, lastBackupAt}` – nur Zustände und Zahlen, **keine Geheimnisse** (kein SMTP-Host/-Benutzer/-Passwort, keine Datenbank-URL, keine Schlüssel) und keine Personendaten. `commit` aus `APP_COMMIT`, `lastBackupAt` aus `BACKUP_STATUS_FILE` (sonst `null` = „nicht bekannt“), Migrationsstand aus `ops.schema_migrations` über `public.platform_system_overview()` (0015) |
 
 **Abrechnung (Preismodell, `docs/preismodell.md`)**
 

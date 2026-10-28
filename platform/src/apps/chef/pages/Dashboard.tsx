@@ -51,7 +51,10 @@ export function DashboardPage() {
           <h1 class="page-title">Dashboard</h1>
           <p class="muted page-sub">{tenant.name} · {monthLabelDE(month)}</p>
         </div>
-        <LinkButton href="#/mitarbeiter" icon="plus" variant="primary">Mitarbeiter einladen</LinkButton>
+        <div class="btn-row">
+          <LinkButton href="#/stunden" icon="calendar">Stundenübersicht</LinkButton>
+          <LinkButton href="#/mitarbeiter" icon="plus" variant="primary">Mitarbeiter einladen</LinkButton>
+        </div>
       </div>
       {IS_DEMO && tenant.isDemo && <DemoBanner />}
       <div class="grid-4">

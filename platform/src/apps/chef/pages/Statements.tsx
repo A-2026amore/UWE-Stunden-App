@@ -3,19 +3,19 @@ import { errorsForMonth } from "../../../core/breaks";
 import { activeShifts } from "../../../core/time";
 import type { Employee, MonthlyStatement } from "../../../core/types";
 import { shiftMonth } from "../../../data/demo";
-import { Alert, Badge, Button, Card, StatusPill, Table, useDialogs, useToast } from "../../../design";
+import { Alert, Badge, Button, Card, LinkButton, StatusPill, Table, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { currentMonth, dateTimeDE, downloadBlob, hoursLabel, monthLabelDE } from "../../shared/format";
-import { buildStatement } from "../../shared/statement";
+import { buildStatementWithLogo } from "../../shared/statement";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { loadTenantMonth, useChef } from "../context";
+import { useStatementActions } from "../statementActions";
 
 interface Row { employee: Employee; statement: MonthlyStatement | null; worked: number; allocated: number; billing: number; issues: number }
 
 export function StatementsPage() {
-  const { repo, tenant, version, changed } = useChef();
+  const { repo, tenant, version } = useChef();
   const toast = useToast();
-  const dialogs = useDialogs();
   const [month, setMonth] = useState(shiftMonth(currentMonth(), -1));
 
   const q = useAsync(async () => {
@@ -31,34 +31,14 @@ export function StatementsPage() {
     return rows;
   }, [month, version]);
 
-  const approve = async (r: Row) => {
-    if (!r.statement) return;
-    const ok = await dialogs.confirm({
-      title: "Monatsnachweis freigeben?",
-      message: `${r.employee.displayName}, ${monthLabelDE(month)}: ${hoursLabel(r.statement.workedMinutes)} geleistet, ${hoursLabel(r.statement.billingMinutes)} zur Abrechnung.`,
-      confirmLabel: "Freigeben",
-    });
-    if (!ok) return;
-    try { await repo.approveStatement(r.statement.id); toast("Monatsnachweis freigegeben."); changed(); }
-    catch (e) { toast(errorText(e), "error"); }
-  };
-
-  const giveBack = async (r: Row) => {
-    if (!r.statement) return;
-    const reason = await dialogs.askReason({
-      title: "Monatsnachweis zurückgeben",
-      message: `${r.employee.displayName} erhält den Nachweis für ${monthLabelDE(month)} zur Korrektur zurück und sieht deine Begründung.`,
-      confirmLabel: "Zurückgeben", danger: true, reasonLabel: "Begründung (Pflicht)",
-    });
-    if (!reason) return;
-    try { await repo.returnStatement(r.statement.id, reason); toast("Monatsnachweis zurückgegeben."); changed(); }
-    catch (e) { toast(errorText(e), "error"); }
-  };
+  const { approve: approveStatement, giveBack: returnStatement } = useStatementActions();
+  const approve = (r: Row) => (r.statement ? approveStatement(r.employee, r.statement) : undefined);
+  const giveBack = (r: Row) => (r.statement ? returnStatement(r.employee, r.statement) : undefined);
 
   const pdf = async (r: Row) => {
     try {
       const [entries, allocations] = await Promise.all([repo.listTimeEntries(r.employee.id, month), repo.listAllocations(r.employee.id)]);
-      const { blob, fileName } = buildStatement({ tenant, employee: r.employee, month, entries, allocations, statement: r.statement });
+      const { blob, fileName } = await buildStatementWithLogo({ tenant, employee: r.employee, month, entries, allocations, statement: r.statement });
       downloadBlob(blob, fileName);
     } catch (e) { toast(errorText(e), "error"); }
   };
@@ -112,6 +92,7 @@ export function StatementsPage() {
             {
               key: "a", header: "Aktionen", actions: true, render: (r) => (
                 <div class="btn-row" style={{ justifyContent: "flex-end" }}>
+                  <LinkButton size="sm" variant="ghost" icon="calendar" href={`#/stunden?m=${month}&ma=${r.employee.id}`} aria-label={`Tage von ${r.employee.displayName} anzeigen`}>Tage</LinkButton>
                   <Button size="sm" variant="ghost" icon="download" onClick={() => pdf(r)} aria-label={`PDF für ${r.employee.displayName}`}>PDF</Button>
                   {r.statement?.status === "submitted" && <>
                     <Button size="sm" icon="check" onClick={() => approve(r)} aria-label={`Nachweis von ${r.employee.displayName} freigeben`}>Freigeben</Button>

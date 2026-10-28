@@ -5,6 +5,7 @@ import { useAsync } from "../../shared/hooks";
 import { currentMonth, dayLabel, hoursLabel, monthLabelDE, signedHours, todayISO } from "../../shared/format";
 import { shiftMonth } from "../../../data/demo";
 import { useEmployee } from "../context";
+import { InstallBanner } from "../InstallHint";
 
 export const STATEMENT_WORD: Record<string, string> = { draft: "offen", submitted: "eingereicht", approved: "freigegeben", returned: "zurückgegeben" };
 
@@ -56,6 +57,8 @@ export function StartPage() {
           <LinkButton href="#/erfassen" variant="primary" icon="plus">Arbeitszeit erfassen</LinkButton>
         </div>
       </Card>
+
+      <InstallBanner />
 
       <Card title={monthLabelDE(month)} actions={<StatusPill status={statement?.status ?? "draft"} label={`Nachweis ${STATEMENT_WORD[statement?.status ?? "draft"]}`} />}>
         <div class="grid-2">

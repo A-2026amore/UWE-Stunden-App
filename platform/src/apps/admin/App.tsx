@@ -8,13 +8,13 @@ import {
   Alert, Badge, Button, Card, Checkbox, Dialog, Icon, InputField, LinkButton, SelectField, Sidebar, StatTile, StatusPill, Table,
   DialogProvider, ToastProvider, TextareaField, applyBranding, useDialogs, useToast, type NavItem,
 } from "../../design";
-import { API_BASE, IS_DEMO, getRepository, onAuthFailure } from "../shared/repo";
+import { IS_DEMO, getRepository, onAuthFailure } from "../shared/repo";
 import { useRoute } from "../shared/router";
 import { LoginScreen, ProductMark } from "../shared/ui";
 import { TwoFactorCard, TwoFactorGate } from "../shared/twoFactor";
 import { PLAN_LABEL, currentMonth, dateTimeDE, formatDateDE, monthLabelDE } from "../shared/format";
 import { errorText, useAsync } from "../shared/hooks";
-import { ACTION_LABEL } from "../shared/audit";
+import { auditLabel } from "../shared/audit";
 
 const repo = getRepository("admin");
 
@@ -134,30 +134,68 @@ function AccountPage({ session }: { session: Session }) {
 
 // ------------------------------------------------------------------ tenants
 
+const TRIAL_DAYS = 30;
+
+function addDaysISO(days: number): string {
+  const d = new Date(Date.now() + days * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+interface NewTenantForm {
+  name: string; slug: string; ownerEmail: string; plan: LicensePlan; isDemo: boolean;
+  free: boolean; freeUntil: string; freeNote: string;
+}
+const EMPTY_TENANT: NewTenantForm = { name: "", slug: "", ownerEmail: "", plan: "pilot_free", isDemo: false, free: false, freeUntil: "", freeNote: "" };
+
+/** Free test customer: licence "Standard" with the special condition "kostenloses Konto", limited to 30 days (changeable). */
+function trialForm(): NewTenantForm {
+  return { ...EMPTY_TENANT, plan: "standard", free: true, freeUntil: addDaysISO(TRIAL_DAYS), freeNote: "Kostenloser Testzeitraum" };
+}
+
+const isTrial = (t: TenantOverview) => !!t.license && t.license.plan !== "pilot_free" && t.license.freeOfCharge;
+
 function TenantsPage({ readOnly }: { readOnly: boolean }) {
   const toast = useToast();
   const [tick, setTick] = useState(0);
-  const q = useAsync(() => repo.listTenants(), [tick]);
+  const now = currentMonth();
+  const q = useAsync(async () => {
+    const [tenants, revenue] = await Promise.all([repo.listTenants(), repo.getPlatformRevenue(now)]);
+    return { tenants, revenue };
+  }, [tick]);
   const defaultPrice = useDefaultPrice();
-  const [creating, setCreating] = useState(false);
-  const [f, setF] = useState({ name: "", slug: "", ownerEmail: "", plan: "pilot_free" as LicensePlan, isDemo: false });
+  const [creating, setCreating] = useState<"tenant" | "trial" | null>(null);
+  const [f, setF] = useState<NewTenantForm>(EMPTY_TENANT);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
 
-  const list = q.data ?? [];
-  const pilots = list.filter((t) => t.license?.plan === "pilot_free").length;
-  const employees = list.reduce((s, t) => s + t.employeeCount, 0);
+  const all = q.data?.tenants ?? [];
+  const list = all.filter((t) => statusFilter === "all" || (statusFilter === "trial" ? isTrial(t) : t.tenant.status === statusFilter));
+  const count = (st: string) => all.filter((t) => t.tenant.status === st).length;
+  const pilots = all.filter((t) => t.license?.plan === "pilot_free").length;
+  const trials = all.filter(isTrial).length;
+  const real = all.filter((t) => !t.tenant.isDemo);
+  const employees = all.reduce((s, t) => s + t.employeeCount, 0);
+  const activeEmployees = real.reduce((s, t) => s + t.activeEmployeeCount, 0);
+  const revenue = q.data?.revenue;
+
+  const open = (kind: "tenant" | "trial") => { setCreating(kind); setError(null); setF(kind === "trial" ? trialForm() : EMPTY_TENANT); };
 
   const create = async (e: Event) => {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const o = await repo.createTenant(f);
+      const free = f.free && f.plan !== "pilot_free";
+      const o = await repo.createTenant({
+        name: f.name, slug: f.slug, plan: f.plan, isDemo: f.isDemo, ownerEmail: f.ownerEmail,
+        ...(free ? { freeOfCharge: true, conditionNote: f.freeNote.trim() || null, conditionValidUntil: f.freeUntil || null } : {}),
+      });
+      const what = free ? "Kostenloser Testkunde" : "Mandant";
       toast(IS_DEMO
-        ? `Mandant „${o.tenant.name}“ angelegt. Einladung an ${f.ownerEmail} (Demo: Passwort „demo“).`
-        : `Mandant „${o.tenant.name}“ angelegt. Die Einladung wurde per E-Mail an ${f.ownerEmail} gesendet.`);
-      setCreating(false);
-      setF({ name: "", slug: "", ownerEmail: "", plan: "pilot_free", isDemo: false });
+        ? `${what} „${o.tenant.name}“ angelegt. Einladung an ${f.ownerEmail} (Demo: Passwort „demo“).`
+        : `${what} „${o.tenant.name}“ angelegt. Die Einladung wurde per E-Mail an ${f.ownerEmail} gesendet.`);
+      setCreating(null);
+      setF(EMPTY_TENANT);
       setTick((t) => t + 1);
     } catch (err) { setError(errorText(err)); } finally { setBusy(false); }
   };
@@ -167,17 +205,33 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
   return (
     <div class="stack">
       <div class="row-between">
-        <h1 class="page-title">Mandanten</h1>
-        {!readOnly && <Button icon="plus" onClick={() => { setCreating(true); setError(null); }}>Mandant anlegen</Button>}
+        <div>
+          <h1 class="page-title">Mandanten</h1>
+          <p class="muted page-sub">Plattform-Übersicht · {monthLabelDE(now)}</p>
+        </div>
+        {!readOnly && (
+          <div class="btn-row">
+            <Button variant="secondary" icon="plus" onClick={() => open("trial")}>Kostenlosen Testkunden anlegen</Button>
+            <Button icon="plus" onClick={() => open("tenant")}>Mandant anlegen</Button>
+          </div>
+        )}
       </div>
-      <div class="grid-4">
-        <StatTile label="Mandanten" value={list.length} />
-        <StatTile label="Aktiv" value={list.filter((t) => t.tenant.status === "active").length} />
-        <StatTile label="Pilotkunden (kostenlos)" value={pilots} tone="brand" />
-        <StatTile label="Mitarbeitende gesamt" value={employees} hint="Anzahl ohne Personendaten" />
+      <div class="grid-4" data-testid="platform-kpis">
+        <StatTile label="Mandanten" value={all.length} hint={`${count("active")} aktiv · ${count("suspended")} gesperrt · ${count("deactivated")} deaktiviert${count("pending") ? ` · ${count("pending")} in Vorbereitung` : ""}`} />
+        <StatTile label="Mitarbeitende gesamt" value={employees} hint={`${activeEmployees} aktiv bei Kunden (ohne Demo) · nur Anzahl, keine Personendaten`} />
+        <StatTile label={`Umsatz netto ${monthLabelDE(now)}`} value={revenue ? formatEuro(revenue.totals.amountCents) : "—"} tone="brand"
+          hint={revenue ? `Vorschau · ${revenue.totals.billableCount} abrechenbare Mitarbeitende · ohne Demo` : undefined} />
+        <StatTile label="Pilotkunden (kostenlos)" value={pilots} hint={`${trials} kostenlose Testkunden`} />
       </div>
       {q.error && <Alert tone="danger" live>{q.error}</Alert>}
       <Card>
+        <div class="toolbar">
+          <SelectField label="Anzeigen" value={statusFilter} onValue={setStatusFilter} options={[
+            { value: "all", label: "Alle" }, { value: "active", label: "Aktiv" }, { value: "pending", label: "In Vorbereitung" },
+            { value: "suspended", label: "Gesperrt" }, { value: "deactivated", label: "Deaktiviert" }, { value: "trial", label: "Kostenlose Testkunden" },
+          ]} />
+          <p class="muted small mb-0">{list.length} von {all.length} Mandanten · <a href="#/umsatz">Umsatz aller Monate</a></p>
+        </div>
         <Table<TenantOverview>
           caption="Mandantenliste"
           rows={list}
@@ -189,20 +243,35 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
             { key: "l", header: "Lizenz", render: (t) => <LicenseBadge license={t.license} /> },
             { key: "p", header: "Preis", render: (t) => <span class="small">{priceText(t.license, defaultPrice)}</span> },
             { key: "e", header: "Mitarbeitende", align: "right", render: (t) => <span class="num">{t.activeEmployeeCount} / {t.employeeCount}{t.license?.maxEmployees ? ` (max. ${t.license.maxEmployees})` : ""}</span> },
+            { key: "u", header: "Umsatz (Monat)", align: "right", render: (t) => {
+              const r = revenue?.rows.find((x) => x.tenantId === t.tenant.id);
+              return <span class="num">{r ? formatEuro(r.amountCents) : "—"}</span>;
+            } },
             { key: "a", header: "Aktionen", actions: true, render: (t) => <LinkButton size="sm" href={`#/mandant/${t.tenant.id}`} aria-label={`${t.tenant.name} verwalten`}>Verwalten</LinkButton> },
           ]}
         />
       </Card>
 
-      <Dialog open={creating} title="Mandant anlegen" onClose={() => setCreating(false)}
-        footer={<><Button variant="secondary" onClick={() => setCreating(false)}>Abbrechen</Button><Button type="submit" form="tenant-form" busy={busy}>Anlegen</Button></>}>
+      <Dialog open={creating !== null} title={creating === "trial" ? "Kostenlosen Testkunden anlegen" : "Mandant anlegen"} onClose={() => setCreating(null)}
+        footer={<><Button variant="secondary" onClick={() => setCreating(null)}>Abbrechen</Button><Button type="submit" form="tenant-form" busy={busy}>Anlegen</Button></>}>
         <form id="tenant-form" class="stack" onSubmit={create} noValidate>
           <InputField label="Firmenname" value={f.name} onValue={(v) => setF({ ...f, name: v, slug: f.slug && f.slug !== slugify(f.name) ? f.slug : slugify(v) })} data-autofocus />
           <InputField label="Kurzname (URL)" value={f.slug} onValue={(v) => setF({ ...f, slug: v })} hint="Kleinbuchstaben, Ziffern und Bindestriche." />
-          <InputField label="E-Mail des Inhabers" type="email" value={f.ownerEmail} onValue={(v) => setF({ ...f, ownerEmail: v })} hint="Erhält die Einladung zum Chef-Portal." />
+          <InputField label="E-Mail des Inhabers" type="email" value={f.ownerEmail} onValue={(v) => setF({ ...f, ownerEmail: v })} hint="Erhält die Einladung zum Chef-Portal (einmaliger Link, kein Passwort)." />
           <SelectField label="Lizenz" value={f.plan} onValue={(v) => setF({ ...f, plan: v as LicensePlan })} options={PLANS.map((p) => ({ value: p.plan, label: PLAN_LABEL[p.plan]! }))}
             hint={f.plan === "pilot_free" ? "Kostenlos, unbefristet, keine Zahlungsdaten, keine Rechnungen." : `Standardpreis ${formatEuro(defaultPrice)} netto je abrechenbarem Mitarbeiter und Monat; Sonderkonditionen danach im Mandanten.`} />
-          <Checkbox label="Demo-/Testmandant" hint="Nur anonymisierte Testdaten. PDFs werden als Test gekennzeichnet." checked={f.isDemo} onChange={(v) => setF({ ...f, isDemo: v })} />
+          {f.plan !== "pilot_free" && (
+            <fieldset class="stack-sm" style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend><strong>Kostenloser Testkunde</strong></legend>
+              <Checkbox label="Kostenlos testen" hint="Es wird nichts berechnet. Danach gilt automatisch der normale Preis – keine Zahlungsdaten nötig."
+                checked={f.free} onChange={(v) => setF({ ...f, free: v, freeUntil: v && !f.freeUntil ? addDaysISO(TRIAL_DAYS) : f.freeUntil })} />
+              {f.free && <>
+                <InputField label="Kostenlos bis" optional type="date" value={f.freeUntil} onValue={(v) => setF({ ...f, freeUntil: v })} hint="Leer = unbefristet kostenlos." />
+                <InputField label="Notiz zur Kondition" optional value={f.freeNote} onValue={(v) => setF({ ...f, freeNote: v })} maxLength={500} />
+              </>}
+            </fieldset>
+          )}
+          <Checkbox label="Demo-/Testmandant" hint="Nur anonymisierte Testdaten. PDFs werden als Test gekennzeichnet; zählt nicht zum Umsatz." checked={f.isDemo} onChange={(v) => setF({ ...f, isDemo: v })} />
           {error && <Alert tone="danger" live>{error}</Alert>}
         </form>
       </Dialog>
@@ -243,15 +312,22 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
   const { o, audit, grant, billing, defaultPrice } = q.data;
   const t: Tenant = o.tenant;
 
-  const setStatus = async () => {
-    const suspend = t.status !== "suspended";
-    const reason = await dialogs.askReason({
-      title: suspend ? `${t.name} sperren?` : `${t.name} reaktivieren?`,
-      message: suspend ? "Alle Benutzer dieses Mandanten können sich nicht mehr anmelden. Daten bleiben vollständig erhalten." : "Die Benutzer können sich wieder anmelden.",
-      confirmLabel: suspend ? "Sperren" : "Reaktivieren", danger: suspend,
-    });
+  type StatusAction = { status: Tenant["status"]; label: string; title: string; message: string; done: string; danger: boolean; icon: "lock" | "refresh" | "check" | "x" };
+  const STATUS_ACTIONS: Record<string, StatusAction> = {
+    unlock: { status: "active", label: "Freischalten", title: `${t.name} freischalten?`, message: "Die Benutzer des Mandanten können sich anmelden.", done: "Mandant freigeschaltet.", danger: false, icon: "check" },
+    reactivate: { status: "active", label: "Reaktivieren", title: `${t.name} reaktivieren?`, message: "Die Benutzer können sich wieder anmelden. Alle Daten sind unverändert vorhanden.", done: "Mandant reaktiviert.", danger: false, icon: "refresh" },
+    suspend: { status: "suspended", label: "Sperren", title: `${t.name} sperren?`, message: "Vorübergehende Sperre (z. B. offene Rechnung): Alle Benutzer dieses Mandanten können sich nicht mehr anmelden. Daten bleiben vollständig erhalten.", done: "Mandant gesperrt.", danger: true, icon: "lock" },
+    deactivate: { status: "deactivated", label: "Deaktivieren", title: `${t.name} deaktivieren?`, message: "Für beendete Verträge: Der Zugang wird dauerhaft abgeschaltet, niemand kann sich mehr anmelden. Es werden keine Daten gelöscht; eine Reaktivierung ist möglich.", done: "Mandant deaktiviert.", danger: true, icon: "x" },
+  };
+  const actionsFor: Record<Tenant["status"], string[]> = {
+    pending: ["unlock", "deactivate"], active: ["suspend", "deactivate"], suspended: ["reactivate", "deactivate"], deactivated: ["reactivate"],
+  };
+
+  const setStatus = async (key: string) => {
+    const a = STATUS_ACTIONS[key]!;
+    const reason = await dialogs.askReason({ title: a.title, message: a.message, confirmLabel: a.label, danger: a.danger });
     if (!reason) return;
-    try { await repo.setTenantStatus(t.id, suspend ? "suspended" : "active", reason); toast(suspend ? "Mandant gesperrt." : "Mandant reaktiviert."); setTick((x) => x + 1); }
+    try { await repo.setTenantStatus(t.id, a.status, reason); toast(a.done); setTick((x) => x + 1); }
     catch (e) { toast(errorText(e), "error"); }
   };
 
@@ -296,12 +372,14 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
             <dt>Demo-Daten</dt><dd>{t.isDemo ? "ja" : "nein"}</dd>
           </dl>
           {!readOnly && (
-            <div style={{ marginTop: "var(--space-4)" }}>
-              <Button variant={t.status === "suspended" ? "primary" : "danger"} icon={t.status === "suspended" ? "refresh" : "lock"} onClick={setStatus}>
-                {t.status === "suspended" ? "Reaktivieren" : "Sperren"}
-              </Button>
+            <div class="btn-row" style={{ marginTop: "var(--space-4)" }}>
+              {(actionsFor[t.status] ?? []).map((key) => {
+                const a = STATUS_ACTIONS[key]!;
+                return <Button key={key} variant={a.danger ? (key === "deactivate" ? "secondary" : "danger") : "primary"} icon={a.icon} onClick={() => setStatus(key)}>{a.label}</Button>;
+              })}
             </div>
           )}
+          <p class="xsmall muted" style={{ marginTop: "var(--space-3)" }}>Gesperrt = vorübergehend, deaktiviert = Vertrag beendet. In beiden Fällen bleiben alle Daten erhalten.</p>
         </Card>
         <Card title="Lizenz">
           <form class="stack" onSubmit={saveLicense} noValidate>
@@ -370,7 +448,7 @@ function AuditTable({ events, withTenant }: { events: AuditEvent[]; withTenant?:
       columns={[
         { key: "t", header: "Zeitpunkt", render: (e) => <span class="small nowrap">{dateTimeDE(e.createdAt)}</span> },
         ...(withTenant ? [{ key: "m", header: "Mandant", render: (e: AuditEvent) => (e.tenantId ? withTenant.get(e.tenantId) ?? "—" : "—") }] : []),
-        { key: "a", header: "Aktion", render: (e) => ACTION_LABEL[e.action] ?? e.action },
+        { key: "a", header: "Aktion", render: (e) => auditLabel(e) },
         { key: "r", header: "Begründung", render: (e) => <span class="small">{e.reason ?? "—"}</span> },
       ]}
     />
@@ -562,51 +640,68 @@ function SupportPage() {
   );
 }
 
+function uptimeText(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return d ? `${d} Tg. ${h} Std.` : h ? `${h} Std. ${m} Min.` : `${m} Min.`;
+}
+
+const TENANT_STATUS_DE: Record<string, string> = { active: "aktiv", suspended: "gesperrt", deactivated: "deaktiviert", pending: "in Vorbereitung" };
+
+interface StatusItem { name: string; status: string; ok: boolean | null; note: string }
+
+/** Technical overview (super_admin + support): numbers and states only, no secrets. */
 function SystemPage() {
-  return IS_DEMO ? <DemoSystemPage /> : <ApiSystemPage />;
-}
-
-function ApiSystemPage() {
-  const health = useAsync(async () => {
-    const res = await fetch(`${API_BASE}/api/health`, { credentials: "include", headers: { Accept: "application/json" } });
-    return res.ok;
-  }, []);
-  const apiOk = health.data === true;
-  const items = [
-    { name: "Anwendung", status: "Betriebsbereit", ok: true, note: "Verbunden mit dem eigenen Server (API-Modus)." },
-    { name: "Server / API", status: health.loading ? "Wird geprüft …" : apiOk ? "Erreichbar" : "Nicht erreichbar", ok: apiOk, note: "Prüfung über /api/health (inkl. Datenbankverbindung)." },
-    { name: "E-Mail-Versand", status: "Siehe Server-Konfiguration", ok: false, note: "SMTP wird über Umgebungsvariablen eingerichtet (docs/betrieb.md)." },
-    { name: "Backups", status: "Auf dem Server", ok: false, note: "Täglicher verschlüsselter pg_dump – Einrichtung siehe docs/betrieb.md." },
-  ];
-  return <SystemList items={items} note="Statuswerte der Anwendung; Backups und E-Mail werden auf dem Server überwacht." />;
-}
-
-function DemoSystemPage() {
-  const items = [
-    { name: "Anwendung (Demo-Build)", status: "Betriebsbereit", ok: true, note: "Läuft vollständig im Browser." },
-    { name: "Server / API", status: "Nicht verbunden", ok: false, note: "Demo-Modus – keine Verbindung zum Server vorgesehen." },
-    { name: "Zentrale Datenbank", status: "Nicht verbunden", ok: false, note: "Wird mit der Produktivumgebung angebunden." },
-    { name: "E-Mail-Versand", status: "Deaktiviert", ok: false, note: "Einladungen und Passwort-Links werden in der Demo nicht versendet." },
-    { name: "Backups", status: "Noch nicht eingerichtet", ok: false, note: "Platzhalter." },
-  ];
-  return <SystemList items={items} note="Platzhalter – echte Statuswerte folgen mit der Produktivumgebung." />;
-}
-
-function SystemList({ items, note }: { items: Array<{ name: string; status: string; ok: boolean; note: string }>; note: string }) {
+  const q = useAsync(() => repo.getSystemOverview(), []);
+  const o = q.data;
+  let items: StatusItem[] = [];
+  if (IS_DEMO) {
+    items = [
+      { name: "Anwendung", status: "Demo-Build", ok: true, note: "Läuft vollständig im Browser mit erfundenen Daten." },
+      { name: "Server / Datenbank", status: "Nicht verbunden", ok: null, note: "Demo-Modus – im Betrieb: eigener Server mit PostgreSQL (docs/betrieb.md)." },
+      { name: "E-Mail-Versand (SMTP)", status: "Nicht eingerichtet", ok: null, note: "In der Demo werden keine E-Mails versendet." },
+      { name: "Zahlungsdienst", status: "keiner", ok: true, note: "Manuelle Abrechnung, keine Abbuchungen, keine Kontodaten." },
+      { name: "Letzte Sicherung", status: "nicht bekannt", ok: null, note: "Demo-Daten liegen nur in diesem Browser." },
+    ];
+  } else if (q.error) {
+    items = [{ name: "Server / Datenbank", status: "Nicht erreichbar", ok: false, note: q.error }];
+  } else if (o) {
+    items = [
+      { name: "Version", status: o.version ? `v${o.version}` : "nicht bekannt", ok: !!o.version, note: o.commit ? `Commit ${o.commit.slice(0, 12)}` : "Commit nicht gesetzt (APP_COMMIT)." },
+      { name: "Server", status: o.production ? "Produktivbetrieb" : "Entwicklung/Test", ok: true, note: `Läuft seit ${uptimeText(o.uptimeSeconds)} · Node ${o.nodeVersion} · Serverzeit ${dateTimeDE(o.serverTime)}` },
+      { name: "Datenbank", status: o.database.reachable ? "Erreichbar" : "Nicht erreichbar", ok: o.database.reachable, note: o.database.time ? `Datenbankzeit ${dateTimeDE(o.database.time)}` : "" },
+      { name: "Migrationsstand", status: o.migrations ? `${o.migrations.count} Migrationen` : "nicht bekannt", ok: o.migrations ? true : null,
+        note: o.migrations ? `Zuletzt: ${o.migrations.latest ?? "—"}${o.migrations.appliedAt ? `, eingespielt ${dateTimeDE(o.migrations.appliedAt)}` : ""}` : "Migrationen wurden nicht über den Server eingespielt." },
+      { name: "Aktive Sitzungen", status: o.activeSessions == null ? "nicht bekannt" : String(o.activeSessions), ok: null, note: "Angemeldete Geräte (nicht abgelaufen, nicht abgemeldet)." },
+      { name: "E-Mail-Versand (SMTP)", status: o.mail.configured ? "Eingerichtet" : "Nicht eingerichtet", ok: o.mail.configured,
+        note: o.mail.configured ? "Einladungen und Passwort-Links werden per E-Mail versendet." : "Einladungslinks können im Chef-Portal per WhatsApp geteilt oder kopiert werden." },
+      { name: "Zahlungsdienst", status: o.paymentProvider === "none" ? "keiner" : o.paymentProvider, ok: true, note: "Manuelle Abrechnung, keine Abbuchungen, keine Kontodaten." },
+      { name: "Letzte Sicherung", status: o.lastBackupAt ? dateTimeDE(o.lastBackupAt) : "nicht bekannt", ok: o.lastBackupAt ? Date.now() - Date.parse(o.lastBackupAt) < 36 * 3600000 : null,
+        note: o.lastBackupAt ? "Zeitstempel der letzten erfolgreichen Sicherung (BACKUP_STATUS_FILE). Wiederherstellung regelmäßig testen." : "Der Server kennt keinen Sicherungszeitpunkt (BACKUP_STATUS_FILE nicht gesetzt)." },
+      { name: "Mandanten", status: String(Object.values(o.tenants).reduce((a, b) => a + b, 0)), ok: null,
+        note: Object.entries(o.tenants).map(([k, v]) => `${v} ${TENANT_STATUS_DE[k] ?? k}`).join(" · ") || "keine" },
+    ];
+  }
   return (
     <div class="stack">
       <h1 class="page-title">Systemstatus</h1>
-      <Alert tone="warning"><p>{note}</p></Alert>
+      <p class="muted">Technische Übersicht ohne Geheimnisse und ohne Personendaten.</p>
+      {IS_DEMO && <Alert tone="info"><p>Demo-Modus: Die Werte des echten Servers erscheinen im Betrieb mit der eigenen API.</p></Alert>}
       <Card>
-        <ul class="list-plain stack">
-          {items.map((i) => (
-            <li key={i.name} class="row" style={{ alignItems: "flex-start" }}>
-              <span style={{ color: i.ok ? "var(--color-success)" : "var(--color-text-muted)" }}><Icon name={i.ok ? "checkCircle" : "info"} /></span>
-              <div style={{ flex: 1 }}><strong>{i.name}</strong><div class="small muted">{i.note}</div></div>
-              <Badge tone={i.ok ? "success" : "neutral"}>{i.status}</Badge>
-            </li>
-          ))}
-        </ul>
+        {q.loading && !IS_DEMO ? <p class="muted" role="status">Wird geprüft …</p> : (
+          <ul class="status-list" data-testid="system-status">
+            {items.map((i) => (
+              <li key={i.name}>
+                <span style={{ color: i.ok === true ? "var(--color-success)" : i.ok === false ? "var(--color-danger, #b42318)" : "var(--color-text-muted)" }}>
+                  <Icon name={i.ok === true ? "checkCircle" : i.ok === false ? "alert" : "info"} />
+                </span>
+                <div class="status-text"><strong>{i.name}</strong><div class="small muted">{i.note}</div></div>
+                <Badge tone={i.ok === true ? "success" : i.ok === false ? "danger" : "neutral"}>{i.status}</Badge>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );
