@@ -150,10 +150,16 @@ esac
 q() { t_psql "$DB" -At -v ON_ERROR_STOP=1 -c "$1"; }
 
 # 3. Rollen, Datenbank, Dump
-t_psql postgres -q -v ON_ERROR_STOP=0 -f - < "$WORK/roles.sql" >"$WORK/roles.log" 2>&1 || true
+# "GRANTED BY <alter Superuser>" weglassen: Ist der Superuser des Ziels ein anderer (Container: postgres, Quelle:
+# POSTGRES_USER), lehnt PostgreSQL 16 die Mitgliedschaften sonst ab. Die Rechte selbst bleiben gleich.
+sed -E 's/^(GRANT .*) GRANTED BY [^;]+;$/\1;/' "$WORK/roles.sql" > "$WORK/roles.restore.sql"
+t_psql postgres -q -v ON_ERROR_STOP=0 -f - < "$WORK/roles.restore.sql" >"$WORK/roles.log" 2>&1 || true
 if grep -E 'ERROR' "$WORK/roles.log" | grep -vq 'already exists'; then
   abort "Rollen nicht einspielbar: $(grep -E 'ERROR' "$WORK/roles.log" | grep -v 'already exists' | head -n 3 | tr '\n' ' ')"
 fi
+members="$(t_psql postgres -At -c "select count(*) from pg_auth_members m join pg_roles r on r.oid = m.roleid join pg_roles u on u.oid = m.member
+                                      where u.rolname = 'app_api' and r.rolname in ('app_user', 'app_anon', 'app_auth')")"
+[ "$members" = 3 ] || abort "Rollen-Mitgliedschaften von app_api unvollständig ($members/3)"
 ok "Rollen eingespielt (ohne Passwörter; app_api-Passwort setzt danach der Migrationsjob)"
 t_psql postgres -q -v ON_ERROR_STOP=1 -c "create database \"$DB\" owner \"$OWNER\" template template0 encoding 'UTF8'" >/dev/null \
   || abort "Datenbank $DB nicht anlegbar"

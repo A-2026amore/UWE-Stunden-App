@@ -130,7 +130,9 @@ dem Server mit einem echten Archiv durchgespielt werden.
 4. Archiv entschlüsseln: `gpg -d stunden-prod-….tar.gpg | tar -x -C /root/restore` (Rechte 700).
 5. Rollen und Daten einspielen:
    `$C exec -T db psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=0 < /root/restore/roles.sql`
-   (Meldungen „already exists“ sind normal), dann
+   (Meldungen „already exists“ sind normal; heißt der Superuser der neuen Umgebung anders als `POSTGRES_USER` der
+   gesicherten, vorher `sed -E 's/^(GRANT .*) GRANTED BY [^;]+;$/\1;/' -i /root/restore/roles.sql` – so macht es auch
+   die Probe), dann
    `$C exec -T db pg_restore -U "$POSTGRES_USER" -d stunden --clean --if-exists --exit-on-error < /root/restore/database.dump`.
 6. `$C run --rm migrate` – setzt das Passwort von `app_api` aus `deploy/.env` (Rollen sind ohne Passwörter
    gesichert) und spielt neuere Migrationen ein.
