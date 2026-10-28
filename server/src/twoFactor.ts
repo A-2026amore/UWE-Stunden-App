@@ -118,9 +118,16 @@ export interface TwoFactorService {
   state(q: Queryable, userId: string): Promise<TwoFactorState>;
   status(userId: string): Promise<TwoFactorStatus>;
   /** Locks the user and either creates a full session (no factor) or a pending challenge (factor enrolled). */
-  beginLogin(userId: string, ttlHours: number, userAgent: string | null): Promise<
+  /**
+   * After a correct password: challenge (2FA enrolled) or session. With
+   * allowSession = false (access blocked) an account without 2FA gets
+   * "refused" and no session is created; enrolled accounts still get the
+   * challenge, so the block is only revealed after the second factor.
+   */
+  beginLogin(userId: string, ttlHours: number, userAgent: string | null, opts?: { allowSession?: boolean }): Promise<
     | { kind: "session"; token: string; expiresAt: Date; requiredBy: RequiredBy }
     | { kind: "challenge"; token: string }
+    | { kind: "refused" }
   >;
   /** Counts one attempt on the challenge; null when unknown, used, expired or out of attempts. */
   takeChallenge(token: string): Promise<{ challengeId: string; userId: string; email: string } | null>;
@@ -211,7 +218,7 @@ export function createTwoFactorService(pool: pg.Pool, cfg: TwoFactorConfig, now:
       });
     },
 
-    async beginLogin(userId, ttlHours, userAgent) {
+    async beginLogin(userId, ttlHours, userAgent, opts = {}) {
       return auth(async (q) => {
         // Serialises against a concurrent enrolment (confirmSetup locks the same row).
         const u = await q.query("select 1 from auth.users where id = $1 and disabled_at is null for update", [userId]);
@@ -227,6 +234,7 @@ export function createTwoFactorService(pool: pg.Pool, cfg: TwoFactorConfig, now:
           );
           return { kind: "challenge" as const, token };
         }
+        if (opts.allowSession === false) return { kind: "refused" as const };
         const r = await q.query<{ expires_at: Date }>(
           `insert into auth.sessions (user_id, token_hash, expires_at, user_agent)
            values ($1, $2, now() + make_interval(hours => $3), left($4, 512)) returning expires_at`,

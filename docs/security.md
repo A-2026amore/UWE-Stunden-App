@@ -139,6 +139,10 @@ damit er sich nicht aussperrt.
   (`RATE_LIMIT_2FA_PER_IP`, Standard 50); Antwort 429 mit `Retry-After`.
 - Keine Kontenaufzählung: Falsches Passwort ergibt dieselbe Antwort wie bisher, egal ob 2FA eingerichtet ist;
   der zweite Schritt wird nur nach richtigem Passwort angeboten.
+- Gesperrter Zugang (Mitarbeiter deaktiviert, Mandant gesperrt) bei eingerichteter 2FA: Der Passwortschritt
+  antwortet genau wie bei einem aktiven Konto (Challenge); „gesperrt“ (403) meldet die API erst nach dem richtigen
+  zweiten Faktor. Ohne 2FA ist das Passwort der einzige Faktor: Die Sperre wird direkt danach gemeldet, eine
+  Sitzung entsteht nicht (QA 2026-10-28, B4).
 - Vergleiche in konstanter Zeit (`timingSafeEqual`), alle Kandidaten des Toleranzfensters werden berechnet.
 - Aktivieren beendet alle **anderen** Sitzungen des Kontos. Deaktivieren und neue Wiederherstellungscodes
   verlangen Passwort **und** Code.

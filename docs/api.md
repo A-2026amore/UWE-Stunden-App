@@ -126,7 +126,7 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 
 | Methode, Pfad | Body | Antwort |
 |---|---|---|
-| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · mit eingerichteter 2FA stattdessen 200 `{twoFactorRequired: true}` + Cookie `__Host-tfa` (keine Sitzung) · 401 einheitlicher Text · 403 Zugang inaktiv bzw. `tenant_suspended` · 429 |
+| `POST /api/auth/login` | `{email, password}` | 200 `Session` + Cookie · mit eingerichteter 2FA stattdessen 200 `{twoFactorRequired: true}` + Cookie `__Host-tfa` (keine Sitzung) · 401 einheitlicher Text · 403 Zugang inaktiv bzw. `tenant_suspended` (nur ohne 2FA; mit 2FA erst bei `2fa/verify`) · 429 |
 | `POST /api/auth/logout` | `{}` | 204, Cookies (Sitzung, ausstehender 2FA-Schritt) gelöscht, Sitzung widerrufen |
 | `GET /api/auth/session` | – | 200 `Session` oder `null` (Session enthält zusätzlich `memberships`) |
 | `POST /api/auth/password-reset` | `{email}` | immer 204 (keine Kontenaufzählung); Link `PUBLIC_ORIGIN + RESET_LINK_PATH#token=…` |

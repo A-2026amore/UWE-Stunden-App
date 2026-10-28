@@ -205,11 +205,15 @@ export function createApp(deps: AppDeps) {
     limiters.loginKey.reset(key);
 
     const { session, blocked } = await withTx(pool, "app_user", login.userId, (q) => buildSession(q, login.userId, email));
-    if (blocked) throw new HttpError(403, blocked.code, blocked.message);
     const ua = userAgent(ctx);
     // 2FA set up → no session yet, only a pending challenge (second step: POST /api/auth/2fa/verify).
     // The decision and the session/challenge insert happen under a lock on the user row.
-    const begun = await twoFactor.beginLogin(login.userId, config.sessionTtlHours, ua);
+    // Blocked access (deactivated, tenant suspended): accounts WITH 2FA get the same challenge as
+    // everyone else – the block is reported only after the second factor (2fa/verify), so the
+    // password alone does not reveal the account state (QA 2026-10-28, B4). Without 2FA the
+    // password is the only factor; the block is reported right away and no session is created.
+    const begun = await twoFactor.beginLogin(login.userId, config.sessionTtlHours, ua, { allowSession: !blocked });
+    if (begun.kind === "refused") throw new HttpError(403, blocked!.code, blocked!.message);
     if (begun.kind === "challenge") {
       log({ level: "info", msg: "login password ok, second factor pending", requestId: ctx.requestId, userId: login.userId });
       return {

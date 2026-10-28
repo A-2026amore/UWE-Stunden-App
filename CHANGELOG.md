@@ -46,6 +46,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - B3: Firmenprofil (Branding, Kontakt, Einstellungen, Name) ändert nur noch der Inhaber. Plattformpersonal hat
   keinen Schreibzugriff mehr auf Mandantenzeilen, auch nicht mit Support-Freigabe; Statuswechsel nur über
   `set_tenant_status` (jetzt SECURITY DEFINER mit Super-Admin-Prüfung). Migration `0011_tenant_profile_owner_only.sql`.
+- B4: Anmeldung eines gesperrten Kontos mit 2FA verrät die Sperre (und damit das richtige Passwort) nicht mehr
+  vor dem zweiten Faktor; die 403-Meldung folgt erst nach dem richtigen Code.
 
 ### Bekannte Fehler der Alt-App (dokumentiert, nicht geändert)
 - Überschneidung über Mitternacht wird nicht erkannt.
