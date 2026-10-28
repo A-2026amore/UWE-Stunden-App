@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { activeShifts, addDays, isRealDate, netMinutes } from "../../../core/time";
 import { csvRow } from "../../../core/csv";
-import { evaluateDay, issueForDay } from "../../../core/breaks";
+import { evaluateDay, issueForDay, requiredPauseText } from "../../../core/breaks";
 import type { Employee, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
 import {
@@ -172,6 +172,10 @@ export function TimesPage() {
   );
 }
 
+const CHEF_SHORT_PAUSE_ADVICE =
+  "Die Korrektur wird so nicht gespeichert. Bitte keine Pause eintragen, die nicht genommen wurde: " +
+  "Bei einer Unterbrechung den Einsatz in mehrere Einsätze aufteilen, sonst Beginn und Ende so erfassen, wie tatsächlich gearbeitet wurde.";
+
 function CorrectionDialog({ entry, employee, onClose, onSaved }: { entry: TimeEntry | null; employee: Employee | null; onClose: () => void; onSaved: () => void }) {
   const { repo, tenant } = useChef();
   const toast = useToast();
@@ -187,16 +191,23 @@ function CorrectionDialog({ entry, employee, onClose, onSaved }: { entry: TimeEn
     repo.listTimeEntries(entry.employeeId, entry.date.slice(0, 7)).then(setDayEntries).catch(() => setDayEntries([]));
   }, [entry]);
 
+  const policy = tenant.settings.breakPolicy;
   const candidate = { id: entry?.id, date: f.date, start: f.start, end: f.end, pause: Number(f.pause) };
   const others = activeShifts(dayEntries.filter((x) => x.id !== entry?.id));
-  const issue = entry && /^\d+$/.test(f.pause) ? issueForDay(evaluateDay([...others, candidate], f.date, tenant.settings.breakPolicy), tenant.settings.breakPolicy) : "";
+  const pauseOk = /^\d+$/.test(f.pause);
+  const day = entry && pauseOk ? evaluateDay([...others, candidate], f.date, policy) : null;
+  const issue = day ? issueForDay(day, policy) : "";
+  // Minimum pause of the day (also while the pause field is empty); never pre-filled as a suggestion.
+  const ruleDay = entry ? evaluateDay([...others, { ...candidate, pause: pauseOk ? Number(f.pause) : 0 }], f.date, policy) : null;
+  const pauseHint = ruleDay?.valid ? `${requiredPauseText(ruleDay, policy)} Nur die tatsächlich genommene Pause eintragen.` : undefined;
 
   const save = async (e: Event) => {
     e.preventDefault();
     if (!entry) return;
     setError(null);
     if (f.reason.trim().length < 3) { setError("Bitte eine Begründung für die Korrektur angeben."); return; }
-    if (!/^\d+$/.test(f.pause)) { setError("Pause bitte in ganzen Minuten angeben."); return; }
+    if (!pauseOk) { setError("Pause bitte in ganzen Minuten angeben (0, wenn keine Pause genommen wurde)."); return; }
+    if (issue) { setError(day?.valid && day.missing ? `${issue} ${CHEF_SHORT_PAUSE_ADVICE}` : issue); return; }
     setBusy(true);
     try {
       await repo.updateTimeEntry(entry.id, { date: f.date, start: f.start, end: f.end, pauseMinutes: Number(f.pause), note: f.note }, entry.version, f.reason);
@@ -223,8 +234,9 @@ function CorrectionDialog({ entry, employee, onClose, onSaved }: { entry: TimeEn
           <div class="grid-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
             <InputField label="Beginn" type="time" value={f.start} onValue={set("start")} />
             <InputField label="Ende" type="time" value={f.end} onValue={set("end")} />
-            <InputField label="Pause (Min.)" inputMode="numeric" value={f.pause} onValue={set("pause")} />
+            <InputField label="Pause (Min.)" inputMode="numeric" value={f.pause} onValue={set("pause")} required />
           </div>
+          {pauseHint && <p class="muted small mb-0" aria-live="polite" data-testid="correction-pause-hint">{pauseHint}</p>}
           <InputField label="Bemerkung" optional value={f.note} onValue={set("note")} maxLength={200} />
           {issue && <Alert tone="warning" live>{issue}</Alert>}
           <TextareaField label="Begründung der Korrektur" value={f.reason} onValue={set("reason")} required hint="Pflichtangabe – wird im Änderungsprotokoll gespeichert und ist für den Mitarbeitenden nachvollziehbar." maxLength={500} />
