@@ -60,9 +60,10 @@ Zu regeln (Vorschlag, Text durch Rechtsberatung):
 - TOMs nach Abschnitt 3 als Anlage.
 - Unterstützung bei Betroffenenrechten: Datenauskunft und Anonymisierung sind in der Software selbst möglich
   (Abschnitt 6).
-- Rückgabe und Löschung bei Vertragsende: Gesamtexport durch den Inhaber (Chef-Portal → Datenschutz), danach
-  Löschung des Mandanten durch den Betreiber (Wartungsvorgang, `betrieb.md` Abschnitt 6.1a) – Frist für die
-  Löschung und für Backups (Backups laufen nach ihrer Aufbewahrungsdauer aus) im Vertrag festlegen.
+- Rückgabe und Löschung bei Vertragsende: Gesamtexport durch den Inhaber (Chef-Portal → Datenschutz, solange der
+  Mandant aktiv ist) oder durch den Betreiber in jedem Status (`cli.ts export-tenant`), danach Löschung des
+  deaktivierten Mandanten durch den Betreiber (`cli.ts delete-tenant`, getestet, `betrieb.md` Abschnitt 6.1b) –
+  Frist für die Löschung und für Backups (Backups laufen nach ihrer Aufbewahrungsdauer aus) im Vertrag festlegen.
 - Meldung von Datenschutzverletzungen, Kontrollrechte.
 
 ## 5. Aufbewahrung und Löschung
@@ -80,7 +81,7 @@ zehn Jahre, je nachdem, ob die Daten als Buchungsbeleg dienen). Arbeitsrechtlich
 | Ausgeschiedene Mitarbeitende | **Anonymisierung** durch den Inhaber nach Ablauf der Frist (gerechnet ab der Deaktivierung), siehe unten |
 | Arbeitszeiten | bleiben **ohne Personenbezug** erhalten (Zeiten, Pausen, Dauer); Bemerkungen werden geleert |
 | Sitzungen, Einmal-Links, Zwei-Faktor-Daten | bei der Anonymisierung gelöscht; automatische Bereinigung abgelaufener Einträge ist **noch nicht** als Wartungsjob umgesetzt (offen) |
-| Gekündigte Kundenfirma | Gesamtexport (JSON/CSV) durch den Inhaber; anschließend Stilllegung bzw. Löschung durch den Betreiber (`betrieb.md` 6.1a) |
+| Gekündigte Kundenfirma | Gesamtexport (JSON/CSV) durch den Inhaber oder Betreiber (`cli.ts export-tenant`); Deaktivierung, dann Löschung durch den Betreiber (`cli.ts delete-tenant`, `betrieb.md` 6.1b); nur Rechnungen/abgerechnete Monate der Plattform bleiben |
 | Backups | enthalten die Daten bis zum Ablauf ihrer Aufbewahrung (lokal `BACKUP_KEEP_LOCAL`, offsite nach restic-Regel); keine Einzellöschung in Backups – im Löschkonzept erwähnen |
 
 ### Anonymisierung – was genau passiert

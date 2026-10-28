@@ -5,6 +5,18 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Vertragsende (Branch `feature/mandanten-export-loeschung`, Migration `0020_tenant_offboarding.sql`, Doku
+  `docs/betrieb.md` 6.1b – Fristen rechtlich prüfen):
+  - Betreiberbefehl `cli.ts export-tenant <kurzname> --out <verzeichnis>`: Gesamtexport eines Mandanten in jedem
+    Status (auch gesperrt/deaktiviert) als `firmendaten.json`, `arbeitszeiten.csv` und `SHA256SUMS`; nur Konsole
+    mit Eigentümerrolle, protokolliert (`tenant.operator_export`).
+  - Betreiberbefehl `cli.ts delete-tenant <kurzname> --confirm <kurzname> (--after-export <verzeichnis> |
+    --without-export)`: löscht alle personenbezogenen und Zeitdaten eines deaktivierten Mandanten in einer
+    Transaktion (inkl. nur dort genutzter Anmeldekonten, Sitzungen, Einladungen, Revisionen, Korrekturanfragen,
+    Statushistorie, Logos, Audit-Log des Mandanten; Katalog-Durchlauf über alle Tabellen mit `tenant_id`).
+    Aufbewahrt werden nur Rechnungen und abgerechnete Monate der Plattform (anonymisierter Platzhalter-Mandant);
+    ein anonymisierter Audit-Eintrag `tenant.deleted` dokumentiert die Löschung.
+  - `export_tenant_data` nutzt denselben Export-Inhalt (`private.tenant_export_json`); Verhalten unverändert.
 - Wiederöffnung, Sperr-Abrechnung und Rechnungen (Branch `feature/wiedereroeffnung-rechnungen`, Migrationen
   `0017_statement_reopen.sql`, `0018_tenant_status_billing.sql`, `0019_invoices.sql`; Entscheidungen vom 28.10.2026):
   - N1 entschieden: Ein freigegebener Monat ist für alle gesperrt – auch für Korrekturen der Leitung und angenommene

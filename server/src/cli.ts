@@ -18,11 +18,19 @@
  *
  * Test environment only: fictitious test companies with random passwords, printed
  * ONLY on this console (server/src/testenv.ts). Uses MIGRATION_DATABASE_URL (owner).
+ *
+ *   node --import ./server/register.mjs server/src/cli.ts export-tenant <tenant-slug> --out <directory>
+ *   node --import ./server/register.mjs server/src/cli.ts delete-tenant <tenant-slug> --confirm <tenant-slug> (--after-export <directory> | --without-export)
+ *
+ * End of contract (migration 0020, server/src/offboarding.ts): complete export of
+ * a tenant in any status (JSON + CSV + checksums) and deletion of a deactivated
+ * tenant in one transaction. Both are audited. Uses MIGRATION_DATABASE_URL (owner).
  */
 import { createInterface } from "node:readline";
 import { passwordProblem, setPasswordViaReset } from "./auth.ts";
 import { createPool } from "./db.ts";
 import { TestEnvRefused, formatAccounts, seedTestEnvironment } from "./testenv.ts";
+import { OffboardingRefused, deleteTenant, exportTenant } from "./offboarding.ts";
 import { INVITE_ROLES, createOperatorInvitation, inviteLinkBase, oneTimeLink, type InviteRole } from "./operator.ts";
 
 const USAGE = [
@@ -30,6 +38,8 @@ const USAGE = [
   "  cli.ts set-password <email>                                   (Passwort über stdin)",
   "  cli.ts invite-link <mandant-kurzname> <email> <employee|manager|owner> [--days=1..30] [--name=Anzeigename]",
   "  cli.ts seed-test-env --confirm-test-environment [--domain=stunden-test.example] [--admin-email=…]   (nur Testumgebung)",
+  "  cli.ts export-tenant <mandant-kurzname> --out <verzeichnis>                     (Vertragsende: Gesamtexport)",
+  "  cli.ts delete-tenant <mandant-kurzname> --confirm <mandant-kurzname> (--after-export <verzeichnis> | --without-export)",
 ].join("\n");
 
 async function readLine(): Promise<string> {
@@ -162,11 +172,94 @@ async function seedTestEnv(args: string[]) {
   }
 }
 
+function ownerUrl(): string {
+  const url = process.env.MIGRATION_DATABASE_URL;
+  if (!url) {
+    console.error("MIGRATION_DATABASE_URL fehlt (Eigentümer der Datenbank, wie beim Migrationsjob).");
+    process.exit(2);
+  }
+  return url;
+}
+
+/** "--name value" options; every option must be known and appear at most once. */
+function parseOptions(args: string[], withValue: string[], flags: string[]): { positional: string[]; opts: Map<string, string | true> } {
+  const positional: string[] = [];
+  const opts = new Map<string, string | true>();
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (!a.startsWith("--")) {
+      positional.push(a);
+      continue;
+    }
+    const eq = a.indexOf("=");
+    const name = eq > 0 ? a.slice(0, eq) : a;
+    if (opts.has(name)) usage();
+    if (flags.includes(name) && eq < 0) opts.set(name, true);
+    else if (withValue.includes(name)) {
+      const value = eq > 0 ? a.slice(eq + 1) : args[++i];
+      if (!value || value.startsWith("--")) usage();
+      opts.set(name, value);
+    } else usage();
+  }
+  return { positional, opts };
+}
+
+async function runRefusable(fn: () => Promise<void>) {
+  try {
+    await fn();
+  } catch (e) {
+    if (e instanceof OffboardingRefused) {
+      console.error(e.message);
+      process.exitCode = 1;
+    } else {
+      throw e;
+    }
+  }
+}
+
+async function exportTenantCmd(args: string[]) {
+  const { positional, opts } = parseOptions(args, ["--out"], []);
+  const out = opts.get("--out");
+  if (positional.length !== 1 || typeof out !== "string") usage();
+  const url = ownerUrl();
+  await runRefusable(async () => {
+    const r = await exportTenant(url, positional[0]!, out);
+    console.log(`Mandant: ${r.tenantName} (Status: ${r.tenantStatus})`);
+    console.log(`Exportiert: ${r.employees} Personen, ${r.timeEntries} Zeiteinträge`);
+    console.log(`Verzeichnis: ${r.dir} (firmendaten.json, arbeitszeiten.csv, SHA256SUMS)`);
+    console.log(`SHA-256 firmendaten.json: ${r.sha256}`);
+    console.log("Enthält personenbezogene Daten: nur verschlüsselt übergeben und nach der Übergabe vom Server löschen.");
+  });
+}
+
+async function deleteTenantCmd(args: string[]) {
+  const { positional, opts } = parseOptions(args, ["--confirm", "--after-export"], ["--without-export"]);
+  const confirm = opts.get("--confirm");
+  const after = opts.get("--after-export");
+  if (positional.length !== 1 || typeof confirm !== "string") usage();
+  const url = ownerUrl();
+  await runRefusable(async () => {
+    const r = await deleteTenant(url, {
+      slug: positional[0]!, confirm,
+      afterExport: typeof after === "string" ? after : null,
+      withoutExport: opts.get("--without-export") === true,
+    });
+    console.log(`Mandant ${r.tenantId} gelöscht.`);
+    for (const [table, n] of Object.entries(r.deletedRows).sort()) console.log(`  gelöscht ${table}: ${n}`);
+    for (const [table, n] of Object.entries(r.retainedRows).sort()) console.log(`  aufbewahrt ${table}: ${n}`);
+    console.log(r.tenantRow === "tombstone"
+      ? "Mandantenzeile bleibt anonymisiert für aufbewahrte Rechnungsunterlagen der Plattform."
+      : "Mandantenzeile gelöscht.");
+  });
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   if (cmd === "set-password") await setPassword(args);
   else if (cmd === "invite-link") await inviteLink(args);
   else if (cmd === "seed-test-env") await seedTestEnv(args);
+  else if (cmd === "export-tenant") await exportTenantCmd(args);
+  else if (cmd === "delete-tenant") await deleteTenantCmd(args);
   else usage();
 }
 
