@@ -65,6 +65,7 @@ const ROUTE_RULES: Record<string, Rule> = {
   "GET /api/tenants/:tenantId": { scope: "tenant", allowed: ["emp2A", "managerA", "support"] },
   "PATCH /api/tenants/:tenantId/branding": { scope: "tenant", body: { slogan: "Fremdzugriff" } },
   "PATCH /api/tenants/:tenantId/contact": { scope: "tenant", body: { city: "Fremdstadt" } },
+  "PATCH /api/tenants/:tenantId/name": { scope: "tenant", body: { name: "Fremdfirma GmbH" } },
   "PATCH /api/tenants/:tenantId/settings": { scope: "tenant", body: { breakPolicy: { maxShiftMinutes: 600 } } },
   "PUT /api/tenants/:tenantId/two-factor-policy": { scope: "tenant", body: { requireTwoFactorForManagers: false } },
   "GET /api/tenants/:tenantId/support-grant": { scope: "tenant", allowed: ["managerA", "support"] },
@@ -118,6 +119,8 @@ const ROUTE_RULES: Record<string, Rule> = {
 
   // ---------------------------------------------------------------- platform administration
   "GET /api/platform/tenants": { scope: "tenant", allowed: ["support"] },
+  // Technical status (0015): platform staff only, contains no personal data (checked by the leak markers).
+  "GET /api/platform/system": { scope: "tenant", allowed: ["support"] },
   "POST /api/platform/tenants": {
     scope: "tenant", body: { name: "Firma X", slug: "firma-x", plan: "standard", isDemo: true, ownerEmail: "x@firma-x.example" },
   },

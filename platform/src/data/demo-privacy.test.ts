@@ -86,3 +86,17 @@ describe("demo – anonymisation", () => {
     await expect(repoWith(storage).signIn("emil@demo-kt.example", DEMO_PASSWORD)).rejects.toThrow("E-Mail-Adresse oder Passwort ist falsch.");
   });
 });
+
+describe("demo – tenant audit trail for platform staff", () => {
+  it("super-admin and support see no personal events of a tenant (same as the API without support grant)", async () => {
+    const storage = memoryStorage();
+    const chef = await as("chef@demo-kt.example", storage);
+    await chef.updateEmployee(ANNA, { displayName: "Geheimname Audit-4711" });
+    expect(JSON.stringify(await chef.listAudit(KT))).toContain("Geheimname Audit-4711");
+    for (const email of ["admin@plattform.example", "support@plattform.example"]) {
+      const rows = await (await as(email, storage)).listAudit(KT);
+      expect(rows.filter((r) => !["tenant", "license", "billing_period", "billing_settings", "support_grant"].includes(r.entity))).toEqual([]);
+      expect(JSON.stringify(rows)).not.toContain("Geheimname Audit-4711");
+    }
+  });
+});
