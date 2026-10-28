@@ -47,6 +47,9 @@ export interface Membership {
 /** Session as in repository.ts, plus all memberships (for a later tenant switch). */
 export type ApiSession = Session & { memberships: Membership[] };
 
+/** Placeholder user id for timing-equalising lookups of unknown accounts (matches no row). */
+const NO_USER = "00000000-0000-4000-8000-000000000000";
+
 const SETUP_REQUIRED_MESSAGE = "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richte sie zuerst ein.";
 
 /** Helpers handed to the domain routes. */
@@ -206,8 +209,11 @@ export function createApp(deps: AppDeps) {
     // Same work for unknown accounts (scrypt on a dummy hash) – no enumeration via timing.
     const ok = login ? await verifyPassword(b.password, login.passwordHash) : (await verifyPassword(b.password, await getDummyHash()), false);
     if (!login || !ok) {
-      // Comparable work to the membership lookup of a correct password (timing).
+      // Comparable work to a correct password of a blocked account without 2FA (timing, QA B4):
+      // that path runs the membership lookup (app_user) and the 2FA state lookup (app_auth,
+      // beginLogin) in two transactions – the same two read-only lookups run here.
       await withTx(pool, "app_user", null, (q) => q.query("select public.current_session_context()"));
+      await withTx(pool, "app_auth", null, (q) => q.query("select * from auth.two_factor_state($1)", [login?.userId ?? NO_USER]));
       throw invalidLogin();
     }
 

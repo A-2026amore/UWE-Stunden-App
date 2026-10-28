@@ -11,6 +11,14 @@ describe("csvCell (CSV/formula injection, QA B6)", () => {
     expect(csvCell("\r=1")).toBe("\"'\r=1\"");
   });
 
+  it("also neutralises formulas after leading whitespace", () => {
+    expect(csvCell(" =1+1")).toBe("' =1+1");
+    expect(csvCell("   @SUM(A1)")).toBe("'   @SUM(A1)");
+    expect(csvCell(" -2+3")).toBe("' -2+3");
+    expect(csvCell(" \n=1")).toBe("\"' \n=1\"");
+    expect(csvCell("  Frühdienst")).toBe("  Frühdienst");
+  });
+
   it("leaves normal text and numbers unchanged, quotes separators", () => {
     expect(csvCell("Frühdienst")).toBe("Frühdienst");
     expect(csvCell("a=b")).toBe("a=b");

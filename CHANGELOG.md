@@ -53,7 +53,7 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - B5: Herkunft `source: "migration"` (Altdaten-Übernahme) nur noch für eigene Einträge der angemeldeten Person;
   Leitung kann Einträge anderer nicht als „Übernahme“ markieren (403).
 - B6: CSV-Export der Arbeitszeiten (Chef-Portal) schützt vor Formel-Injektion: Freitexte, die mit `=`, `+`, `-`,
-  `@`, Tab oder CR beginnen, erhalten ein vorangestelltes `'` (`platform/src/core/csv.ts`); Quelle „Übernahme“
+  `@` (auch nach führendem Leerraum), Tab oder CR beginnen, erhalten ein vorangestelltes `'` (`platform/src/core/csv.ts`); Quelle „Übernahme“
   wird im Export ausgewiesen.
 - B7: Stilllegen/Löschen von Mandanten dokumentiert (`docs/betrieb.md`, 6.1a); weiterhin kein API-Endpunkt.
 

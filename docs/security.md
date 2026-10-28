@@ -142,8 +142,8 @@ damit er sich nicht aussperrt.
 - Gesperrter Zugang (Mitarbeiter deaktiviert, Mandant gesperrt) bei eingerichteter 2FA: Der Passwortschritt
   antwortet genau wie bei einem aktiven Konto (Challenge); „gesperrt“ (403) meldet die API erst nach dem richtigen
   zweiten Faktor. Ohne 2FA verrät die Anmeldung die Sperre nie: Die Antwort ist dieselbe wie bei falschem
-  Passwort (401, gleicher Text, zählt für die Anmeldesperre, ähnliche Laufzeit durch eine gleichwertige
-  Datenbankabfrage), eine Sitzung entsteht nicht (QA 2026-10-28, B4). Eine bereits bestehende Sitzung erhält bei
+  Passwort (401, gleicher Text, zählt für die Anmeldesperre, ähnliche Laufzeit: Fehlversuche führen dieselben zwei
+  lesenden Datenbankabfragen aus – Mitgliedschaft und 2FA-Zustand), eine Sitzung entsteht nicht (QA 2026-10-28, B4). Eine bereits bestehende Sitzung erhält bei
   der nächsten Anfrage weiterhin die verständliche Meldung (403 `tenant_suspended` bzw. `forbidden`).
 - Vergleiche in konstanter Zeit (`timingSafeEqual`), alle Kandidaten des Toleranzfensters werden berechnet.
 - Aktivieren beendet alle **anderen** Sitzungen des Kontos. Deaktivieren und neue Wiederherstellungscodes

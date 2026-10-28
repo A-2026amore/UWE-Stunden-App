@@ -59,7 +59,7 @@ begin
   -- Several rows with the same e-mail are possible (employees.email is not unique):
   -- prefer an open invitation row, else any row (which is then refused below).
   select * into v_emp from public.employees e
-   where e.tenant_id = v_tenant.id and e.email = v_email
+   where e.tenant_id = v_tenant.id and lower(e.email) = v_email
    order by (e.status = 'invited' and e.user_id is null) desc, e.created_at
    limit 1;
 

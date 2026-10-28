@@ -3,10 +3,11 @@
  *
  * Free texts (notes, names) come from users. A cell that starts with =, +, -,
  * @, tab or carriage return would be interpreted as a formula by spreadsheet
- * programs (CSV/formula injection, OWASP). Such text cells get a leading
- * apostrophe so they are shown as text. Numbers are written unchanged.
+ * programs (CSV/formula injection, OWASP) – also after leading whitespace,
+ * which some programs skip. Such text cells get a leading apostrophe so they
+ * are shown as text. Numbers are written unchanged.
  */
-const FORMULA_START = /^[=+\-@\t\r]/;
+const FORMULA_START = /^\s*[=+\-@]|^[\t\r]/;
 
 export function csvCell(v: string | number): string {
   let s = String(v);
