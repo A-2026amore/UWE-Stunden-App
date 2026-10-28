@@ -193,5 +193,9 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
   `breakPolicy` des Mandanten; bei Verstoß Rollback und 400 mit dem deutschen Text aus dem Core.
   Schreibzugriffe je Mitarbeiter sind dafür per `pg_advisory_xact_lock` serialisiert.
   Vor dem Einreichen eines Monats wird derselbe Check für alle Tage des Monats ausgeführt.
+- **Pausenregel des Mandanten** (`PATCH /api/tenants/:id/settings`, nur Inhaber): Schwellen aufsteigend,
+  nie laxer als § 4 ArbZG (bei mehr als 6 h ≥ 30 min, bei mehr als 9 h ≥ 45 min, Pausenabschnitte ≥ 15 min),
+  sonst 400 mit deutschem Text; die Datenbank prüft dasselbe (Migration 0014). Siehe
+  [pausenregeln.md](pausenregeln.md).
 - Logos/Bildmarken: nur PNG/JPEG/WebP (Data-URL ≤ 300 KB, Signatur geprüft), https-URL oder
   relativer Pfad; **SVG wird abgelehnt** (XSS-Risiko). Seit 0008 lehnt auch die DB-Prüfung SVG ab.

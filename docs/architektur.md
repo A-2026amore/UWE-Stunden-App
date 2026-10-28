@@ -87,6 +87,8 @@ gemeldet statt überschrieben. Löschen ist ein „Soft Delete“, jede Änderun
 ### ADR-5: Mandantenkonfiguration statt fest eingebauter UWE-Regeln
 Pausenschwellen, 12-Stunden-Grenze, Arbeitszeitkonto (an/aus, Modell Schuljahr/Kalenderjahr,
 Startsaldo, Bundesland, Genehmigung) sind Einstellungen je Mandant. UWE erhält die bisherigen Werte.
+Pausenregel: „gesetzlich“ (mehr als 6/9 h, Standard für neue Mandanten) oder „streng“ (ab genau 6/9 h,
+UWE); nie laxer als § 4 ArbZG ([pausenregeln.md](pausenregeln.md)).
 
 ### ADR-6: Frontend-Technik Vite + Preact + TypeScript
 Preact (ca. 4 KB) hält die App auf älteren Smartphones schnell; TypeScript (strict) verhindert

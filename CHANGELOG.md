@@ -5,6 +5,16 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Pausen nur noch tatsächlich genommen (Vorgabe 28.10.2026): Pausenfeld der Mitarbeiter-App startet leer,
+  kein automatischer Vorschlag mehr, Pflichtfeld (0 erlaubt); Hinweis nennt die Mindestpause des Tages und
+  die Regel; zu kurze Pause wird mit freundlicher Erklärung nicht gespeichert (auch im Korrekturdialog des
+  Chef-Portals). Doku: `docs/pausenregeln.md`.
+- Pausenregel je Mandant wählbar: „gesetzlich“ (mehr als 6/9 h, 361/541 Min., Standard für neue Mandanten –
+  an einer Stelle `NEW_TENANT_BREAK_RULE` in `core/breaks.ts`) oder „streng“ (ab genau 6/9 h, UWE). Der
+  Inhaber schaltet im Chef-Portal um; alle Texte werden aus der Konfiguration gebildet („ab 6 Stunden“ /
+  „mehr als 6 Stunden“). Laxere Regeln als § 4 ArbZG lehnen Core, API, Demo und Datenbank ab
+  (Migration `0014_break_policy_statutory.sql`). Demo-Mandant „Muster Pflegedienst“ nutzt wie im Seed die
+  gesetzliche Regel; der UWE-Nachbau bleibt streng.
 - Betreiberbefehl `cli.ts invite-link <mandant> <email> <rolle>` (QA 2026-10-28, B1): Einladungslink ohne
   E-Mail, Ausgabe nur auf der Konsole; Migration `0010_operator_invitation.sql`.
 - Container-Betrieb: mehrstufiges `Dockerfile` (Node 22, Lockfile, Nicht-root, API liefert die gebauten

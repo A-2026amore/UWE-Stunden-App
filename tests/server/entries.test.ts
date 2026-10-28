@@ -275,6 +275,18 @@ describe("tenant profile validation", () => {
     expect(settings.body.settings.breakPolicy.maxShiftMinutes).toBe(720);
     const badOrder = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: [{ minGrossMinutes: 540, minPauseMinutes: 45 }, { minGrossMinutes: 360, minPauseMinutes: 30 }] } } });
     expect(badOrder.status).toBe(400);
+    const lax = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: [{ minGrossMinutes: 420, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }] } } });
+    expect(lax.status).toBe(400);
+    expect(lax.body.error.message).toContain("§ 4 Arbeitszeitgesetz");
+    const segment = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { minPauseSegmentMinutes: 10 } } });
+    expect(segment.status).toBe(400);
+    const statutory = [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }];
+    const toStatutory = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: statutory } } });
+    expect(toStatutory.status).toBe(200);
+    expect(toStatutory.body.settings.breakPolicy).toMatchObject({ thresholds: statutory, maxShiftMinutes: 720 });
+    const strict = [{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }];
+    const back = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: strict } } });
+    expect(back.body.settings.breakPolicy.thresholds).toEqual(strict);
   });
 
   it("duplicate personnel number → 409 with German text", async () => {

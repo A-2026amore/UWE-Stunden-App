@@ -78,6 +78,22 @@ describe("demo repository – tenant isolation", () => {
     expect((await owner.repo.updateContact(DEMO_TENANT_IDS.kt, { city: "Aachen" })).contact.city).toBe("Aachen");
   });
 
+  it("break rule: UWE replica strict, generic tenant statutory; owner switches, laxer than §4 ArbZG is rejected", async () => {
+    const owner = await as("chef@demo-kt.example");
+    const kt = await owner.repo.getTenant(DEMO_TENANT_IDS.kt);
+    expect(kt.settings.breakPolicy.thresholds).toEqual([{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }]);
+    const statutory = [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }];
+    const t = await owner.repo.updateSettings(DEMO_TENANT_IDS.kt, { breakPolicy: { ...kt.settings.breakPolicy, thresholds: statutory } });
+    expect(t.settings.breakPolicy).toMatchObject({ thresholds: statutory, maxShiftMinutes: 720 });
+    // 6:00 exactly without pause is now accepted for this tenant.
+    await owner.repo.createTimeEntry(ANNA, { id: "rule-1", date: "2026-10-04", start: "08:00", end: "14:00", pauseMinutes: 0, note: "" });
+    await expect(owner.repo.updateSettings(DEMO_TENANT_IDS.kt, {
+      breakPolicy: { ...kt.settings.breakPolicy, thresholds: [{ minGrossMinutes: 400, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }] },
+    })).rejects.toThrow("§ 4 Arbeitszeitgesetz");
+    const mia = await as("leitung@muster-pflege.example");
+    expect((await mia.repo.getTenant(DEMO_TENANT_IDS.pflege)).settings.breakPolicy.thresholds).toEqual(statutory);
+  });
+
   it("lets employees see only their own data", async () => {
     const { repo } = await as("anna@demo-kt.example");
     const list = await repo.listEmployees(DEMO_TENANT_IDS.kt);

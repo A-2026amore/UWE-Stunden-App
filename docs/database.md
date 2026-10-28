@@ -17,6 +17,7 @@ Kein Supabase, kein PostgREST: Davor sitzt eine eigene Node-API (siehe `docs/api
 | `0009_two_factor.sql` | Zwei-Faktor-Anmeldung (TOTP), Wiederherstellungscodes, Pflicht für Leitung/Plattform |
 | `0010_operator_invitation.sql` | `auth.operator_create_invitation` für den Betreiberbefehl `invite-link` (nur `app_auth`) |
 | `0011_tenant_profile_owner_only.sql` | `tenants_update` nur noch für den Inhaber; `set_tenant_status` als SECURITY DEFINER (nur Super-Admin); `tenants_guard` ohne Ausnahme für Plattformpersonal |
+| `0014_break_policy_statutory.sql` | CHECK `tenants_break_policy_statutory`: Pausenregel eines Mandanten nie laxer als § 4 ArbZG (`private.break_policy_meets_statute`), siehe [pausenregeln.md](pausenregeln.md) |
 
 Anwenden (als Superuser bzw. Datenbankeigentümer, in Dateireihenfolge):
 
@@ -82,7 +83,8 @@ Dadurch kann `tenant_id` nie von der des Mitarbeiters abweichen (keine „gefäl
 
 Die **detaillierte Pausenprüfung** (Schwellen 6 h/9 h, 15-Minuten-Abschnitte, Tagessumme) bleibt
 in der App (`platform/src/core`) und liest die Schwellen aus `tenants.settings.breakPolicy`.
-Die DB erzwingt nur die harten Grenzen oben.
+Die DB erzwingt nur die harten Grenzen oben und dass die Pausenregel des Mandanten nicht laxer
+als § 4 ArbZG ist (Migration 0014, Details in [pausenregeln.md](pausenregeln.md)).
 
 ### Mandanteneinstellungen (`tenants.settings`)
 
@@ -96,10 +98,12 @@ Die DB erzwingt nur die harten Grenzen oben.
 }
 ```
 
-Das Beispiel entspricht den UWE-Regeln (ab genau 6 h/9 h, Konto −100 h je NRW-Schuljahr ab 09/2026);
-es gilt **nur** für den Mandanten, der es gespeichert hat. Neue Mandanten erhalten neutrale
-Vorgaben (`private.default_tenant_settings()`: 361/541 Minuten nach Wortlaut §4 ArbZG, max. 600 Minuten,
-Konto deaktiviert) – rechtlich *zu prüfen, keine Rechtsberatung*.
+Das Beispiel entspricht den UWE-Regeln (strenge Pausenregel ab genau 6 h/9 h, Konto −100 h je
+NRW-Schuljahr ab 09/2026); es gilt **nur** für den Mandanten, der es gespeichert hat. Neue Mandanten
+erhalten neutrale Vorgaben (`private.default_tenant_settings()`: gesetzliche Pausenregel 361/541 Minuten
+nach Wortlaut §4 ArbZG, max. 600 Minuten, Konto deaktiviert; Gegenstück in TypeScript:
+`defaultBreakPolicy()`/`NEW_TENANT_BREAK_RULE`) – rechtlich *zu prüfen, keine Rechtsberatung*.
+Die Pausenregel ist nie laxer als § 4 ArbZG (CHECK `tenants_break_policy_statutory`).
 
 ## Rollen der Datenbank
 
