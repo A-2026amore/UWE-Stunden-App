@@ -1,6 +1,6 @@
 /** Builds the monthly statement PDF (core/pdf) for an employee and shares or downloads it. */
 import { createStatementPdf, statementFileName, type StatementPdfArgs, type StatementPdfLogo } from "../../core/pdf";
-import { resolveAsset } from "../../design/branding";
+import { PRODUCT_NAME, resolveAsset } from "../../design/branding";
 import { activeShifts } from "../../core/time";
 import { summarizeMonth } from "../../core/workAccount";
 import type { Employee, MonthAllocation, MonthlyStatement, Tenant, TimeEntry } from "../../core/types";
@@ -106,6 +106,7 @@ export function buildStatement(args: {
     account,
     status: args.statement?.status ?? "draft",
     test: tenant.isDemo,
+    productName: PRODUCT_NAME,
   });
   const fileName = statementFileName({ tenant: pdfTenant, personnelNumber: employee.personnelNumber, month, test: tenant.isDemo });
   return { blob, fileName };

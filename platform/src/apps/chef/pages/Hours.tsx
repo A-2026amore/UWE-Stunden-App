@@ -10,7 +10,7 @@ import { useEffect, useState } from "preact/hooks";
 import { errorsForMonth } from "../../../core/breaks";
 import { activeShifts, isValidMonth } from "../../../core/time";
 import type { Employee } from "../../../core/types";
-import { Alert, Badge, Button, Card, EmptyState, SelectField, StatTile, StatusPill, Table } from "../../../design";
+import { Alert, Badge, Button, Card, EmptyState, SelectField, StatTile, StatusPill, Skeleton, Table } from "../../../design";
 import { useToast } from "../../../design";
 import { dayRows, employeeMonthRows, monthSummaryCsv, timeEntriesCsv, STATEMENT_STATUS_LABEL, type DayRow, type EmployeeMonthRow } from "../../shared/exports";
 import { currentMonth, dateTimeDE, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, signedHours, weekdayShort } from "../../shared/format";
@@ -153,7 +153,7 @@ function EmployeeMonth({ row, employee, month, days, issues, withAccount, busy, 
   onBack: () => void; onPdf: (r: EmployeeMonthRow) => void; onCsv: (e: Employee) => void;
   onApprove: (r: EmployeeMonthRow) => void; onReturn: (r: EmployeeMonthRow) => void;
 }) {
-  if (loading) return <p class="muted" role="status">Wird geladen …</p>;
+  if (loading) return <Skeleton title={false} lines={5} />;
   if (!employee) return <Alert tone="warning">Mitarbeiter nicht gefunden. <button type="button" class="link-button" onClick={onBack}>Zur Übersicht</button></Alert>;
   const r: EmployeeMonthRow = row ?? { employee, days: 0, shifts: 0, workedMinutes: 0, allocatedMinutes: 0, billingMinutes: 0, balanceMinutes: null, statement: null };
   const st = r.statement;

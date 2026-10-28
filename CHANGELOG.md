@@ -17,6 +17,22 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
     Aufbewahrt werden nur Rechnungen und abgerechnete Monate der Plattform (anonymisierter Platzhalter-Mandant);
     ein anonymisierter Audit-Eintrag `tenant.deleted` dokumentiert die Löschung.
   - `export_tenant_data` nutzt denselben Export-Inhalt (`private.tenant_export_json`); Verhalten unverändert.
+- Neues Design „Stundenwerk“ (Branch `feature/design-stundenwerk`, Doku `docs/design.md`):
+  - Produktname „Stundenwerk“ ohne Zusatz „Arbeitstitel“, eigenes Produktlogo (inline SVG).
+  - Hell- und Dunkelmodus (System/Hell/Dunkel, lokal gespeichert) für alle Bereiche; Firmenfarben werden für
+    beide Modi automatisch kontrastsicher (WCAG AA) abgeleitet, Firmenlogos im Dunkelmodus auf heller Plakette.
+  - Schrift Inter lokal eingebunden (OFL), neue Tokens für Farben, Abstände, Radien, Schatten, Bewegung;
+    Animationen respektieren `prefers-reduced-motion`; Skeleton-Ladeanzeige.
+  - Zweigeteilte Anmeldeseiten (Mitarbeiter, Chef, Admin, Passwort neu, Einladung, 2FA), mobil einspaltig,
+    mit Firmenlogo, wenn auf dem Gerät bekannt.
+  - Chef-Portal und Super-Admin: Seitenleiste mit Gruppen und Zählern, Farbschema-Umschalter; Chef-Dashboard mit
+    Kennzahlen (inkl. Kosten des Monats), SVG-Balkendiagramm Stunden je Tag/Woche und Stunden je Person.
+  - Mitarbeiter-App: neue Kopfzeile, Tab-Leiste mit hervorgehobenem „Erfassen“, Safe-Area, Tagesdiagramm in
+    der Monatsübersicht, Darstellung im Profil.
+  - PDF-Stundennachweis: Infofeld, farbiger Tabellenkopf, Zebra-Streifen, Wochentage, Summenblock, Fußzeile mit
+    Erstellungsdatum, Produktname und „Seite x von y“ – weiterhin mehrseitig mit unveränderten Seitenumbrüchen.
+  - Statusanzeigen für „Wieder geöffnet“, „Storniert“, „Stornorechnung“, „Ausgestellt“; Super-Admin „Rechnungen“ in
+    der Seitenleiste (Gruppe „Kunden“), Verlauf, Wiederöffnung und Rechnungen im neuen Design.
 - Wiederöffnung, Sperr-Abrechnung und Rechnungen (Branch `feature/wiedereroeffnung-rechnungen`, Migrationen
   `0017_statement_reopen.sql`, `0018_tenant_status_billing.sql`, `0019_invoices.sql`; Entscheidungen vom 28.10.2026):
   - N1 entschieden: Ein freigegebener Monat ist für alle gesperrt – auch für Korrekturen der Leitung und angenommene

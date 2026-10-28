@@ -77,7 +77,7 @@ function SettingsCard({ readOnly, onSaved }: { readOnly: boolean; onSaved: () =>
         : <Alert tone="success" title="Pflichtangaben vollständig"><p>Rechnungen können erzeugt werden.</p></Alert>}
       {!s.vatRateConfirmed && <Alert tone="info" title={VAT_CONFIRMATION_NOTE}><p>Der USt-Satz ({String(s.vatRatePercent).replace(".", ",")} %) ist voreingestellt und wird bis zur Bestätigung auf jeder Rechnung als Hinweis gedruckt.</p></Alert>}
       <form class="stack" onSubmit={save} noValidate>
-        <fieldset disabled={readOnly} class="stack" style={{ border: 0, padding: 0, margin: 0 }}>
+        <fieldset disabled={readOnly} class="stack fieldset-plain">
           <div class="grid-2">
             <InputField label="Name / Firma" value={f.issuerName} onValue={set("issuerName")} maxLength={200} />
             <InputField label="Straße und Hausnummer" value={f.issuerStreet} onValue={set("issuerStreet")} maxLength={200} />
@@ -181,7 +181,7 @@ export function InvoicesPage({ readOnly }: { readOnly: boolean }) {
               if (inv) return <Button size="sm" variant="ghost" icon="download" onClick={() => download(inv)} aria-label={`Rechnung ${inv.number} als PDF`}>{inv.number}</Button>;
               const possible = r.amountCents > 0 && r.status !== "waived";
               return (
-                <div class="btn-row" style={{ justifyContent: "flex-end" }}>
+                <div class="btn-row btn-row-end">
                   <Button size="sm" variant="ghost" icon="download" busy={busy === `d${r.tenantId}`} disabled={!possible} onClick={() => draft(r.tenantId)}
                     aria-label={`Rechnungsentwurf für ${r.tenantName}`}>Entwurf</Button>
                   {!readOnly && <Button size="sm" icon="fileCheck" busy={busy === `i${r.tenantId}`} disabled={!possible} onClick={() => issue(r.tenantId, r.tenantName)}
@@ -209,7 +209,7 @@ export function InvoicesPage({ readOnly }: { readOnly: boolean }) {
               ? <><StatusPill status="cancelled" label="Storniert" /><div class="xsmall muted">{i.cancelReason}</div></>
               : i.kind === "cancellation" ? <StatusPill status="cancellation" label="Stornorechnung" /> : <StatusPill status="issued" label="Gültig" />) },
             { key: "a", header: "Aktionen", actions: true, render: (i) => (
-              <div class="btn-row" style={{ justifyContent: "flex-end" }}>
+              <div class="btn-row btn-row-end">
                 <Button size="sm" variant="ghost" icon="download" onClick={() => download(i)} aria-label={`Rechnung ${i.number} als PDF`}>PDF</Button>
                 {!readOnly && i.kind === "invoice" && !i.cancelledAt && <Button size="sm" variant="secondary" onClick={() => cancel(i)} aria-label={`Rechnung ${i.number} stornieren`}>Stornieren</Button>}
               </div>

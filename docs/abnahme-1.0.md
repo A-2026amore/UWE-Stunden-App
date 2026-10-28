@@ -28,7 +28,7 @@ Hetzner Storage Box.
 2. Korrektur nach Freigabe (N1): freigegebenen Monat neu berechnen, nur kennzeichnen (heute) oder sperren.
 3. Gesperrte/deaktivierte Firmen: weiter berechnen (heute) oder automatisch kostenfrei.
 4. Rechnungen: Nummernkreis, Rechnungs-PDF, Versand; Auswahl eines Zahlungsdienstleisters (Kosten, Vertrag).
-5. Produktname (heute „Stundenwerk (Arbeitstitel)“).
+5. Produktname „Stundenwerk“ (vorläufig, Markenprüfung offen).
 
 ### Rechtliches (extern prüfen lassen)
 6. AGB, Auftragsverarbeitungsvertrag, Datenschutzerklärung, Impressum; Entwürfe/Hinweise in `docs/datenschutz.md`.

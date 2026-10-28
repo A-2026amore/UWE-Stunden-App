@@ -1,6 +1,6 @@
 import { activeShifts, netMinutes } from "../../../core/time";
 import { summarizeMonth } from "../../../core/workAccount";
-import { Alert, Card, LinkButton, StatTile, StatusPill } from "../../../design";
+import { Alert, Card, LinkButton, Skeleton, StatTile, StatusPill } from "../../../design";
 import { useAsync } from "../../shared/hooks";
 import { currentMonth, dayLabel, hoursLabel, monthLabelDE, signedHours, todayISO } from "../../shared/format";
 import { shiftMonth } from "../../../data/demo";
@@ -28,7 +28,7 @@ export function StartPage() {
 
   const firstName = me.displayName.split(" ")[0];
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
-  if (!q.data) return <h1 class="page-title">Hallo {firstName}</h1>;
+  if (!q.data) return <div class="stack"><h1 class="page-title">Hallo {firstName}</h1><Skeleton title={false} cards={2} lines={3} /></div>;
   const { entries, allocations, statement, prevStatement } = q.data;
 
   const todays = entries.filter((e) => e.date === today);
@@ -39,8 +39,8 @@ export function StartPage() {
   return (
     <div class="stack">
       <div>
+        <p class="page-eyebrow">{dayLabel(today)}</p>
         <h1 class="page-title">Hallo {firstName}</h1>
-        <p class="muted page-sub">{dayLabel(today)}</p>
       </div>
 
       {prevStatement?.status === "returned" && (

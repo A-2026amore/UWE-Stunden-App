@@ -29,7 +29,7 @@ const uweTenant: StatementPdfArgs["tenant"] = {
 describe("pdf", () => {
   it("60 entries → multi-page PDF with %PDF header, repeated table header and page numbers", async () => {
     const entries = makeEntries(60);
-    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30) });
+    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30), productName: "Stundenwerk" });
     expect(blob.type).toBe("application/pdf");
     const text = latin1(new Uint8Array(await blob.arrayBuffer()));
     expect(text.startsWith("%PDF-1.4")).toBe(true);
@@ -39,8 +39,11 @@ describe("pdf", () => {
     for (let p = 1; p <= pages; p++) expect(text).toContain("(Seite " + p + " von " + pages + ")");
     expect(text.split("(Bemerkung)").length - 1).toBe(pages); // table header on every page
     expect(text.split("(STUNDENNACHWEIS)").length - 1).toBe(pages);
-    expect(text).toContain("(Status: Eingereicht)");
+    expect(text.split("(STATUS)").length - 1).toBe(pages); // info panel on every page
+    expect(text).toContain("(Eingereicht)");
     expect(text).toContain("(Erstellt: 30.11.2026)");
+    expect(text.split("(Erstellt mit Stundenwerk)").length - 1).toBe(pages);
+    expect(text).toContain("(November 2026)");
     expect(text).toContain("0.000 0.663 0.620 rg"); // UWE vector logo colour
     expect(text).toContain("/GSWatermark gs");
     expect(text).toContain("Tel. 0241 400 111 11");
@@ -61,6 +64,22 @@ describe("pdf", () => {
       expect(/\/Count (\d+)/.exec(mine)![1]).toBe(/\/Count (\d+)/.exec(legacy)![1]);
       expect(/GESAMT: [\d,]+ Stunden/.exec(mine)![0]).toBe(/GESAMT: [\d,]+ Stunden/.exec(legacy)![0]);
     }
+  });
+
+  it("design: zebra rows, coloured table header, summary block; never more rows per page than the legacy layout", () => {
+    const entries = makeEntries(45, 3);
+    const text = latin1(createStatementPdfBytes({ tenant: { name: "Muster Pflege GmbH", primaryColor: "#336699" }, employee: { name: "Max", personnelNumber: "M-1" }, month: "2026-11", entries }));
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    // Every page: header row in the strong brand colour with white labels.
+    expect(text.split("1 1 1 rg /F2 8 Tf").length - 1).toBe(pages * 6);
+    // Zebra stripes (very light tint of #336699) behind every second row.
+    const zebra = text.split("0.964 0.973 0.982 rg").length - 1;
+    expect(zebra).toBeGreaterThanOrEqual(Math.floor(entries.length / 2) - pages);
+    expect(text).toMatch(/\(Eins\xe4tze: 45 {3}\| {3}Arbeitstage: \d+ {3}\| {3}Pausen gesamt: [\d,]+ Std\.\)/);
+    // No product name line when none is given.
+    expect(text).not.toContain("Erstellt mit");
+    // Weekday in the date column.
+    expect(text).toMatch(/\((Mo|Di|Mi|Do|Fr|Sa|So) \d{2}\.11\.2026\)/);
   });
 
   it("generic tenant: typographic logo in primary colour, no UWE artwork", () => {
