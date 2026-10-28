@@ -3,6 +3,7 @@ import { Alert, Badge, Button, Card, Checkbox, Icon, LinkButton, PRODUCT_FULL_NA
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
 import { IS_DEMO, getRepository } from "../../shared/repo";
 import { TwoFactorCard } from "../../shared/twoFactor";
+import { MyDataCard } from "../../shared/privacy";
 import { errorText } from "../../shared/hooks";
 import { useEmployee } from "../context";
 import { InstallCard } from "../InstallHint";
@@ -60,6 +61,8 @@ export function SettingsPage() {
       </Card>
 
       <TwoFactorCard repo={getRepository("app")} account={session.email} />
+
+      <MyDataCard repo={getRepository("app")} employeeId={me.id} />
 
       <InstallCard />
 

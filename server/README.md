@@ -88,6 +88,8 @@ sicheren Kanal weitergeben; Terminal-Verlauf/Mitschnitte beachten.
 | `RATE_LIMIT_LOGIN_PER_ACCOUNT` | – | `5` | Fehlversuche je IP + E-Mail. |
 | `RATE_LIMIT_LOGIN_PER_IP` | – | `100` | Anmeldeversuche je IP. |
 | `RATE_LIMIT_RESET_PER_ACCOUNT` | – | `3` | Reset-Anfragen je IP + E-Mail. |
+| `RATE_LIMIT_LOGIN_PER_EMAIL` | – | `30` | Fehlversuche je E-Mail-Adresse **über alle IPs** (verteilte Angriffe auf ein Konto). Danach 429 bis zum Ende des Zeitfensters – auch mit richtigem Passwort. |
+| `RATE_LIMIT_RESET_PER_EMAIL` | – | `10` | Reset-Mails je E-Mail-Adresse über alle IPs (kein Mail-Bombing über wechselnde IPs). |
 | `RATE_LIMIT_TOKEN_PER_IP` | – | `20` | Einlösen von Reset-/Einladungs-Links je IP. |
 | `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Zwei-Faktor-Codes je Konto bzw. IP. |
 | `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel | 32 Byte (Base64 oder 64 Hex), verschlüsselt die TOTP-Geheimnisse. Erzeugen: `openssl rand -base64 32`. Getrennt von DB-Backups sichern; Rotation: `docs/betrieb.md` Abschnitt 6.1. |

@@ -128,19 +128,56 @@ Die App läuft mit schreibgeschütztem Dateisystem, ohne Linux-Capabilities, `no
 
 Das zentrale Backup erkennt den Container am Label `de.appzentrale24.backup: postgres` und sichert per
 `pg_dumpall -U "$POSTGRES_USER"` (enthält auch die Rollen; das Passwort von `app_api` ist darin als
-SCRAM-Hash enthalten). Der `TOTP_ENCRYPTION_KEY` gehört **nicht** in dasselbe Backup.
+SCRAM-Hash enthalten). Der `TOTP_ENCRYPTION_KEY` gehört **nicht** in dasselbe Backup. Diese Einrichtung wird
+hier nicht verändert.
 
-Wiederherstellung in eine leere Umgebung (Beispiel):
+Zusätzlich (prüfbar, verschlüsselt, mit Wiederherstellungsprobe):
+
+| Skript | Zweck |
+|---|---|
+| `deploy/backup.sh --compose deploy/.env` | `pg_dump` (Custom-Format) + Rollen ohne Passwörter + Manifest, mit GPG verschlüsselt (öffentlicher Schlüssel `BACKUP_GPG_RECIPIENT` oder `BACKUP_PASSPHRASE_FILE`), SHA-256-Prüfsumme, optional Übergabe an restic (`BACKUP_HOOK`) |
+| `deploy/restore-test.sh --docker --migrations db/migrations <archiv>` | spielt das Archiv in einen Wegwerf-Container ohne Netz ein und prüft Zeilenzahlen, Migrationsstand und RLS; die laufende Umgebung bleibt unberührt |
+
+Einrichtung, Zeitplan, restic-Übergabe und die Notfall-Wiederherstellung Schritt für Schritt:
+[`docs/betrieb.md`](../docs/betrieb.md), Abschnitt 5.1.
+
+## Testumgebung `stunden-test.appzentrale24.de` aktualisieren (Server-Sitzung)
+
+Nur die Container `stunden-test-*` werden angefasst; andere Dienste, der zentrale Caddy und das zentrale Backup
+bleiben unverändert. Ausschließlich erfundene Testfirmen, keine echten Mitarbeiterdaten.
 
 ```bash
-$C up -d db
-cat dump.sql | $C exec -T db psql -U "$POSTGRES_USER" -d postgres
-$C up -d app
+cd /srv/stunden-test
+C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"   # STAGE=test in deploy/.env
+git fetch origin && git checkout <freigegebener Branch oder Tag> && git pull --ff-only
+$C config --quiet                     # Pflichtwerte gesetzt?
+BACKUP_PASSPHRASE_FILE=/root/.stunden-test-backup-pass deploy/backup.sh --compose deploy/.env   # vorher sichern
+$C build                              # neues Image stunden-app:local (enthält db/migrations bis 0016)
+$C run --rm migrate                   # nur neue Migrationen (z. B. 0015, 0016); bricht bei veränderten Dateien ab
+$C up -d app                          # ersetzt nur stunden-test-app
+docker inspect -f '{{.State.Health.Status}}' stunden-test-app            # → healthy (nach bis zu ~1 min)
 ```
 
-Meldungen „existiert bereits“ für `POSTGRES_USER` und die Datenbank `stunden` sind dabei erwartbar (legt der
-Container beim ersten Start selbst an). Die Wiederherstellung ist noch **nicht** erprobt – vor der Abnahme einmal
-vollständig durchspielen.
+**Testzugänge anlegen** (einmalig je Testdatenbank; verweigert, sobald ein Mandant ohne Test-Kennzeichen
+existiert oder die Testfirmen schon angelegt sind):
+
+```bash
+$C run --rm migrate node --experimental-strip-types --disable-warning=ExperimentalWarning \
+  --import ./server/register.mjs server/src/cli.ts seed-test-env --confirm-test-environment \
+  --domain=stunden-test.example [--admin-email=<Adresse des Testers>]
+```
+
+Angelegt werden: „Testfirma Gratis (Test)“ (`pilot_free`, kostenlos) und „Testfirma Zahlend (Test)“
+(`standard`, Standardpreis je abrechenbarem Mitarbeiter), je Inhaber, Leitung und drei Mitarbeitende
+(`inhaber.gratis@…`, `leitung.gratis@…`, `mitarbeiter1.gratis@…` usw.), sowie ein Super-Admin. Die **zufälligen
+Passwörter erscheinen nur in dieser Konsolenausgabe** – sofort in einen Passwort-Manager übernehmen; sie werden
+nirgends gespeichert. Der Super-Admin muss bei der ersten Anmeldung die Zwei-Faktor-Anmeldung einrichten
+(Pflicht für Plattformkonten). Neues Passwort für ein Testkonto: `cli.ts set-password <email>` (Abschnitt
+„Betrieb“ in `server/README.md`). Adressen unter `.example` empfangen keine E-Mails – Einladungen daher per
+Link (`cli.ts invite-link …`) oder eine eigene Testadresse über `--admin-email` verwenden.
+
+Die Demo-Daten aus `db/seed.sql` (`MIGRATE_SEED=1`) sind eine Alternative für reine Vorführungen; beide zusammen
+sind möglich.
 
 ## Was hier nicht geprüft wurde
 
@@ -148,4 +185,6 @@ Das Image wurde in der Entwicklungsumgebung **nicht** gebaut (kein Docker-Daemon
 `docker compose config`, die einzelnen Build-Schritte ohne Docker (Frontend-Build nur mit `platform/`,
 Laufzeit nur mit Produktionsabhängigkeiten, als Nicht-root-Benutzer) und der Migrationsjob gegen PostgreSQL 16
 (`tests/server/migrate.test.ts`). Den Image-Bau und einen Start mit Healthcheck prüft der CI-Job
-„Container-Image (Bau + Start)“.
+„Container-Image (Bau + Start)“; derselbe Job legt die Testzugänge an, sichert mit `backup.sh --compose` und
+führt die Wiederherstellungsprobe mit `restore-test.sh --docker` aus. `backup.sh --url` und
+`restore-test.sh --local/--server-url` laufen zusätzlich in `tests/server/backup-restore.test.ts`.

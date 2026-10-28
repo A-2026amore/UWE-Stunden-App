@@ -42,8 +42,10 @@ Datenbanktests starten automatisch einen temporären lokalen PostgreSQL-16-Serve
 
 ## 4. Betrieb
 
-- Backups: täglicher verschlüsselter `pg_dump` plus WAL-Archivierung für Point-in-Time-Recovery
-  in einen getrennten Speicher in der EU (z. B. Hetzner Storage Box). Wiederherstellung monatlich testen.
+- Backups: täglich `deploy/backup.sh` (verschlüsselter `pg_dump`, Prüfsumme, Übergabe an das vorhandene
+  restic-Backup zur Hetzner Storage Box) und monatlich eine Wiederherstellungsprobe mit
+  `deploy/restore-test.sh` – Schritt für Schritt in Abschnitt 5.1. WAL-Archivierung (Point-in-Time-Recovery)
+  ist **nicht** eingerichtet; Datenverlust im schlimmsten Fall: seit der letzten Sicherung.
 - Überwachung: Fehlerübersicht im Super-Admin (geplant), Server-Logs, Erreichbarkeitsprüfung.
 - Updates der PWA: Der Service Worker der Mitarbeiter-App (`/app/sw.js`, Bereich nur `/app/`) lädt eine neue
   Version im Hintergrund; die App zeigt dann „Neue Version verfügbar – neu laden“. Er berührt weder die Alt-App
@@ -57,9 +59,85 @@ Datenbanktests starten automatisch einen temporären lokalen PostgreSQL-16-Serve
 | Mitarbeiter-Handy verloren (Plattform) | Anmeldung auf neuem Gerät, Daten kommen vom Server; nicht synchronisierte Offline-Einträge des alten Geräts sind verloren |
 | Handy mit Authenticator-App verloren | Anmeldung mit einem Wiederherstellungscode, dann in den Einstellungen 2FA neu einrichten; ohne Codes: Zurücksetzen durch den Betrieb (Abschnitt 6.1) |
 | Versehentlich gelöschter Eintrag | Soft Delete: Chef/Betreiber stellt aus `time_entry_revisions` wieder her (mit Begründung, protokolliert) |
-| Datenbankfehler | Wiederherstellung aus Tages-Backup bzw. Point-in-Time-Recovery (WAL-Archiv); danach Geräte synchronisieren lassen, Offline-Einträge werden idempotent nachgeladen |
+| Datenbankfehler | Wiederherstellung aus dem Tages-Backup (Abschnitt 5.1); danach Geräte synchronisieren lassen, Offline-Einträge werden idempotent nachgeladen |
 | Fehlerhafte Plattform-Version | Vorherige Version des Builds erneut ausliefern; Datenbankmigrationen sind nur additiv |
 | Fehlerhafte Alt-App-Version | Vorherigen Commit auf `main` wiederherstellen (nur mit Freigabe) |
+
+### 5.1 Datenbank-Backup und Wiederherstellung (Schritt für Schritt)
+
+**Was gesichert wird.** `deploy/backup.sh` erzeugt je Lauf ein verschlüsseltes Archiv
+`stunden-<STAGE>-<UTC-Zeit>.tar.gpg` und die Prüfsumme `….tar.gpg.sha256`. Im Archiv: `database.dump`
+(`pg_dump` Custom-Format), `roles.sql` (Rollen **ohne** Passwörter), `manifest.txt` (Zeitpunkt, Versionen,
+Zeilenzahlen aus demselben Schnappschuss wie der Dump) und `migrations.tsv` (Migrationsstand mit Prüfsummen).
+Unverschlüsselt landet nichts dauerhaft auf der Platte (nur kurz im Arbeitsverzeichnis, Rechte 700, wird sofort
+gelöscht). Nicht im Backup: `deploy/.env` und der `TOTP_ENCRYPTION_KEY` – getrennt aufbewahren (Passwort-Manager
+des Inhabers); ohne TOTP-Schlüssel funktionieren eingerichtete Zwei-Faktor-Anmeldungen nach einer
+Wiederherstellung nicht mehr (Abschnitt 6.1).
+
+Das bestehende zentrale Backup (`pg_dumpall` über das Label `de.appzentrale24.backup`) bleibt unverändert; dieses
+Skript ist eine zusätzliche, prüfbare Sicherung und ändert keine Server-Backup-Konfiguration.
+
+**Einrichten (einmalig, nur nach Freigabe, auf dem Server):**
+
+1. Schlüssel: empfohlen ist ein GPG-Schlüsselpaar, dessen **privater** Schlüssel nur offline beim Inhaber liegt
+   (Server kann dann verschlüsseln, aber nicht entschlüsseln):
+   `gpg --quick-gen-key "Stundenwerk Backup <backup@…>" ed25519 default never` (auf einem sicheren Rechner),
+   `gpg --export --armor <Fingerabdruck> > backup-public.asc`, auf dem Server `gpg --import backup-public.asc`.
+   Alternative: Passphrase-Datei (`openssl rand -hex 32 > /root/.stunden-backup-pass; chmod 600 …`), Passphrase
+   zusätzlich offline aufbewahren.
+2. Probelauf: `BACKUP_GPG_RECIPIENT=<Fingerabdruck> deploy/backup.sh --compose deploy/.env`
+   → Ausgabe „fertig: /var/backups/stunden-<STAGE>/stunden-….tar.gpg“.
+3. Übergabe an restic (vorhandenes Repository auf der Storage Box, Zugangsdaten wie bisher in dessen
+   Umgebungsdatei): `BACKUP_HOOK='restic backup --tag stunden --tag "$STAGE" "$@"'`. Das Skript ruft den Hook
+   nur nach erfolgreicher Sicherung auf und meldet einen Fehler des Hooks mit Exit-Code ≠ 0.
+4. Zeitplan (Beispiel systemd-Timer oder Cron, täglich 02:30):
+   `30 2 * * * cd /srv/stunden-prod && BACKUP_GPG_RECIPIENT=… BACKUP_HOOK='…' BACKUP_STATUS_FILE=/var/lib/stunden/letzte-sicherung deploy/backup.sh --compose deploy/.env >> /var/log/stunden-backup.log 2>&1`
+   `BACKUP_STATUS_FILE` speist „Letzte Sicherung“ in der Systemübersicht (Datei dafür read-only in den
+   App-Container einbinden und dort `BACKUP_STATUS_FILE` setzen). Lokal bleiben die letzten 14 Sätze
+   (`BACKUP_KEEP_LOCAL`).
+
+**Wiederherstellungsprobe (monatlich und nach jeder Änderung am Backup):**
+
+```bash
+# 1. Archiv holen (lokal vorhanden oder aus restic):
+restic restore latest --tag stunden --target /tmp/rp --include '/var/backups/stunden-prod'
+# 2. Auf einem Rechner mit dem privaten Schlüssel (oder mit BACKUP_PASSPHRASE_FILE):
+deploy/restore-test.sh --docker --migrations db/migrations /tmp/rp/var/backups/stunden-prod/stunden-prod-….tar.gpg
+#    ohne Docker, mit installiertem PostgreSQL 16:  --local
+```
+
+Das Skript prüft Prüfsumme, Entschlüsselung, Dump-Prüfsumme, spielt Rollen und Dump in eine **Wegwerf-Datenbank**
+ein (eigener Cluster bzw. Container ohne Netz – die laufende Umgebung bleibt unberührt) und prüft Zeilenzahlen
+(Mandanten, Mitarbeitende, Arbeitszeiten, Protokoll) gegen das Manifest, den Migrationsstand, RLS auf allen
+Tabellen, die Vollständigkeit der RLS-Richtlinien, dass die Anfragerolle ohne Anmeldung keine Arbeitszeiten
+sieht, die Rollen ohne BYPASSRLS und den festen `search_path` der SECURITY-DEFINER-Funktionen. Ergebnis
+„ERGEBNIS: Wiederherstellung erfolgreich geprüft.“ und Exit-Code 0; sonst Zeilen mit `FEHLER`. Datum und Ergebnis
+im Betriebsprotokoll festhalten.
+
+Automatisch geprüft: `tests/server/backup-restore.test.ts` (Passphrase und öffentlicher Schlüssel,
+manipuliertes Archiv, falsche Passphrase, Verweigerung ohne Verschlüsselung, Hook und Statusdatei) und der
+CI-Job „Container-Image (Bau + Start)“ (Backup aus dem Compose-Container, Probe mit `--docker`). Die Sicherung
+im Compose-Modus und `--docker` sind **nur in der CI** gelaufen (in der Entwicklungsumgebung gibt es keinen
+Docker-Daemon); die echte Hetzner-Sicherung wurde von hier aus **nicht** wiederhergestellt – das muss einmal auf
+dem Server mit einem echten Archiv durchgespielt werden.
+
+**Echte Wiederherstellung (Notfall, nur nach Freigabe).** Die Schritte 4–5 entsprechen dem, was die Probe automatisch tut; der Ablauf als Ganzes ist auf dem Server noch **nicht** erprobt.
+
+1. Ruhe herstellen: `$C stop app` (keine neuen Schreibzugriffe). Letztes **geprüftes** Archiv wählen.
+2. Erst die Probe laufen lassen (oben) – nur ein Archiv mit „erfolgreich geprüft“ verwenden.
+3. Neue, leere Datenbank-Umgebung: vorhandenes Volume **nicht löschen**, sondern z. B. mit anderem `STAGE`
+   (`prod-restore`) neu aufsetzen: `$C up -d db`.
+4. Archiv entschlüsseln: `gpg -d stunden-prod-….tar.gpg | tar -x -C /root/restore` (Rechte 700).
+5. Rollen und Daten einspielen:
+   `$C exec -T db psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=0 < /root/restore/roles.sql`
+   (Meldungen „already exists“ sind normal; heißt der Superuser der neuen Umgebung anders als `POSTGRES_USER` der
+   gesicherten, vorher `sed -E 's/^(GRANT .*) GRANTED BY [^;]+;$/\1;/' -i /root/restore/roles.sql` – so macht es auch
+   die Probe), dann
+   `$C exec -T db pg_restore -U "$POSTGRES_USER" -d stunden --clean --if-exists --exit-on-error < /root/restore/database.dump`.
+6. `$C run --rm migrate` – setzt das Passwort von `app_api` aus `deploy/.env` (Rollen sind ohne Passwörter
+   gesichert) und spielt neuere Migrationen ein.
+7. `$C up -d app`, Anmeldung und eine Stichprobe prüfen, dann den Reverse Proxy auf die wiederhergestellte
+   Umgebung zeigen lassen. Entpackte Dateien löschen (`rm -rf /root/restore`).
 
 ## 6. Node-API betreiben
 
@@ -91,6 +169,7 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 | `APP_COMMIT` | – | leer | Git-Commit des laufenden Builds (7–40 Hex-Zeichen), nur zur Anzeige im Super-Admin unter „Systemstatus“. |
 | `BACKUP_STATUS_FILE` | – | leer | Datei, in die der nächtliche Sicherungsjob nach **erfolgreicher** Sicherung einen ISO-Zeitstempel schreibt (oder die er nur `touch`t). „Systemstatus“ zeigt daraus „Letzte Sicherung“; ohne Variable: „nicht bekannt“. Ersetzt keinen Wiederherstellungstest. |
 | `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Codes je Konto bzw. IP im Zeitfenster `RATE_LIMIT_WINDOW_MINUTES`. |
+| `RATE_LIMIT_LOGIN_PER_EMAIL` / `RATE_LIMIT_RESET_PER_EMAIL` | – | `30` / `10` | Fehlanmeldungen bzw. Reset-Mails je E-Mail-Adresse über **alle** IPs. Wer ein Konto absichtlich mit Fehlversuchen sperrt, blockiert es höchstens bis zum Ende des Zeitfensters (bewusster Kompromiss; Werte bei Bedarf anpassen). |
 
 **Schlüssel erzeugen** (einmalig, nur in `/etc/uwe-zeit/api.env`, Rechte 600, nie ins Repository):
 

@@ -200,6 +200,17 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | Plattform-Audit (UI) | `GET /api/platform/audit?limit=` (Mandant, Lizenz, Supportfreigabe, Abrechnungsstatus, Standardpreis) |
 | `getSystemOverview` | `GET /api/platform/system` (Super-Admin, Support) → `{version, commit, serverTime, uptimeSeconds, nodeVersion, production, database: {reachable, time}, migrations: {count, latest, appliedAt} \| null, activeSessions, tenants: {<status>: Anzahl}, mail: {configured, delivery}, paymentProvider, lastBackupAt}` – nur Zustände und Zahlen, **keine Geheimnisse** (kein SMTP-Host/-Benutzer/-Passwort, keine Datenbank-URL, keine Schlüssel) und keine Personendaten. `commit` aus `APP_COMMIT`, `lastBackupAt` aus `BACKUP_STATUS_FILE` (sonst `null` = „nicht bekannt“), Migrationsstand aus `ops.schema_migrations` über `public.platform_system_overview()` (0015) |
 
+**Datenschutz (0016, `docs/datenschutz.md`)**
+
+| Repository-Methode | Methode, Pfad | Wer |
+|---|---|---|
+| `exportPersonalData` | `GET /api/employees/:employeeId/data-export[?format=csv]` → `PersonalDataExport` (`format: "stundenwerk.personal-data.v1"`, `requestedBy: "self" \| "owner"`; `account` mit Anmeldeadresse, Sitzungen und 2FA-Status nur bei `self`, sonst `null`) bzw. CSV (UTF-8 mit BOM, `;`, Abschnitte, Formel-Neutralisierung). Download mit `Content-Disposition: attachment; filename="datenauskunft-<Personalnr>-<Datum>.json\|csv"`, `Cache-Control: no-store`. Jeder Abruf: Audit `employee.data_export`. 400 unbekanntes Format | die Person selbst, Inhaber des Mandanten (nicht Leitung, nicht Plattform) |
+| `exportTenantData` | `GET /api/tenants/:tenantId/data-export[?format=csv]` → `TenantDataExport` (`stundenwerk.tenant-data.v1`: Firma, Lizenz, alle Mitarbeitenden mit Zeiten, Verlauf, Abschlüssen, Konto, Korrekturen, Protokoll) bzw. CSV aller Arbeitszeiten. Datei `firmendaten-<kurzname>-<Datum>`. Audit `tenant.data_export` | Inhaber |
+| `setRetentionPolicy` | `PUT /api/tenants/:tenantId/privacy` `{retentionMonthsAfterExit: 1–600 \| null}` → `Tenant` (`retentionMonthsAfterExit`) · 400 sonst | Inhaber |
+| `anonymizeEmployee` | `POST /api/employees/:employeeId/anonymize` `{confirmPersonnelNumber}` → `Employee` (`anonymizedAt`) · 400 Personalnummer falsch/fehlt · 409 nicht deaktiviert, keine Frist festgelegt, Frist läuft noch („… bis zum TT.MM.JJJJ“), bereits anonymisiert · 403 nicht Inhaber | Inhaber |
+
+Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …/status` antworten mit 403.
+
 **Abrechnung (Preismodell, `docs/preismodell.md`)**
 
 | Repository-Methode | Methode, Pfad | Wer |

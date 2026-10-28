@@ -188,6 +188,21 @@ Möglichkeiten zur Entscheidung durch den Auftraggeber: (a) so lassen, der Inhab
 lässt neu einreichen (heute schon möglich), (b) Zahlen bei jeder Korrektur automatisch neu berechnen (Abrechnung kann sich
 nachträglich ändern), (c) Korrektur im freigegebenen Monat nur nach Rückgabe erlauben.
 
+## Datenschutz (0016)
+
+| Objekt | Zweck |
+|---|---|
+| `tenants.retention_months_after_exit` (1–600 oder NULL) | Aufbewahrungsfrist nach dem Austritt, vom Inhaber festgelegt; NULL = keine Frist, keine Anonymisierung |
+| `employees.anonymized_at` (+ Prüfregel `employees_anonymized_shape`) | Zeitpunkt der Anonymisierung; anonymisierte Zeilen sind über Anfragerollen nicht mehr änderbar (`employees_privacy_guard`) |
+| `public.export_personal_data(employee_id) → jsonb` (definer) | Datenauskunft: die Person selbst (inkl. Konto, Sitzungen, 2FA-Status) oder der Inhaber (ohne Kontodaten); Audit `employee.data_export` |
+| `public.export_tenant_data(tenant_id) → jsonb` (definer) | Gesamtexport für den Inhaber; Audit `tenant.data_export` |
+| `public.anonymize_employee(employee_id, bestätigte_personalnummer) → employees` (definer) | Anonymisierung (Inhaber, deaktiviert, Frist abgelaufen ab Austritt laut `employee_status_history`, Personalnummer bestätigt); Fehler `55000` mit Fristende, `22023` falsche Nummer |
+| `private.privacy_redactions` | transaktionsgebundene Freigabe (Schlüssel `txid`) für das Schwärzen in `audit_log`, `time_entry_revisions`, `correction_requests`, Prüfvermerken; keine Rechte für Anfragerollen. Die Schutz-Trigger (`private.audit_log_guard`, `private.revisions_guard`, Korrektur- und Zeiteintrags-Guards) erlauben unter dieser Freigabe nur Inhaltsfelder desselben Mandanten; DELETE bleibt verboten |
+| `private.redact_personal(jsonb)` | ersetzt Namen, Adressen, Personalnummern, Bemerkungen und Begründungen rekursiv durch `[anonymisiert]` |
+
+Tests: `tests/db/privacy.test.ts` (Rechte, Frist, Schwärzung, Unveränderlichkeit), `tests/server/privacy.test.ts`
+(HTTP), `tests/db/security-catalog.test.ts` (Katalogprüfung aller Migrationen).
+
 ## Tests
 
 ```sh
