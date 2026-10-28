@@ -42,6 +42,11 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Tests: 284 Unit-, 209 Datenbank-/API-, 122 Browsertests (Demo-Build und Alt-App, Chromium Desktop und
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
+### Sicherheit (QA 2026-10-28)
+- B3: Firmenprofil (Branding, Kontakt, Einstellungen, Name) ändert nur noch der Inhaber. Plattformpersonal hat
+  keinen Schreibzugriff mehr auf Mandantenzeilen, auch nicht mit Support-Freigabe; Statuswechsel nur über
+  `set_tenant_status` (jetzt SECURITY DEFINER mit Super-Admin-Prüfung). Migration `0011_tenant_profile_owner_only.sql`.
+
 ### Bekannte Fehler der Alt-App (dokumentiert, nicht geändert)
 - Überschneidung über Mitternacht wird nicht erkannt.
 - Beschädigter Stundenspeicher kann beim nächsten Speichern überschrieben werden.

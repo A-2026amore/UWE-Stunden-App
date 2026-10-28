@@ -221,6 +221,28 @@ describe("platform staff", () => {
     expect((await t.call("GET", `/api/tenants/${A}/time-entries?from=2026-09-01&to=2026-10-31`, { cookie: c })).status).toBe(403);
   });
 
+  it("platform staff cannot change a tenant's company profile – not even with a support grant (QA B3)", async () => {
+    const before = (await t.db.admin.query("select branding, contact from public.tenants where id = $1", [A])).rows[0];
+    const attempts = async () => {
+      for (const c of [cookies.superAdmin, cookies.support]) {
+        const b = await t.call("PATCH", `/api/tenants/${A}/branding`, { cookie: c, body: { slogan: "Plattform" } });
+        expect(b.status).toBe(403);
+        expect(b.body.error.message).toBe("Firmendaten darf nur der Inhaber ändern.");
+        expect((await t.call("PATCH", `/api/tenants/${A}/contact`, { cookie: c, body: { city: "Plattformstadt" } })).status).toBe(403);
+        expect((await t.call("PATCH", `/api/tenants/${A}/settings`, { cookie: c, body: { breakPolicy: { maxShiftMinutes: 600 } } })).status).toBe(403);
+      }
+    };
+    await attempts();
+    expect((await t.call("PUT", `/api/tenants/${A}/support-grant`, { cookie: cookies.ownerA, body: { hours: 1, reason: "Supportfall Branding" } })).status).toBe(200);
+    try {
+      await attempts();
+    } finally {
+      await t.call("PUT", `/api/tenants/${A}/support-grant`, { cookie: cookies.ownerA, body: { hours: 0 } });
+    }
+    const after = (await t.db.admin.query("select branding, contact from public.tenants where id = $1", [A])).rows[0];
+    expect(after).toEqual(before);
+  });
+
   it("only super_admin creates tenants and changes licences", async () => {
     const body = { name: "Neue Testfirma", slug: "neue-testfirma", plan: "pilot_free", isDemo: true, ownerEmail: "chef@neue-testfirma.example" };
     expect((await t.call("POST", "/api/platform/tenants", { cookie: cookies.support, body })).status).toBe(403);

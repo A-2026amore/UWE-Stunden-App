@@ -251,6 +251,8 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const patch = brandingPatch(ctx.body);
     return app.asUser(ctx, async (q) => {
+      // Owner only – platform staff neither (also not with a support grant; RLS tenants_update since 0011).
+      await check(q, "private.is_owner($1)", [id], "Firmendaten darf nur der Inhaber ändern.");
       const r = await one(q, "update public.tenants set branding = branding || $2::jsonb where id = $1 returning *", [id, JSON.stringify(patch)]);
       if (!r) throw forbidden("Firmendaten darf nur der Inhaber ändern.");
       return json(200, toTenant(r));
@@ -261,6 +263,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const patch = contactPatch(ctx.body);
     return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_owner($1)", [id], "Firmendaten darf nur der Inhaber ändern.");
       const r = await one(q, "update public.tenants set contact = contact || $2::jsonb where id = $1 returning *", [id, JSON.stringify(patch)]);
       if (!r) throw forbidden("Firmendaten darf nur der Inhaber ändern.");
       return json(200, toTenant(r));

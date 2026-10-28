@@ -16,6 +16,7 @@ Kein Supabase, kein PostgREST: Davor sitzt eine eigene Node-API (siehe `docs/api
 | `0008_hardening.sql` | Nachschärfung nach API-Review (additiv): nur aktive Mandanten, keine SVG-Data-URLs, Einladung bei bestehendem Konto, Leerlauf-Timeout, Zahlenformat, Mitarbeiterzahlen, E-Mail verknüpfter Konten |
 | `0009_two_factor.sql` | Zwei-Faktor-Anmeldung (TOTP), Wiederherstellungscodes, Pflicht für Leitung/Plattform |
 | `0010_operator_invitation.sql` | `auth.operator_create_invitation` für den Betreiberbefehl `invite-link` (nur `app_auth`) |
+| `0011_tenant_profile_owner_only.sql` | `tenants_update` nur noch für den Inhaber; `set_tenant_status` als SECURITY DEFINER (nur Super-Admin); `tenants_guard` ohne Ausnahme für Plattformpersonal |
 
 Anwenden (als Superuser bzw. Datenbankeigentümer, in Dateireihenfolge):
 

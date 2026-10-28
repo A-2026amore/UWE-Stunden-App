@@ -40,7 +40,9 @@ nur der Inhaber. Vier-Augen-Prinzip: Leitung gibt eigene Abschlüsse/Zuweisungen
 Anfragerollen nur lesbar.
 
 **Plattformrollen** (`platform_admins.role`): `super_admin` verwaltet Mandanten und Lizenzen;
-`support` hat nur Lesezugriff auf Metadaten. Beide sehen **ohne Freigabe keine personenbezogenen
+`support` hat nur Lesezugriff auf Metadaten. Das Firmenprofil (Name, Branding, Kontakt, Einstellungen)
+eines Mandanten ändert **nur der Inhaber** – Plattformpersonal auch nicht mit Support-Freigabe (seit
+Migration 0011; Status nur über `set_tenant_status`, Anlage über `create_tenant`). Beide sehen **ohne Freigabe keine personenbezogenen
 Daten** (Mitarbeiter, Zeiten, Konten, Abschlüsse, Revisionen) – nur Mandanten-Metadaten, Lizenz
 und Mitarbeiterzahlen (`platform_list_tenants()`).
 
