@@ -15,8 +15,8 @@
  * reject access to other tenants' data with AccessDeniedError.
  */
 import type {
-  AuditEvent, CompanyContact, Branding, Employee, ISOMonth, License, LicensePlan,
-  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID,
+  AuditEvent, CompanyContact, Branding, CorrectionRequest, CorrectionStatus, Employee, EntryValues, ISOMonth, License, LicensePlan,
+  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 
 export class AccessDeniedError extends Error {
@@ -113,6 +113,12 @@ export interface NewTimeEntry {
   source?: "app" | "migration";
 }
 
+/** Input of Repository.createCorrectionRequest (reason: at least 5 characters). */
+export type NewCorrectionRequest =
+  | { kind: "change"; entryId: string; proposed: Partial<EntryValues>; reason: string }
+  | { kind: "delete"; entryId: string; reason: string }
+  | { kind: "add"; proposed: EntryValues; reason: string };
+
 export interface TenantOverview {
   tenant: Tenant;
   license: License | null;
@@ -161,6 +167,18 @@ export interface Repository {
   submitStatement(employeeId: UUID, month: ISOMonth): Promise<MonthlyStatement>;
   approveStatement(statementId: UUID): Promise<MonthlyStatement>;
   returnStatement(statementId: UUID, reason: string): Promise<MonthlyStatement>;
+
+  // ---- correction requests (docs/bedienung-korrekturen.md)
+  /** Employees: only their own requests; leadership: whole tenant; platform staff only with support grant. */
+  listCorrectionRequests(tenantId: UUID, filter?: { employeeId?: UUID; status?: CorrectionStatus }): Promise<CorrectionRequest[]>;
+  /** Employee, own entries only. */
+  createCorrectionRequest(employeeId: UUID, input: NewCorrectionRequest): Promise<CorrectionRequest>;
+  /** Employee withdraws an own open request. */
+  withdrawCorrectionRequest(requestId: UUID): Promise<CorrectionRequest>;
+  /** Leadership: "accepted" applies the change as a correction; "rejected" needs a note. */
+  decideCorrectionRequest(requestId: UUID, decision: "accepted" | "rejected", note?: string): Promise<CorrectionRequest>;
+  /** Change history of one entry (oldest first). */
+  listTimeEntryRevisions(employeeId: UUID, entryId: string): Promise<TimeEntryRevision[]>;
 
   // ---- audit
   listAudit(tenantId: UUID, limit?: number): Promise<AuditEvent[]>;

@@ -11,13 +11,15 @@
 import type { BreakPolicy, TenantSettings, WorkAccountPolicy } from "../../platform/src/core/types.ts";
 import type { TenantOverview } from "../../platform/src/data/repository.ts";
 import { errorsForMonth, evaluateDay, issueForDay, validateBreakPolicy } from "../../platform/src/core/breaks.ts";
+import { addDays, findOverlapAcrossDays } from "../../platform/src/core/time.ts";
 import type { AppContext } from "./app.ts";
 import type { Queryable } from "./db.ts";
 import { HttpError, badRequest, forbidden } from "./errors.ts";
 import type { Router } from "./http.ts";
 import type { Mail } from "./mailer.ts";
 import {
-  TIME_ENTRY_COLUMNS, toAllocation, toAudit, toEmployee, toLicense, toStatement, toTenant, toTimeEntry,
+  STATEMENT_SELECT, TIME_ENTRY_COLUMNS, toAllocation, toAudit, toCorrectionRequest, toEmployee, toLicense, toRevision, toStatement,
+  toTenant, toTimeEntry,
 } from "./mappers.ts";
 import * as v from "./validate.ts";
 
@@ -155,6 +157,53 @@ async function resolveEntryEmployee(q: Queryable, id: string): Promise<string> {
     throw new HttpError(409, "ambiguous", "Die Eintrags-ID ist nicht eindeutig. Bitte den Eintrag über den Mitarbeiter aufrufen.");
   }
   return String(rows[0]!.employee_id);
+}
+
+// ------------------------------------------------------------------ correction requests
+
+const CORRECTION_SELECT = `select r.*, d.display_name as decided_by_name
+  from public.correction_requests r
+  left join public.employees d on d.user_id = r.decided_by and d.tenant_id = r.tenant_id`;
+
+type Values = { date: string; start: string; end: string; pauseMinutes: number; note: string };
+type CorrectionInput = { kind: "change" | "delete" | "add"; entryId: string | null; proposed: EntryPatch | null; reason: string };
+
+function correctionInput(raw: unknown): CorrectionInput {
+  const b = v.object(raw, ["kind", "entryId", "proposed", "reason"], "Korrekturanfrage");
+  const kind = v.oneOf(b.kind, ["change", "delete", "add"] as const, "Art der Korrekturanfrage");
+  const reason = v.reason(b.reason, 5, "Bitte begründe die Korrekturanfrage (mind. 5 Zeichen).");
+  if (kind === "add") {
+    if (b.entryId !== undefined && b.entryId !== null) throw badRequest("Für einen fehlenden Eintrag bitte keine Eintrags-ID angeben.");
+    const p = entryPatch(b.proposed ?? {});
+    if (p.date === undefined || p.start === undefined || p.end === undefined || p.pauseMinutes === undefined) {
+      throw badRequest("Bitte Datum, Beginn, Ende und Pause angeben.");
+    }
+    return { kind, entryId: null, proposed: { note: "", ...p }, reason };
+  }
+  const entryId = v.entryId(b.entryId);
+  if (kind === "delete") {
+    if (b.proposed !== undefined && b.proposed !== null) throw badRequest("Eine Löschung enthält keine neuen Werte.");
+    return { kind, entryId, proposed: null, reason };
+  }
+  const p = entryPatch(b.proposed ?? {});
+  if (Object.keys(p).length === 0) throw badRequest("Bitte die gewünschten Werte angeben.");
+  return { kind, entryId, proposed: p, reason };
+}
+
+/**
+ * Same checks as for a new entry, before the request is stored: overlaps with
+ * other entries and the tenant's break rules for the requested day. (The
+ * database repeats the hard limits and the API the break rules on acceptance.)
+ */
+async function assertPlausible(q: Queryable, employeeId: string, entryId: string | null, values: Values): Promise<void> {
+  const around = (await shiftsOf(q, employeeId, addDays(values.date, -1), addDays(values.date, 1))).filter((x) => x.id !== entryId);
+  const candidate = { id: entryId ?? "", date: values.date, start: values.start, end: values.end, pause: values.pauseMinutes };
+  const overlap = findOverlapAcrossDays(candidate, around);
+  if (overlap) throw new HttpError(409, "overlap", `Der Einsatz überschneidet sich mit ${overlap.start}–${overlap.end} Uhr. Bitte die Zeiten prüfen.`);
+  const policy = await breakPolicyOf(q, employeeId);
+  if (!policy) return;
+  const problem = issueForDay(evaluateDay([...around.filter((x) => x.date === values.date), candidate], values.date, policy), policy);
+  if (problem) throw new HttpError(400, "break_rule", problem);
 }
 
 // ------------------------------------------------------------------ tenant input
@@ -542,7 +591,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const month = v.month(ctx.query.get("month"));
     return app.asUser(ctx, async (q) => {
       await check(q, "private.can_read_personal($1)", [id]);
-      const rows = await all(q, "select * from public.monthly_statements where tenant_id = $1 and month = $2 order by employee_id", [id, month]);
+      const rows = await all(q, `${STATEMENT_SELECT} where s.tenant_id = $1 and s.month = $2 order by s.employee_id`, [id, month]);
       return json(200, rows.map(toStatement));
     });
   });
@@ -552,7 +601,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const month = v.month(ctx.params.month);
     return app.asUser(ctx, async (q) => {
       await visibleEmployee(q, id);
-      const r = await one(q, "select * from public.monthly_statements where employee_id = $1 and month = $2", [id, month]);
+      const r = await one(q, `${STATEMENT_SELECT} where s.employee_id = $1 and s.month = $2`, [id, month]);
       return json(200, r ? toStatement(r) : null);
     });
   });
@@ -589,6 +638,100 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const b = v.object(ctx.body, ["reason"]);
     const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Rückgabe angeben.");
     return app.asUser(ctx, async (q) => json(200, toStatement((await one(q, "select * from public.return_statement($1, $2)", [id, reason]))!)));
+  });
+
+  // ---------------------------------------------------------------- correction requests
+  router.add("GET", "/api/tenants/:tenantId/correction-requests", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const employeeId = ctx.query.get("employeeId");
+    const status = ctx.query.get("status");
+    const params: unknown[] = [id];
+    let where = "r.tenant_id = $1";
+    if (employeeId) {
+      params.push(v.uuid(employeeId, "Mitarbeiter-ID"));
+      where += ` and r.employee_id = $${params.length}`;
+    }
+    if (status) {
+      params.push(v.oneOf(status, ["open", "accepted", "rejected", "withdrawn"] as const, "Status"));
+      where += ` and r.status = $${params.length}`;
+    }
+    return app.asUser(ctx, async (q) => {
+      // RLS: employees see only their own requests, leadership the tenant, platform staff only with a grant.
+      await check(q, "private.is_member($1) or private.has_support_access($1)", [id]);
+      const rows = await all(q, `${CORRECTION_SELECT} where ${where} order by r.created_at desc, r.id limit 500`, params);
+      return json(200, rows.map(toCorrectionRequest));
+    });
+  });
+
+  router.add("POST", "/api/employees/:employeeId/correction-requests", async (ctx) => {
+    const employeeId = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    const input = correctionInput(ctx.body);
+    return app.asUser(ctx, async (q) => {
+      if (!(await isSelf(q, employeeId))) throw forbidden("Korrekturanfragen können nur für eigene Einträge gestellt werden.");
+      await lockEmployee(q, employeeId);
+      if (input.kind !== "delete") {
+        let values = input.proposed as Values;
+        if (input.kind === "change") {
+          const cur = await one(q, `select ${TIME_ENTRY_COLUMNS} from public.time_entries where employee_id = $1 and id = $2 and deleted_at is null`,
+            [employeeId, input.entryId]);
+          if (!cur) throw forbidden("Eintrag nicht gefunden oder bereits gelöscht.");
+          const e = toTimeEntry(cur);
+          values = { date: e.date, start: e.start, end: e.end, pauseMinutes: e.pauseMinutes, note: e.note, ...input.proposed };
+        }
+        await assertPlausible(q, employeeId, input.entryId, values);
+      }
+      const created = await one(q, "select id from public.create_correction_request($1, $2, $3, $4::jsonb, $5)",
+        [employeeId, input.kind, input.entryId, input.proposed ? JSON.stringify(input.proposed) : null, input.reason]);
+      const r = await one(q, `${CORRECTION_SELECT} where r.id = $1`, [created!.id]);
+      return json(201, toCorrectionRequest(r!));
+    });
+  });
+
+  router.add("POST", "/api/correction-requests/:requestId/withdraw", async (ctx) => {
+    const id = v.uuid(ctx.params.requestId, "Anfrage-ID");
+    v.object(ctx.body, []);
+    return app.asUser(ctx, async (q) => {
+      await q.query("select 1 from public.withdraw_correction_request($1)", [id]);
+      return json(200, toCorrectionRequest((await one(q, `${CORRECTION_SELECT} where r.id = $1`, [id]))!));
+    });
+  });
+
+  router.add("POST", "/api/correction-requests/:requestId/decide", async (ctx) => {
+    const id = v.uuid(ctx.params.requestId, "Anfrage-ID");
+    const b = v.object(ctx.body, ["decision", "note"]);
+    const decision = v.oneOf(b.decision, ["accepted", "rejected"] as const, "Entscheidung");
+    const note = decision === "rejected" ? v.reason(b.note, 3, "Bitte begründe die Ablehnung.") : v.optReason(b.note);
+    return app.asUser(ctx, async (q) => {
+      const cur = await one(q, "select employee_id from public.correction_requests where id = $1", [id]);
+      if (!cur) throw forbidden("Korrekturanfrage nicht gefunden oder kein Zugriff.");
+      const employeeId = String(cur.employee_id);
+      await lockEmployee(q, employeeId);
+      const decided = await one(q, "select * from public.decide_correction_request($1, $2, $3)", [id, decision, note]);
+      if (decision === "accepted" && decided?.applied_entry_id) {
+        // Statutory break rules of the tenant for the corrected day – rollback on a violation, like every correction.
+        const e = await one(q, "select to_char(work_date, 'YYYY-MM-DD') as d, deleted_at from public.time_entries where employee_id = $1 and id = $2",
+          [employeeId, decided.applied_entry_id]);
+        if (e && !e.deleted_at) await assertBreakRules(q, employeeId, String(e.d));
+      }
+      return json(200, toCorrectionRequest((await one(q, `${CORRECTION_SELECT} where r.id = $1`, [id]))!));
+    });
+  });
+
+  // Change history of one entry (time_entry_revisions under RLS; platform staff only with a grant).
+  router.add("GET", "/api/employees/:employeeId/time-entries/:entryId/revisions", async (ctx) => {
+    const employeeId = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    const entryId = v.entryId(ctx.params.entryId);
+    return app.asUser(ctx, async (q) => {
+      await visibleEmployee(q, employeeId);
+      const rows = await all(q,
+        `select r.*, c.display_name as changed_by_name
+           from public.time_entry_revisions r
+           left join public.employees c on c.user_id = r.changed_by and c.tenant_id = r.tenant_id
+          where r.employee_id = $1 and r.entry_id = $2
+          order by r.version, r.changed_at`, [employeeId, entryId]);
+      if (rows.length === 0) throw forbidden("Eintrag nicht gefunden oder kein Zugriff.");
+      return json(200, rows.map(toRevision));
+    });
   });
 
   // ---------------------------------------------------------------- audit

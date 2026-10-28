@@ -52,6 +52,25 @@ describe("createApiRepository (fetch mocked)", () => {
     await expect(login).rejects.toMatchObject({ message: "E-Mail-Adresse oder Passwort ist falsch." });
   });
 
+  it("correction requests and revisions use the documented paths", async () => {
+    const f = fakeFetch([{ status: 200, body: [] }, { status: 201, body: {} }, { status: 200, body: {} }, { status: 200, body: {} }, { status: 200, body: {} }, { status: 200, body: [] }]);
+    const repo = createApiRepository("https://zeit.example", { fetch: f.fn });
+    await repo.listCorrectionRequests("t-1", { status: "open", employeeId: "emp-1" });
+    await repo.createCorrectionRequest("emp-1", { kind: "delete", entryId: "e-1", reason: "Doppelt erfasst" });
+    await repo.withdrawCorrectionRequest("r-1");
+    await repo.decideCorrectionRequest("r-1", "rejected", "Belegt");
+    await repo.decideCorrectionRequest("r-2", "accepted");
+    await repo.listTimeEntryRevisions("emp-1", "e-1");
+    expect(f.calls.map((c) => `${c.init.method} ${c.url.replace("https://zeit.example", "")} ${c.init.body ?? ""}`)).toEqual([
+      "GET /api/tenants/t-1/correction-requests?employeeId=emp-1&status=open ",
+      'POST /api/employees/emp-1/correction-requests {"kind":"delete","entryId":"e-1","reason":"Doppelt erfasst"}',
+      "POST /api/correction-requests/r-1/withdraw {}",
+      'POST /api/correction-requests/r-1/decide {"decision":"rejected","note":"Belegt"}',
+      'POST /api/correction-requests/r-2/decide {"decision":"accepted"}',
+      "GET /api/employees/emp-1/time-entries/e-1/revisions ",
+    ]);
+  });
+
   it("addresses known entries through their employee, unknown ones by id only", async () => {
     const entry = { id: "e-1", employeeId: "emp-1", version: 1 };
     const f = fakeFetch([{ status: 200, body: [entry] }, { status: 204 }, { status: 204 }]);

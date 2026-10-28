@@ -22,8 +22,8 @@
  * shows the current code without an app (docs/security.md, "Demo").
  */
 import type {
-  AuditEvent, Branding, CompanyContact, Employee, ISODate, ISOMonth, License, LicensePlan, MonthAllocation,
-  MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID, WorkAccountPolicy,
+  AuditEvent, Branding, CompanyContact, CorrectionRequest, Employee, EntryValues, ISODate, ISOMonth, License, LicensePlan,
+  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import { activeShifts, addDays, findOverlapAcrossDays, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
 import { UWE_BREAK_POLICY, evaluateDay, issueForDay } from "../core/breaks";
@@ -112,6 +112,18 @@ interface DemoTwoFactor {
   recoveryCodes: Array<{ code: string; usedAt: string | null }>;
 }
 
+/** Correction request as stored in the demo database (decidedBy: employee id of the deciding person). */
+interface StoredCorrection extends CorrectionRequest {
+  decidedBy: UUID | null;
+}
+
+/** Change history of time entries (like time_entry_revisions on the server). */
+interface StoredRevision extends Omit<TimeEntryRevision, "changedByName"> {
+  tenantId: UUID;
+  employeeId: UUID;
+  changedBy: UUID | null;
+}
+
 interface DemoDb {
   schema: 1;
   seededAt: string;
@@ -126,6 +138,10 @@ interface DemoDb {
   supportGrants: SupportGrant[];
   /** Added with two-factor authentication; missing in older stored demo databases. */
   twoFactor?: DemoTwoFactor[];
+  /** Added with correction requests (migration 0013); missing in older stored demo databases. */
+  correctionRequests?: StoredCorrection[];
+  /** Entry history recorded from correction requests on; older entries show their current state only. */
+  revisions?: StoredRevision[];
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
@@ -583,6 +599,40 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     return db.statements.find((x) => x.employeeId === employeeId && x.month === month) ?? null;
   }
 
+  const valuesOf = (e: Pick<TimeEntry, "date" | "start" | "end" | "pauseMinutes" | "note">): EntryValues =>
+    ({ date: e.date, start: e.start, end: e.end, pauseMinutes: e.pauseMinutes, note: e.note });
+
+  /** Like the server trigger time_entries_revision: one snapshot per write. */
+  function recordRevision(db: DemoDb, s: Session, entry: TimeEntry, operation: TimeEntryRevision["operation"], isCorrection: boolean, reason: string | null) {
+    (db.revisions ??= []).push({
+      entryId: entry.id, tenantId: entry.tenantId, employeeId: entry.employeeId, version: entry.version, operation, isCorrection,
+      changedAt: new Date().toISOString(), changedBy: s.employeeId, reason, values: valuesOf(entry), deleted: !!entry.deletedAt, source: entry.source,
+    });
+  }
+
+  /** Name of a person for the caller: leadership sees everybody, employees only themselves (like RLS on employees). */
+  function visibleName(db: DemoDb, s: Session, employeeId: UUID | null): string | null {
+    if (!employeeId) return null;
+    if (!isManager(s) && s.employeeId !== employeeId) return null;
+    return db.employees.find((e) => e.id === employeeId)?.displayName ?? null;
+  }
+
+  /** statement_correction_flags: corrections of an approved month after the approval (figures stay unchanged, N1). */
+  function withCorrectionFlag(db: DemoDb, st: MonthlyStatement): MonthlyStatement {
+    if (st.status !== "approved" || !st.reviewedAt) return { ...st, correctedAfterApproval: null };
+    const revs = (db.revisions ?? []).filter((r) => r.employeeId === st.employeeId);
+    const hits = revs.filter((r) => r.isCorrection && r.changedAt > st.reviewedAt! && (
+      r.values.date.startsWith(st.month)
+      || revs.some((p) => p.entryId === r.entryId && p.version === r.version - 1 && p.values.date.startsWith(st.month))));
+    if (!hits.length) return { ...st, correctedAfterApproval: null };
+    return { ...st, correctedAfterApproval: { count: hits.length, lastAt: hits.map((h) => h.changedAt).sort().at(-1)! } };
+  }
+
+  function publicCorrection(db: DemoDb, s: Session, r: StoredCorrection): CorrectionRequest {
+    const { decidedBy, ...rest } = r;
+    return { ...rest, decidedByName: visibleName(db, s, decidedBy) };
+  }
+
   /** Employees cannot change months that are submitted or approved. */
   function assertMonthOpen(db: DemoDb, s: Session, employeeId: UUID, month: ISOMonth) {
     if (isManager(s) && s.employeeId !== employeeId) return; // managers correct with reason
@@ -949,6 +999,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           source: byManager ? "correction" : entry.source === "migration" ? "migration" : "app",
         };
         db.entries.push(created);
+        recordRevision(db, s, created, "insert", byManager, null);
         if (byManager) addAudit(db, s, { tenantId: emp.tenantId, action: "time_entry.created_by_manager", entity: "time_entry", entityId: created.id, before: null, after: created, reason: null });
         return created;
       });
@@ -970,6 +1021,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         validateEntry(db, tenantById(db, entry.tenantId), entry.employeeId, next);
         const before = clone(entry);
         Object.assign(entry, next, { version: entry.version + 1, updatedAt: new Date().toISOString(), source: byManager ? "correction" : entry.source });
+        recordRevision(db, s, entry, "update", byManager, r);
         addAudit(db, s, { tenantId: entry.tenantId, action: byManager ? "time_entry.corrected" : "time_entry.updated", entity: "time_entry", entityId: entry.id, before, after: clone(entry), reason: r });
         return entry;
       });
@@ -986,6 +1038,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const before = clone(entry);
         entry.deletedAt = new Date().toISOString();
         entry.version += 1;
+        if (byManager) entry.source = "correction";
+        recordRevision(db, s, entry, "delete", byManager, r);
         addAudit(db, s, { tenantId: entry.tenantId, action: "time_entry.deleted", entity: "time_entry", entityId: entry.id, before, after: { deletedAt: entry.deletedAt }, reason: r });
         return null;
       });
@@ -1046,13 +1100,14 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async listStatements(tenantId, month) {
       return read((db, s) => {
         assertManager(s, tenantId);
-        return db.statements.filter((x) => x.tenantId === tenantId && x.month === month);
+        return db.statements.filter((x) => x.tenantId === tenantId && x.month === month).map((x) => withCorrectionFlag(db, x));
       });
     },
     async getStatement(employeeId, month) {
       return read((db, s) => {
         assertEmployeeRead(db, s, employeeId);
-        return statementOf(db, employeeId, month);
+        const st = statementOf(db, employeeId, month);
+        return st ? withCorrectionFlag(db, st) : null;
       });
     },
     async submitStatement(employeeId, month) {
@@ -1107,6 +1162,143 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         Object.assign(st, { status: "returned", reviewedAt: new Date().toISOString(), reviewedBy: s.employeeId, reviewNote: r });
         addAudit(db, s, { tenantId: st.tenantId, action: "statement.returned", entity: "statement", entityId: st.id, before, after: clone(st), reason: r });
         return st;
+      });
+    },
+
+    // ------------------------------------------------ correction requests (like migration 0013)
+    async listCorrectionRequests(tenantId, filter = {}) {
+      return read((db, s) => {
+        const platform = !!s.platformRole && !s.tenantId;
+        if (platform) {
+          if (!hasSupportGrant(db, tenantId)) throw new AccessDeniedError("Kein Supportzugriff: Der Mandant hat keine Freigabe erteilt.");
+        } else {
+          assertMember(s, tenantId);
+        }
+        return (db.correctionRequests ?? [])
+          .filter((r) => r.tenantId === tenantId && (platform || isManager(s) || r.employeeId === s.employeeId))
+          .filter((r) => (!filter.employeeId || r.employeeId === filter.employeeId) && (!filter.status || r.status === filter.status))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .map((r) => publicCorrection(db, s, r));
+      });
+    },
+    async createCorrectionRequest(employeeId, input) {
+      return tx((db, s) => {
+        const emp = assertEmployeeWrite(db, s, employeeId);
+        if (s.employeeId !== employeeId) throw new AccessDeniedError("Korrekturanfragen können nur für eigene Einträge gestellt werden.");
+        const reason = (input.reason ?? "").trim();
+        if (reason.length < 5) throw new Error("Bitte begründe die Korrekturanfrage (mind. 5 Zeichen).");
+        if (reason.length > 1000) throw new Error("Die Begründung ist zu lang (max. 1000 Zeichen).");
+        const tenant = tenantById(db, emp.tenantId);
+        const list = (db.correctionRequests ??= []);
+        let before: EntryValues | null = null;
+        let proposed: EntryValues | null = null;
+        let entry: TimeEntry | undefined;
+        if (input.kind === "change" || input.kind === "delete") {
+          entry = db.entries.find((e) => e.id === input.entryId && e.employeeId === employeeId && !e.deletedAt);
+          if (!entry) throw new Error("Der Eintrag wurde nicht gefunden oder bereits gelöscht.");
+          if (list.some((r) => r.employeeId === employeeId && r.entryId === entry!.id && r.status === "open")) {
+            throw new Error("Für diesen Eintrag gibt es bereits eine offene Korrekturanfrage.");
+          }
+          before = valuesOf(entry);
+        }
+        if (input.kind === "change") {
+          proposed = { ...before!, ...input.proposed, note: (input.proposed.note ?? before!.note).trim() };
+          if (JSON.stringify(proposed) === JSON.stringify(before)) throw new Error("Die gewünschten Werte entsprechen dem aktuellen Eintrag.");
+          validateEntry(db, tenant, employeeId, { id: entry!.id, ...proposed });
+        } else if (input.kind === "add") {
+          proposed = { ...input.proposed, note: (input.proposed.note ?? "").trim() };
+          validateEntry(db, tenant, employeeId, { id: "neu", ...proposed });
+        }
+        const req: StoredCorrection = {
+          id: uuid(), tenantId: emp.tenantId, employeeId, kind: input.kind, entryId: entry?.id ?? null, entryVersion: entry?.version ?? null,
+          before, proposed, reason, status: "open", createdAt: new Date().toISOString(),
+          decidedAt: null, decidedBy: null, decidedByName: null, decisionNote: null, appliedEntryId: null,
+        };
+        list.push(req);
+        addAudit(db, s, { tenantId: emp.tenantId, action: "correction_request.created", entity: "correction_request", entityId: req.id, before: null, after: clone(req), reason });
+        return publicCorrection(db, s, req);
+      });
+    },
+    async withdrawCorrectionRequest(requestId) {
+      return tx((db, s) => {
+        const req = (db.correctionRequests ?? []).find((r) => r.id === requestId);
+        if (!req || req.employeeId !== s.employeeId || s.tenantId !== req.tenantId) throw new AccessDeniedError("Korrekturanfrage nicht gefunden oder kein Zugriff.");
+        if (req.status !== "open") throw new Error("Nur offene Korrekturanfragen können zurückgezogen werden.");
+        const before = clone(req);
+        Object.assign(req, { status: "withdrawn", decidedAt: new Date().toISOString(), decidedBy: s.employeeId });
+        addAudit(db, s, { tenantId: req.tenantId, action: "correction_request.withdrawn", entity: "correction_request", entityId: req.id, before, after: clone(req), reason: null });
+        return publicCorrection(db, s, req);
+      });
+    },
+    async decideCorrectionRequest(requestId, decision, note) {
+      return tx((db, s) => {
+        const req = (db.correctionRequests ?? []).find((r) => r.id === requestId);
+        if (!req) throw new AccessDeniedError("Korrekturanfrage nicht gefunden oder kein Zugriff.");
+        assertManager(s, req.tenantId);
+        if (req.employeeId === s.employeeId && s.role !== "owner") throw new AccessDeniedError("Über die eigene Korrekturanfrage entscheidet eine andere Leitungsperson.");
+        if (req.status !== "open") throw new Error("Über diese Korrekturanfrage wurde bereits entschieden.");
+        const before = clone(req);
+        const now = new Date().toISOString();
+        if (decision === "rejected") {
+          const r = requireReason(note, "Bitte begründe die Ablehnung.");
+          Object.assign(req, { status: "rejected", decidedAt: now, decidedBy: s.employeeId, decisionNote: r });
+          addAudit(db, s, { tenantId: req.tenantId, action: "correction_request.rejected", entity: "correction_request", entityId: req.id, before, after: clone(req), reason: r });
+          return publicCorrection(db, s, req);
+        }
+        const answer = note?.trim() || null;
+        const reason = `Korrekturanfrage: ${req.reason}${answer ? ` – Leitung: ${answer}` : ""}`.slice(0, 1000);
+        const tenant = tenantById(db, req.tenantId);
+        let applied: TimeEntry;
+        if (req.kind === "add") {
+          const id = `kr-${req.id.replace(/-/g, "")}`;
+          validateEntry(db, tenant, req.employeeId, { id, ...req.proposed! });
+          applied = { id, tenantId: req.tenantId, employeeId: req.employeeId, ...req.proposed!, version: 1, createdAt: now, updatedAt: now, deletedAt: null, source: "correction" };
+          db.entries.push(applied);
+          recordRevision(db, s, applied, "insert", true, reason);
+          addAudit(db, s, { tenantId: req.tenantId, action: "time_entry.created_by_manager", entity: "time_entry", entityId: id, before: null, after: clone(applied), reason });
+        } else {
+          const entry = db.entries.find((e) => e.id === req.entryId && e.employeeId === req.employeeId);
+          if (!entry || entry.deletedAt || entry.version !== req.entryVersion) {
+            throw new ConflictError("Der Eintrag wurde seit der Anfrage geändert oder gelöscht. Bitte die Anfrage ablehnen und neu stellen lassen.");
+          }
+          const old = clone(entry);
+          if (req.kind === "change") {
+            validateEntry(db, tenant, req.employeeId, { id: entry.id, ...req.proposed! });
+            Object.assign(entry, req.proposed!);
+          } else {
+            entry.deletedAt = now;
+          }
+          Object.assign(entry, { version: entry.version + 1, updatedAt: now, source: "correction" });
+          recordRevision(db, s, entry, req.kind === "delete" ? "delete" : "update", true, reason);
+          addAudit(db, s, { tenantId: req.tenantId, action: req.kind === "delete" ? "time_entry.deleted" : "time_entry.corrected", entity: "time_entry", entityId: entry.id, before: old, after: clone(entry), reason });
+          applied = entry;
+        }
+        Object.assign(req, { status: "accepted", decidedAt: now, decidedBy: s.employeeId, decisionNote: answer, appliedEntryId: applied.id });
+        addAudit(db, s, { tenantId: req.tenantId, action: "correction_request.accepted", entity: "correction_request", entityId: req.id, before, after: clone(req), reason: answer });
+        return publicCorrection(db, s, req);
+      });
+    },
+    async listTimeEntryRevisions(employeeId, entryId) {
+      return read((db, s) => {
+        assertEmployeeRead(db, s, employeeId);
+        const entry = db.entries.find((e) => e.id === entryId && e.employeeId === employeeId);
+        if (!entry) throw new AccessDeniedError("Eintrag nicht gefunden oder kein Zugriff.");
+        const list: TimeEntryRevision[] = (db.revisions ?? [])
+          .filter((r) => r.employeeId === employeeId && r.entryId === entryId)
+          .sort((a, b) => a.version - b.version || a.changedAt.localeCompare(b.changedAt))
+          .map((r) => ({
+            entryId: r.entryId, version: r.version, operation: r.operation, isCorrection: r.isCorrection, changedAt: r.changedAt,
+            changedByName: visibleName(db, s, r.changedBy), reason: r.reason, values: r.values, deleted: r.deleted, source: r.source,
+          }));
+        if (!list.length) {
+          // Demo data from before the history was recorded: show the current state.
+          list.push({
+            entryId, version: entry.version, operation: entry.deletedAt ? "delete" : entry.version === 1 ? "insert" : "update",
+            isCorrection: entry.source === "correction", changedAt: entry.updatedAt, changedByName: null, reason: null,
+            values: valuesOf(entry), deleted: !!entry.deletedAt, source: entry.source,
+          });
+        }
+        return list;
       });
     },
 
