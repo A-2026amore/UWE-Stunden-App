@@ -87,6 +87,16 @@ API-Endpunkte bzw. `pgaudit` auf dem Server.
   ignoriert. Mit `passwort_hash = NULL` wird die Mitgliedschaft ohne Passwortänderung mit dem
   bestehenden Konto verknüpft (der Besitz des Einladungslinks an diese Adresse genügt wie beim
   Passwort-Reset). `auth.invitation_needs_existing_login(token)` sagt der API vorab, welcher Fall vorliegt.
+- Einladungslink zum Teilen (Chef-Portal „Zugang senden“ → „Link erstellen“, seit 1.0): Die API gibt den
+  Einmal-Link nur bei `channel: "link"` an die Leitung zurück (`POST /api/employees/:id/invitation`,
+  `POST /api/tenants/:id/employees` mit `invitation: "link"`), damit sie ihn per WhatsApp teilen oder
+  kopieren kann. Schutz: nur Leitung des eigenen Mandanten (RLS/`create_invitation`), Leitungspersonen nur
+  durch den Inhaber, 7 Tage gültig, einmal verwendbar, jeder neue Link widerruft die früheren, Audit
+  (`invitation.insert`). Es wird **nie ein Passwort** versendet – die Person legt es selbst fest.
+  **Ausnahme:** Gehört die Adresse bereits zu einem Konto, würde die Annahme die Mitgliedschaft ohne
+  Passwort verknüpfen (siehe oben). Dann gibt die API den Link nicht heraus, sondern schickt ihn per E-Mail
+  an diese Adresse (`existingAccount: true`) – sonst könnte eine fremde Firmenleitung ein bestehendes
+  Konto ungefragt an ihren Mandanten binden.
 - Anmelde-E-Mail: Die Adresse in `auth.users` ist die einzige Anmelde-Adresse. Ist ein Mitarbeiter
   mit einem Konto verknüpft, kann `employees.email` nicht mehr über die Anfragerollen geändert werden
   (auch nicht von Leitung/Inhaber). Bewusst **keine Synchronisierung** nach `auth.users`: Sonst könnte

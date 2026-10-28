@@ -82,6 +82,26 @@ describe("invitation links for sharing", () => {
   });
 });
 
+describe("invitation link for an address with an existing account", () => {
+  it("is never handed to the manager: the server mails it to the address instead", async () => {
+    const mails = t.mails.length;
+    const r = await t.call("POST", `/api/tenants/${B}/employees`, {
+      cookie: cookies.ownerB,
+      body: { displayName: "Fahrer Zweitjob", personnelNumber: "P-901", email: EMAILS.emp2A, role: "employee", invitation: "link" },
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.invitation).toMatchObject({ existingAccount: true, delivery: "log" });
+    expect(r.body.invitation.link).toBeUndefined();
+    expect(JSON.stringify(r.body)).not.toContain("#token=");
+    await new Promise((res) => setTimeout(res, 50));
+    expect(t.mails.slice(mails).some((m) => m.to === EMAILS.emp2A)).toBe(true);
+    const again = await t.call("POST", `/api/employees/${r.body.id}/invitation`, { cookie: cookies.ownerB, body: { channel: "link" } });
+    expect(again.status).toBe(200);
+    expect(again.body).toMatchObject({ existingAccount: true });
+    expect(again.body.link).toBeUndefined();
+  });
+});
+
 describe("company name", () => {
   it("owner renames the company; manager, employee and platform staff cannot", async () => {
     const r = await t.call("PATCH", `/api/tenants/${A}/name`, { cookie: cookies.ownerA, body: { name: "Demo Krankentransporte GmbH" } });

@@ -17,6 +17,13 @@ import { useChef } from "./context";
 /** German text for an invitation sent by e-mail (where did it go, how long is it valid). */
 export function invitationText(name: string, email: string, info: InvitationInfo): { tone: "success" | "warning"; text: string } {
   const until = `Der Link ist gültig bis ${dateTimeDE(info.expiresAt)}.`;
+  if (info.existingAccount) {
+    return {
+      tone: "warning",
+      text: `Für ${email} gibt es bereits ein Benutzerkonto (z. B. bei einer anderen Firma). Aus Sicherheitsgründen wird der Link dann nicht ` +
+        `zum Teilen angezeigt, sondern nur an diese Adresse geschickt${info.delivery === "email" ? " – die E-Mail ist unterwegs" : info.delivery === "none" ? " – der E-Mail-Versand ist auf dem Server aber nicht eingerichtet, bitte den Betreiber informieren" : ""}. ${name} meldet sich danach mit dem bisherigen Passwort an. ${until}`,
+    };
+  }
   if (info.delivery === "email") return { tone: "success", text: `Die Einladung für ${name} wurde per E-Mail an ${email} gesendet. ${until}` };
   if (info.delivery === "demo") return { tone: "success", text: `Demo: Für ${name} wurde eine Einladung erstellt (keine E-Mail versendet, Anmeldung mit Passwort „demo“). ${until}` };
   if (info.delivery === "log") return { tone: "warning", text: `Entwicklungsserver ohne E-Mail-Versand: Die Einladung für ${name} (${email}) steht mit Link im Server-Log. ${until}` };
@@ -54,7 +61,7 @@ export function InvitationShareDialog({ employee, initial, onClose }: {
     setError(null);
     try {
       const r = await repo.createInvitation(employee.id, channel);
-      if (channel === "link") { setInfo(r); setMailText(null); }
+      if (channel === "link" && r.link) { setInfo(r); setMailText(null); }
       else { setInfo(null); setMailText(invitationText(employee.displayName, employee.email ?? "", r)); }
     } catch (e) {
       setError(errorText(e));

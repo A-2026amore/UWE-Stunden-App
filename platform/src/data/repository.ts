@@ -137,6 +137,11 @@ export interface InvitationInfo {
   delivery: "email" | "log" | "none" | "link" | "demo";
   /** One-time invitation link (only for delivery "link"). Never stored by the client. */
   link?: string;
+  /**
+   * The address already belongs to an account (e.g. a person working for two companies): accepting links the
+   * membership without a password, so the server mails the link to that address instead of returning it.
+   */
+  existingAccount?: boolean;
 }
 
 /** How a new invitation reaches the employee: e-mail from the server, or a link the manager shares. */

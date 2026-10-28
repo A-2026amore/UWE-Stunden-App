@@ -5,6 +5,26 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Chef-Portal/Super-Admin Feinschliff (Branch `feature/chef-admin-feinschliff`):
+  - Chef-Portal „Stundenübersicht“ (`#/stunden`): alle Mitarbeitenden eines Monats mit Summen und Nachweis-Status,
+    Einzelansicht je Person mit Tagesliste, Summenzeile, Freigeben/Zurückgeben, PDF-Stundenzettel und CSV
+    (Monatssummen, alle Einsätze, einzelne Person – Formel-Neutralisierung wie bisher).
+  - „Zugang senden“: Einladung per E-Mail (SMTP) oder als Einmal-Link zum Kopieren / Teilen per WhatsApp (wa.me),
+    Gültigkeit sichtbar, ein neuer Link macht ältere ungültig, nie ein Passwort. Hat die Adresse bereits ein Konto,
+    wird der Link aus Sicherheitsgründen nur per E-Mail an diese Adresse geschickt. API: `invitation`/`channel`
+    = `email` | `link`.
+  - PDF-Monatsnachweis mit Firmenlogo (PNG/JPG/WebP, als JPEG eingebettet) und Firmenname im Kopf, weiterhin mehrseitig.
+  - Firmenname im Firmenprofil durch den Inhaber änderbar (`PATCH /api/tenants/:id/name`). Demo nimmt wie die API
+    keine SVG-Logos mehr an.
+  - Super-Admin: Mandantenstatus „deaktiviert“ zusätzlich zu „gesperrt“ (Migration
+    `0015_tenant_deactivation_system_overview.sql`, keine Daten gelöscht, Zugang gesperrt mit eigener Meldung);
+    kostenlosen Testkunden in einem Schritt anlegen; Kennzahlen Mitarbeitende gesamt und Umsatz netto im Überblick;
+    Statusfilter; Audit-Einträge mit verständlichen deutschen Bezeichnungen.
+  - Technische Systemübersicht (`GET /api/platform/system`, nur super_admin/support): Version, Commit (`APP_COMMIT`),
+    Datenbank erreichbar, Migrationsstand, aktive Sitzungen, E-Mail-Versand ja/nein, Zahlungsanbieter „keiner“,
+    letzte Sicherung (`BACKUP_STATUS_FILE`, sonst „nicht bekannt“) – ohne Geheimnisse.
+  - Mitarbeiter-App: Hinweis „Zum Home-Bildschirm hinzufügen“ (Startseite ausblendbar, Einstellungen ausführlich;
+    iPhone-Anleitung bzw. Installationsdialog), zusätzliche iOS/Android-Meta-Tags; Apple-Touch-Icon für Chef/Admin.
 - Pausen nur noch tatsächlich genommen (Vorgabe 28.10.2026): Pausenfeld der Mitarbeiter-App startet leer,
   kein automatischer Vorschlag mehr, Pflichtfeld (0 erlaubt); Hinweis nennt die Mindestpause des Tages und
   die Regel; zu kurze Pause wird mit freundlicher Erklärung nicht gespeichert (auch im Korrekturdialog des

@@ -14,7 +14,7 @@ import type { TenantOverview } from "../../platform/src/data/repository.ts";
 import { errorsForMonth, evaluateDay, issueForDay, validateBreakPolicy } from "../../platform/src/core/breaks.ts";
 import { addDays, findOverlapAcrossDays } from "../../platform/src/core/time.ts";
 import type { AppContext } from "./app.ts";
-import type { Queryable } from "./db.ts";
+import { withTx, type Queryable } from "./db.ts";
 import { HttpError, badRequest, forbidden } from "./errors.ts";
 import type { Router } from "./http.ts";
 import type { Mail } from "./mailer.ts";
@@ -406,6 +406,25 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  /**
+   * Delivery of a freshly created (committed) invitation. channel "link": the one-time link goes back to the
+   * manager for sharing (copy / WhatsApp) – except when the address already belongs to an account: accepting
+   * such an invitation links it WITHOUT a password (auth.accept_invitation), so the link must only reach the
+   * address owner and is mailed instead (existingAccount: true).
+   */
+  async function deliverInvitation(channel: (typeof CHANNELS)[number], inv: { token: string; expiresAt: string; email: string; tenantName: string }, mails: Mail[]) {
+    if (channel === "link") {
+      const existing = await withTx(app.pool, "app_auth", null, async (q) =>
+        Boolean((await q.query<{ v: boolean }>("select auth.invitation_needs_existing_login($1) as v", [inv.token])).rows[0]?.v));
+      if (!existing) return { expiresAt: inv.expiresAt, delivery: "link" as const, link: app.link("invite", inv.token) };
+      mails.push(invitationMail(inv.email, inv.token, inv.tenantName));
+      return { expiresAt: inv.expiresAt, delivery: app.mailDelivery, existingAccount: true };
+    }
+    // E-mail delivery: the link itself is not returned, only the invited address receives it.
+    mails.push(invitationMail(inv.email, inv.token, inv.tenantName));
+    return { expiresAt: inv.expiresAt, delivery: app.mailDelivery };
+  }
+
   router.add("POST", "/api/tenants/:tenantId/employees", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const b = v.object(ctx.body, ["displayName", "personnelNumber", "email", "role", "invitation"]);
@@ -414,28 +433,22 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const personnelNumber = v.str(b.personnelNumber, { label: "die Personalnummer", max: 30, min: 1, pattern: /^[A-Za-z0-9_-]{1,30}$/, patternMessage: "Personalnummer: 1–30 Zeichen, nur Buchstaben, Ziffern, - und _." });
     const email = b.email === null || b.email === undefined || b.email === "" ? null : v.email(b.email);
     const role = v.oneOf(b.role ?? "employee", ROLES, "Rolle");
-    const mails: Mail[] = [];
-    const result = await app.asUser(ctx, async (q) => {
+    const created = await app.asUser(ctx, async (q) => {
       await check(q, "private.is_manager($1)", [id], "Mitarbeitende dürfen nur Vorgesetzte anlegen.");
       const r = await one(q,
         `insert into public.employees (tenant_id, personnel_number, display_name, email, role, status)
          values ($1, $2, $3, $4, $5, 'invited') returning *`, [id, personnelNumber, displayName, email, role]);
-      if (email) {
-        const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
-        const t = await one(q, "select name from public.tenants where id = $1", [id]);
-        const data = inv!.inv as { token: string; expiresAt: string };
-        if (channel === "link") {
-          // Shared by the manager (copy / WhatsApp): the one-time link is returned once, no mail is sent.
-          return json(201, { ...toEmployee(r!), invitation: { expiresAt: data.expiresAt, delivery: "link", link: app.link("invite", data.token) } });
-        }
-        mails.push(invitationMail(email, String(data.token), String(t?.name ?? "")));
-        // E-mail delivery: the link itself is not returned, only the invited address receives it.
-        return json(201, { ...toEmployee(r!), invitation: { expiresAt: data.expiresAt, delivery: app.mailDelivery } });
-      }
-      return json(201, toEmployee(r!));
+      if (!email) return { employee: toEmployee(r!), inv: null };
+      const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
+      const t = await one(q, "select name from public.tenants where id = $1", [id]);
+      const data = inv!.inv as { token: string; expiresAt: string };
+      return { employee: toEmployee(r!), inv: { token: String(data.token), expiresAt: data.expiresAt, email, tenantName: String(t?.name ?? "") } };
     });
+    if (!created.inv) return json(201, created.employee);
+    const mails: Mail[] = [];
+    const invitation = await deliverInvitation(channel, created.inv, mails);
     app.sendLater(mails);
-    return result;
+    return json(201, { ...created.employee, invitation });
   });
 
   // New invitation (earlier links of this employee become invalid – create_invitation revokes them).
@@ -444,19 +457,16 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
     const b = v.object(ctx.body ?? {}, ["channel"]);
     const channel = v.oneOf(b.channel ?? "email", CHANNELS, "Einladungsweg");
-    const mails: Mail[] = [];
-    const result = await app.asUser(ctx, async (q) => {
+    const created = await app.asUser(ctx, async (q) => {
       const inv = await one(q, "select public.create_invitation($1, 7) as inv", [id]);
       const e = await one(q, "select e.email, t.name from public.employees e join public.tenants t on t.id = e.tenant_id where e.id = $1", [id]);
       const data = inv!.inv as { invitationId: string; token: string; expiresAt: string };
-      if (channel === "link") {
-        return json(200, { invitationId: data.invitationId, expiresAt: data.expiresAt, delivery: "link", link: app.link("invite", data.token) });
-      }
-      mails.push(invitationMail(String(e!.email), data.token, String(e!.name)));
-      return json(200, { invitationId: data.invitationId, expiresAt: data.expiresAt, delivery: app.mailDelivery });
+      return { invitationId: data.invitationId, token: data.token, expiresAt: data.expiresAt, email: String(e!.email), tenantName: String(e!.name) };
     });
+    const mails: Mail[] = [];
+    const delivery = await deliverInvitation(channel, created, mails);
     app.sendLater(mails);
-    return result;
+    return json(200, { invitationId: created.invitationId, ...delivery });
   });
 
   router.add("PATCH", "/api/employees/:employeeId", async (ctx) => {
