@@ -22,15 +22,20 @@
  * shows the current code without an app (docs/security.md, "Demo").
  */
 import type {
-  AuditEvent, Branding, CompanyContact, Employee, ISODate, ISOMonth, License, LicensePlan, MonthAllocation,
-  MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID, WorkAccountPolicy,
+  AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingStatus, Branding, CompanyContact, Employee,
+  ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, Tenant, TenantBillingMonth,
+  TenantRole, TenantSettings, TimeEntry, UUID, WorkAccountPolicy,
 } from "../core/types";
+import {
+  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMonthOf, monthsBack, revenueTotals,
+  type StatusPeriod,
+} from "../core/billing";
 import { activeShifts, addDays, findOverlapAcrossDays, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
 import { UWE_BREAK_POLICY, evaluateDay, issueForDay } from "../core/breaks";
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type BillingApi, type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
   base32Decode, base32Encode, generateRecoveryCode, matchTotpStep, normalizeRecoveryCode, normalizeTotpCode, otpauthUri,
@@ -112,6 +117,23 @@ interface DemoTwoFactor {
   recoveryCodes: Array<{ code: string; usedAt: string | null }>;
 }
 
+/** Validity period of (status, role) of one person (like employee_status_history in the database). */
+interface DemoStatusPeriod extends StatusPeriod {
+  employeeId: UUID;
+  tenantId: UUID;
+}
+
+/** Billing status of a tenant and month; snapshot fields set when not "open" (frozen month). */
+interface DemoBillingPeriod {
+  tenantId: UUID;
+  month: ISOMonth;
+  status: BillingStatus;
+  note: string | null;
+  closedAt: string | null;
+  snapshot: { condition: BillingCondition; plan: LicensePlan | null; unitPriceCents: number; billableCount: number; amountCents: number;
+    lines: Array<{ employeeId: UUID; reason: BillableReason }> } | null;
+}
+
 interface DemoDb {
   schema: 1;
   seededAt: string;
@@ -126,10 +148,14 @@ interface DemoDb {
   supportGrants: SupportGrant[];
   /** Added with two-factor authentication; missing in older stored demo databases. */
   twoFactor?: DemoTwoFactor[];
+  /** Added with the price model (2026-10-28); filled on load for older stored demo databases. */
+  statusHistory?: DemoStatusPeriod[];
+  defaultPriceCents?: number;
+  billingPeriods?: DemoBillingPeriod[];
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository, TwoFactorApi {
+export interface DemoRepository extends Repository, TwoFactorApi, BillingApi {
   /**
    * Demo only: current 6-digit code of the account that is signing in
    * (second step) or signed in – so 2FA can be tried without an app.
@@ -289,11 +315,13 @@ function seedDb(now: Date): DemoDb {
       id: "20000000-0000-4000-8000-000000000001", tenantId: DEMO_TENANT_IDS.kt, plan: "pilot_free", status: "active",
       priceCents: 0, billing: "none", validFrom: "2026-09-01", validUntil: null, maxEmployees: null,
       features: ["work_account", "pdf_statements", "chef_portal"], note: "Pilotkunde – kostenlos, unbefristet, keine Zahlungsdaten.",
+      employeePriceCents: null, freeOfCharge: true, conditionNote: "Pilotkunde – kostenloses Konto.", conditionValidFrom: null, conditionValidUntil: null,
     },
     {
       id: "20000000-0000-4000-8000-000000000002", tenantId: DEMO_TENANT_IDS.pflege, plan: "standard", status: "active",
       priceCents: 0, billing: "manual", validFrom: "2026-10-01", validUntil: null, maxEmployees: 25,
-      features: ["pdf_statements", "chef_portal"], note: "Demo-Lizenz – Preis noch nicht festgelegt.",
+      features: ["pdf_statements", "chef_portal"], note: "Demo-Lizenz – Standardkunde.",
+      employeePriceCents: null, freeOfCharge: false, conditionNote: null, conditionValidFrom: null, conditionValidUntil: null,
     },
   ];
 
@@ -320,6 +348,18 @@ function seedDb(now: Date): DemoDb {
   // Platform operators
   accounts.push({ userId: "u-admin", email: "admin@plattform.example", password: DEMO_PASSWORD, tenantId: null, employeeId: null, platformRole: "super_admin" });
   accounts.push({ userId: "u-support", email: "support@plattform.example", password: DEMO_PASSWORD, tenantId: null, employeeId: null, platformRole: "support" });
+
+  // ---- status history (billing): everybody since `created`; Emil left on the 21st of the previous month.
+  const statusHistory: DemoStatusPeriod[] = [];
+  const emilLeft = new Date(`${previousMonth}-21T18:00:00`).toISOString();
+  for (const e of employees) {
+    if (e.id === "30000000-0000-4000-8000-000000000105") {
+      statusHistory.push({ employeeId: e.id, tenantId: e.tenantId, status: "active", role: e.role, from: created, to: emilLeft });
+      statusHistory.push({ employeeId: e.id, tenantId: e.tenantId, status: "deactivated", role: e.role, from: emilLeft, to: null });
+    } else {
+      statusHistory.push({ employeeId: e.id, tenantId: e.tenantId, status: e.status, role: e.role, from: created, to: null });
+    }
+  }
 
   // ---- time entries: previous month complete, current month up to today
   const entries: TimeEntry[] = [];
@@ -402,7 +442,7 @@ function seedDb(now: Date): DemoDb {
   audit.push({
     id: uuid(), tenantId: DEMO_TENANT_IDS.kt, actorId: "30000000-0000-4000-8000-000000000100", action: "employee.deactivated",
     entity: "employee", entityId: "30000000-0000-4000-8000-000000000105", before: { status: "active" }, after: { status: "deactivated" },
-    reason: "Beschäftigung beendet (Demo)", createdAt: created,
+    reason: "Beschäftigung beendet (Demo)", createdAt: emilLeft,
   });
   audit.push({
     id: uuid(), tenantId: DEMO_TENANT_IDS.kt, actorId: "u-admin", action: "license.created", entity: "license",
@@ -413,7 +453,10 @@ function seedDb(now: Date): DemoDb {
     entityId: licenses[1]!.id, before: null, after: clone(licenses[1]), reason: "Demo-Mandant angelegt", createdAt: created,
   });
 
-  return { schema: 1, seededAt: now.toISOString(), tenants, licenses, employees, accounts, entries, allocations, statements, audit, supportGrants: [] };
+  return {
+    schema: 1, seededAt: now.toISOString(), tenants, licenses, employees, accounts, entries, allocations, statements, audit, supportGrants: [],
+    statusHistory, defaultPriceCents: DEFAULT_EMPLOYEE_PRICE_CENTS, billingPeriods: [],
+  };
 }
 
 function safeSummary(entries: TimeEntry[], allocations: MonthAllocation[], month: ISOMonth, policy: WorkAccountPolicy) {
@@ -432,11 +475,25 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     if (raw) {
       try {
         const db = JSON.parse(raw) as DemoDb;
-        if (db && db.schema === 1) return db;
+        if (db && db.schema === 1) return upgrade(db);
       } catch { /* re-seed below */ }
     }
     const db = seedDb(seedNow());
     save(db);
+    return db;
+  }
+  /** Older stored demo databases (before the price model): add history, price and billing status. */
+  function upgrade(db: DemoDb): DemoDb {
+    db.statusHistory ??= db.employees.map((e) => ({ employeeId: e.id, tenantId: e.tenantId, status: e.status, role: e.role, from: e.createdAt, to: null }));
+    db.defaultPriceCents ??= DEFAULT_EMPLOYEE_PRICE_CENTS;
+    db.billingPeriods ??= [];
+    for (const l of db.licenses) {
+      l.employeePriceCents ??= null;
+      l.freeOfCharge ??= l.plan === "pilot_free";
+      l.conditionNote ??= null;
+      l.conditionValidFrom ??= null;
+      l.conditionValidUntil ??= null;
+    }
     return db;
   }
   function save(db: DemoDb) {
@@ -526,6 +583,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       const emp = db.employees.find((e) => e.id === s.employeeId);
       if (!tenant || tenant.status === "suspended") throw new AccessDeniedError("Der Firmenzugang ist derzeit gesperrt.");
       if (!emp || emp.status === "deactivated") throw new AccessDeniedError("Dein Zugang wurde deaktiviert.");
+      if (emp.status === "locked") throw new AccessDeniedError("Dein Zugang ist vorübergehend gesperrt.");
     }
     return s;
   }
@@ -618,6 +676,63 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     };
   }
 
+  // ---- billing (same rules as private.billing_lines / billing_condition in the database)
+  /** Closes the open period and opens a new one when status or role changed (trigger in the database). */
+  function recordStatus(db: DemoDb, emp: Employee) {
+    const hist = (db.statusHistory ??= []);
+    const open = hist.find((h) => h.employeeId === emp.id && h.to === null);
+    if (open && open.status === emp.status && open.role === emp.role) return;
+    const now = new Date().toISOString();
+    if (open) {
+      if (open.from >= now) hist.splice(hist.indexOf(open), 1);
+      else open.to = now;
+    }
+    hist.push({ employeeId: emp.id, tenantId: emp.tenantId, status: emp.status, role: emp.role, from: now, to: null });
+  }
+  function billingLines(db: DemoDb, tenantId: UUID, month: ISOMonth): Array<{ employeeId: UUID; reason: BillableReason }> {
+    const out: Array<{ employeeId: UUID; reason: BillableReason }> = [];
+    for (const e of db.employees.filter((x) => x.tenantId === tenantId)) {
+      const periods = (db.statusHistory ?? []).filter((h) => h.employeeId === e.id);
+      const dates = db.entries.filter((t) => t.employeeId === e.id && !t.deletedAt).map((t) => t.date);
+      const reason = billableReason(periods, dates, month);
+      if (reason) out.push({ employeeId: e.id, reason });
+    }
+    return out;
+  }
+  function billingPeriod(db: DemoDb, tenantId: UUID, month: ISOMonth): DemoBillingPeriod | null {
+    return (db.billingPeriods ?? []).find((p) => p.tenantId === tenantId && p.month === month) ?? null;
+  }
+  function currentBillingMonth(): ISOMonth {
+    return berlinMonthOf(Date.now());
+  }
+  function assertBillingMonth(month: ISOMonth) {
+    if (!isValidMonth(month)) throw new Error("Bitte einen gültigen Monat (JJJJ-MM) angeben.");
+    if (month > currentBillingMonth()) throw new Error("Für zukünftige Monate gibt es noch keine Abrechnung.");
+  }
+  function firstBillingMonth(db: DemoDb, tenantId: UUID): ISOMonth {
+    const froms = (db.statusHistory ?? []).filter((h) => h.tenantId === tenantId).map((h) => h.from).sort();
+    return froms[0] ? berlinMonthOf(froms[0]) : currentBillingMonth();
+  }
+  /** Numbers of one month (snapshot when frozen, otherwise live) plus the lines. */
+  function billingMonth(db: DemoDb, tenantId: UUID, month: ISOMonth): BillingMonthSummary & { plan: LicensePlan | null; note: string | null; closedAt: string | null; lines: Array<{ employeeId: UUID; reason: BillableReason }> } {
+    const p = billingPeriod(db, tenantId, month);
+    if (p?.snapshot && p.status !== "open") {
+      const { lines, ...numbers } = p.snapshot;
+      return { month, status: p.status, final: true, ...numbers, note: p.note, closedAt: p.closedAt, lines };
+    }
+    const lic = db.licenses.find((l) => l.tenantId === tenantId) ?? null;
+    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month);
+    const lines = billingLines(db, tenantId, month);
+    return {
+      month, status: "open", final: false, condition, plan: lic?.plan ?? null, unitPriceCents,
+      billableCount: lines.length, amountCents: billingAmount(lines.length, unitPriceCents), note: p?.note ?? null, closedAt: null, lines,
+    };
+  }
+  const summaryOf = (m: BillingMonthSummary): BillingMonthSummary => ({
+    month: m.month, status: m.status, final: m.final, condition: m.condition, unitPriceCents: m.unitPriceCents,
+    billableCount: m.billableCount, amountCents: m.amountCents,
+  });
+
   const repo: DemoRepository = {
     // ------------------------------------------------ auth
     async signIn(email, password) {
@@ -629,8 +744,10 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const emp = db.employees.find((e) => e.id === acc.employeeId);
         if (!tenant || tenant.status === "suspended") throw new AccessDeniedError("Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.");
         if (!emp || emp.status === "deactivated") throw new AccessDeniedError("Dein Zugang wurde deaktiviert. Bitte wende dich an deinen Arbeitgeber.");
+        if (emp.status === "locked") throw new AccessDeniedError("Dein Zugang ist vorübergehend gesperrt. Bitte wende dich an deinen Arbeitgeber.");
         if (emp.status === "invited") {
           emp.status = "active";
+          recordStatus(db, emp);
           addAudit(db, accountSession(db, acc), { tenantId: emp.tenantId, action: "employee.activated_by_login", entity: "employee", entityId: emp.id, before: { status: "invited" }, after: { status: "active" }, reason: null });
           save(db);
         }
@@ -853,6 +970,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (lic?.maxEmployees != null && count >= lic.maxEmployees) throw new Error(`Die Lizenz erlaubt höchstens ${lic.maxEmployees} aktive Mitarbeitende.`);
         const emp: Employee = { id: uuid(), tenantId, personnelNumber: nr, displayName: name, email, role: input.role, status: "invited", createdAt: new Date().toISOString() };
         db.employees.push(emp);
+        recordStatus(db, emp);
         if (email) db.accounts.push({ userId: `u-${emp.id}`, email, password: DEMO_PASSWORD, tenantId, employeeId: emp.id, platformRole: null });
         addAudit(db, s, { tenantId, action: "employee.invited", entity: "employee", entityId: emp.id, before: null, after: emp, reason: null });
         return emp;
@@ -883,6 +1001,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         }
         const before = clone(emp);
         Object.assign(emp, patch);
+        recordStatus(db, emp);
         addAudit(db, s, { tenantId: emp.tenantId, action: "employee.updated", entity: "employee", entityId: emp.id, before, after: clone(emp), reason: null });
         return emp;
       });
@@ -893,8 +1012,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (!emp) throw new AccessDeniedError();
         assertManager(s, emp.tenantId);
         const r = requireReason(reason);
-        if (emp.id === s.employeeId) throw new Error("Du kannst dich nicht selbst deaktivieren.");
-        if (emp.role === "owner" && s.role !== "owner") throw new AccessDeniedError();
+        if (emp.id === s.employeeId) throw new Error(status === "locked" ? "Du kannst dich nicht selbst sperren." : "Du kannst dich nicht selbst deaktivieren.");
+        if (emp.role !== "employee" && s.role !== "owner") throw new AccessDeniedError("Leitungspersonen kann nur der Inhaber sperren oder deaktivieren.");
+        if (status === "locked" && emp.status !== "active") throw new Error("Nur aktive Mitarbeitende können gesperrt werden.");
         if (status === "active") {
           const lic = db.licenses.find((l) => l.tenantId === emp.tenantId);
           const count = db.employees.filter((e) => e.tenantId === emp.tenantId && e.status !== "deactivated").length;
@@ -902,7 +1022,11 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         }
         const before = { status: emp.status };
         emp.status = status;
-        addAudit(db, s, { tenantId: emp.tenantId, action: status === "active" ? "employee.activated" : "employee.deactivated", entity: "employee", entityId: emp.id, before, after: { status }, reason: r });
+        recordStatus(db, emp);
+        const action = status === "locked" ? "employee.locked"
+          : status === "deactivated" ? "employee.deactivated"
+          : before.status === "locked" ? "employee.unlocked" : "employee.activated";
+        addAudit(db, s, { tenantId: emp.tenantId, action, entity: "employee", entityId: emp.id, before, after: { status }, reason: r });
         return emp;
       });
     },
@@ -1116,7 +1240,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         let events = db.audit.filter((e) => e.tenantId === tenantId);
         if (s.platformRole && !s.tenantId) {
           // Operators only see platform-level events (tenant/licence), never personal time data.
-          events = events.filter((e) => e.entity === "license" || e.action.startsWith("tenant.status"));
+          events = events.filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.entity === "billing_period");
         } else {
           assertManager(s, tenantId);
         }
@@ -1127,7 +1251,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       return read((db, s) => {
         assertPlatform(s);
         return db.audit
-          .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant")
+          .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant"
+            || e.entity === "billing_period" || e.entity === "billing_settings")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, limit);
       });
@@ -1162,6 +1287,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         db.licenses.push(license);
         const owner: Employee = { id: uuid(), tenantId: tenant.id, personnelNumber: "1", displayName: "Inhaber/in", email: ownerEmail, role: "owner", status: "invited", createdAt: new Date().toISOString() };
         db.employees.push(owner);
+        recordStatus(db, owner);
         db.accounts.push({ userId: `u-${owner.id}`, email: ownerEmail, password: DEMO_PASSWORD, tenantId: tenant.id, employeeId: owner.id, platformRole: null });
         addAudit(db, s, { tenantId: tenant.id, action: "tenant.created", entity: "tenant", entityId: tenant.id, before: null, after: { name, slug, isDemo: input.isDemo }, reason: null });
         addAudit(db, s, { tenantId: tenant.id, action: "license.created", entity: "license", entityId: license.id, before: null, after: license, reason: null });
@@ -1209,7 +1335,30 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           if (patch.note !== undefined) lic.note = patch.note;
           if (patch.features) lic.features = patch.features;
         }
-        addAudit(db, s, { tenantId, action: "license.updated", entity: "license", entityId: lic.id, before, after: clone(lic), reason: null });
+        // Special billing condition (price model 2026-10-28).
+        if (patch.employeePriceCents !== undefined) {
+          if (patch.employeePriceCents !== null && (!Number.isInteger(patch.employeePriceCents) || patch.employeePriceCents < 0 || patch.employeePriceCents > 100000)) {
+            throw new Error("Sonderpreis: ganze Cent zwischen 0 und 1.000,00 €.");
+          }
+          lic.employeePriceCents = patch.employeePriceCents;
+        }
+        if (patch.freeOfCharge !== undefined) lic.freeOfCharge = patch.freeOfCharge;
+        else if (before?.plan === "pilot_free" && plan !== "pilot_free") lic.freeOfCharge = false;
+        if (plan === "pilot_free") lic.freeOfCharge = true;
+        if (patch.conditionNote !== undefined) {
+          if (patch.conditionNote && patch.conditionNote.length > 500) throw new Error("Die Notiz zur Kondition darf höchstens 500 Zeichen lang sein.");
+          lic.conditionNote = patch.conditionNote || null;
+        }
+        for (const k of ["conditionValidFrom", "conditionValidUntil"] as const) {
+          const val = patch[k];
+          if (val === undefined) continue;
+          if (val && !isRealDate(val)) throw new Error("Bitte ein gültiges Datum für die Gültigkeit angeben.");
+          lic[k] = val || null;
+        }
+        if (lic.conditionValidFrom && lic.conditionValidUntil && lic.conditionValidUntil < lic.conditionValidFrom) {
+          throw new Error("Die Kondition endet vor ihrem Beginn.");
+        }
+        addAudit(db, s, { tenantId, action: "license.updated", entity: "license", entityId: lic.id, before, after: clone(lic), reason: patch.reason?.trim() || null });
         return lic;
       });
     },
@@ -1239,6 +1388,98 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       });
     },
 
+    // ------------------------------------------------ billing (price model 2026-10-28)
+    async getTenantBilling(tenantId, month) {
+      return read((db, s) => {
+        assertManager(s, tenantId);
+        assertBillingMonth(month);
+        const m = billingMonth(db, tenantId, month);
+        const result: TenantBillingMonth = {
+          ...summaryOf(m), tenantId, isCurrentMonth: month === currentBillingMonth(), plan: m.plan, currency: "EUR", closedAt: m.closedAt,
+          lines: m.lines.flatMap((l) => {
+            const e = db.employees.find((x) => x.id === l.employeeId);
+            return e ? [{ employeeId: e.id, displayName: e.displayName, personnelNumber: e.personnelNumber, role: e.role, status: e.status, reason: l.reason }] : [];
+          }).sort((a, b) => a.displayName.localeCompare(b.displayName, "de")),
+        };
+        return result;
+      });
+    },
+    async listTenantBillingHistory(tenantId, limit = 12) {
+      return read((db, s) => {
+        assertManager(s, tenantId);
+        return monthsBack(currentBillingMonth(), firstBillingMonth(db, tenantId), Math.min(Math.max(limit, 1), 36))
+          .map((m) => summaryOf(billingMonth(db, tenantId, m)));
+      });
+    },
+    async getPlatformRevenue(month) {
+      return read((db, s) => {
+        assertPlatform(s);
+        assertBillingMonth(month);
+        const rows: PlatformRevenueRow[] = db.tenants
+          .filter((t) => firstBillingMonth(db, t.id) <= month)
+          .sort((a, b) => a.name.localeCompare(b.name, "de"))
+          .map((t) => {
+            const m = billingMonth(db, t.id, month);
+            // Numbers only – never names or billable persons.
+            return { ...summaryOf(m), tenantId: t.id, tenantName: t.name, slug: t.slug, isDemo: t.isDemo, tenantStatus: t.status, plan: m.plan, note: m.note, closedAt: m.closedAt };
+          });
+        return { month, defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, rows, totals: revenueTotals(rows), paymentProvider: "none" as const };
+      });
+    },
+    async getBillingSettings() {
+      return read((db, s) => {
+        assertPlatform(s);
+        return { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, currency: "EUR" as const };
+      });
+    },
+    async setDefaultPrice(cents, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        if (!Number.isInteger(cents) || cents < 0 || cents > 100000) throw new Error("Der Standardpreis muss zwischen 0 und 1.000,00 € liegen.");
+        const r = requireReason(reason, "Bitte einen Grund für die Preisänderung angeben.");
+        const before = { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS };
+        db.defaultPriceCents = cents;
+        addAudit(db, s, { tenantId: null, action: "billing_settings.default_price", entity: "billing_settings", entityId: "default", before, after: { defaultPriceCents: cents }, reason: r });
+        return { defaultPriceCents: cents, currency: "EUR" as const };
+      });
+    },
+    async setBillingStatus(tenantId, month, status, note) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        tenantById(db, tenantId);
+        if (!isValidMonth(month)) throw new Error("Bitte einen gültigen Monat (JJJJ-MM) angeben.");
+        if (month >= currentBillingMonth()) throw new Error("Abrechnungsstatus erst nach Monatsende: Der laufende Monat ist eine Vorschau.");
+        if (!["open", "invoiced", "paid", "waived"].includes(status)) throw new Error("Ungültiger Abrechnungsstatus.");
+        let n = note?.trim() || null;
+        if (n && n.length > 500) throw new Error("Die Notiz ist zu lang (max. 500 Zeichen).");
+        const periods = (db.billingPeriods ??= []);
+        let p = billingPeriod(db, tenantId, month);
+        const before = p ? clone(p) : null;
+        const frozen = !!p && p.status !== "open" && !!p.snapshot;
+        if (status === "waived" || (status === "open" && frozen)) {
+          n = requireReason(n, status === "waived" ? "Bitte einen Grund für den Erlass angeben." : "Bitte einen Grund für das Wiederöffnen angeben.");
+        }
+        if (!p) {
+          p = { tenantId, month, status: "open", note: null, closedAt: null, snapshot: null };
+          periods.push(p);
+        }
+        if (status === "open") {
+          Object.assign(p, { status, snapshot: null, closedAt: null, note: n });
+        } else if (frozen) {
+          Object.assign(p, { status, note: n ?? p.note });
+        } else {
+          const m = billingMonth(db, tenantId, month);
+          Object.assign(p, {
+            status, note: n ?? p.note, closedAt: new Date().toISOString(),
+            snapshot: { condition: m.condition, plan: m.plan, unitPriceCents: m.unitPriceCents, billableCount: m.billableCount, amountCents: m.amountCents, lines: m.lines },
+          });
+        }
+        const numbers = (x: DemoBillingPeriod | null) => x && { status: x.status, note: x.note, billableCount: x.snapshot?.billableCount ?? null, amountCents: x.snapshot?.amountCents ?? null };
+        addAudit(db, s, { tenantId, action: "billing_period.status", entity: "billing_period", entityId: `${tenantId}:${month}`, before: numbers(before), after: numbers(p), reason: n });
+        return summaryOf(billingMonth(db, tenantId, month));
+      });
+    },
+
     resetDemoData() {
       save(seedDb(new Date()));
     },
@@ -1249,12 +1490,14 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
 function licenseFor(tenantId: UUID, plan: LicensePlan): License {
   const today = localISODate(new Date());
   if (plan === "pilot_free") {
-    return { id: uuid(), tenantId, plan, status: "active", priceCents: 0, billing: "none", validFrom: today, validUntil: null, maxEmployees: null, features: ["work_account", "pdf_statements", "chef_portal"], note: "Pilotkunde – kostenlos, unbefristet, keine Zahlungsdaten." };
+    return { id: uuid(), tenantId, plan, status: "active", priceCents: 0, billing: "none", validFrom: today, validUntil: null, maxEmployees: null, features: ["work_account", "pdf_statements", "chef_portal"], note: "Pilotkunde – kostenlos, unbefristet, keine Zahlungsdaten.", ...NO_CONDITION, freeOfCharge: true };
   }
   const max: Record<Exclude<LicensePlan, "pilot_free">, number | null> = { standard: 25, business: 100, enterprise: null };
-  // Prices are a business decision and intentionally not set (priceCents 0 + note).
-  return { id: uuid(), tenantId, plan, status: "active", priceCents: 0, billing: "manual", validFrom: today, validUntil: null, maxEmployees: max[plan], features: ["pdf_statements", "chef_portal"], note: "Preis noch nicht festgelegt." };
+  // Price: platform default per billable employee (price model 2026-10-28) unless a special condition is set.
+  return { id: uuid(), tenantId, plan, status: "active", priceCents: 0, billing: "manual", validFrom: today, validUntil: null, maxEmployees: max[plan], features: ["pdf_statements", "chef_portal"], note: null, ...NO_CONDITION };
 }
+
+const NO_CONDITION = { employeePriceCents: null, freeOfCharge: false, conditionNote: null, conditionValidFrom: null, conditionValidUntil: null } as const;
 
 /** Months used by the seed (exported for tests / UI defaults). */
 export function demoMonths(now = new Date()): { current: ISOMonth; previous: ISOMonth } {

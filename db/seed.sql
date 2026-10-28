@@ -84,8 +84,10 @@ insert into public.employees (id, tenant_id, user_id, personnel_number, display_
   ('be000000-0000-4000-8000-000000000004', '22222222-2222-4222-8222-222222222222', null,
    'P-11', 'Dana Eingeladen', 'pflege2@muster-pflegedienst.example', 'employee', 'invited');
 
--- Status history (0012): the trigger records the seeding time – use fixed, plausible start dates
+-- Tenant start and status history (0012): the trigger records the seeding time – use fixed, plausible start dates
 -- instead, so that the billing tests do not depend on the day the tests run.
+update public.tenants set created_at = '2026-09-01 00:00 Europe/Berlin' where id = '11111111-1111-4111-8111-111111111111';
+update public.tenants set created_at = '2026-10-01 00:00 Europe/Berlin' where id = '22222222-2222-4222-8222-222222222222';
 update public.employee_status_history set valid_from = '2026-09-01 00:00 Europe/Berlin'
  where tenant_id = '11111111-1111-4111-8111-111111111111';
 update public.employee_status_history set valid_from = '2026-10-01 00:00 Europe/Berlin'

@@ -1,6 +1,6 @@
 /** Database rows (snake_case) → domain objects of platform/src/core/types.ts. */
 import type {
-  AuditEvent, Employee, License, MonthAllocation, MonthlyStatement, Tenant, TimeEntry,
+  AuditEvent, BillingMonthSummary, Employee, License, MonthAllocation, MonthlyStatement, PlatformRevenueRow, Tenant, TimeEntry,
 } from "../../platform/src/core/types.ts";
 
 type Row = Record<string, unknown>;
@@ -75,6 +75,39 @@ export function toLicense(r: Row): License {
     maxEmployees: r.max_employees === null || r.max_employees === undefined ? null : Number(r.max_employees),
     features: (r.features as string[] | null) ?? [],
     note: (r.note as string | null) ?? null,
+    employeePriceCents: r.employee_price_cents === null || r.employee_price_cents === undefined ? null : Number(r.employee_price_cents),
+    freeOfCharge: Boolean(r.free_of_charge),
+    conditionNote: (r.condition_note as string | null) ?? null,
+    conditionValidFrom: (r.condition_valid_from as string | null) ?? null,
+    conditionValidUntil: (r.condition_valid_until as string | null) ?? null,
+  };
+}
+
+/** Row of tenant_billing_history / billing_month / billing_periods → numbers of one month. */
+export function toBillingSummary(r: Row): BillingMonthSummary {
+  return {
+    month: String(r.month),
+    status: r.status as BillingMonthSummary["status"],
+    final: r.final === undefined ? r.status !== "open" : Boolean(r.final),
+    condition: r.condition as BillingMonthSummary["condition"],
+    unitPriceCents: Number(r.unit_price_cents),
+    billableCount: Number(r.billable_count),
+    amountCents: Number(r.amount_cents),
+  };
+}
+
+/** Row of platform_billing_overview(month) (numbers only; the row has no month column). */
+export function toRevenueRow(r: Row, month: string): PlatformRevenueRow {
+  return {
+    ...toBillingSummary({ ...r, month }),
+    tenantId: String(r.tenant_id),
+    tenantName: String(r.tenant_name),
+    slug: String(r.slug),
+    isDemo: Boolean(r.is_demo),
+    tenantStatus: r.tenant_status as PlatformRevenueRow["tenantStatus"],
+    plan: (r.plan as PlatformRevenueRow["plan"]) ?? null,
+    note: (r.note as string | null) ?? null,
+    closedAt: isoOrNull(r.closed_at),
   };
 }
 

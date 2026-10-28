@@ -8,7 +8,8 @@
  * here with platform/src/core and the tenant's breakPolicy; the database
  * enforces the hard limits (overlap, 12 h, pause < duration, locked months).
  */
-import type { BreakPolicy, TenantSettings, WorkAccountPolicy } from "../../platform/src/core/types.ts";
+import type { BillingSettings, BreakPolicy, PlatformRevenue, TenantBillingMonth, TenantSettings, WorkAccountPolicy } from "../../platform/src/core/types.ts";
+import { revenueTotals } from "../../platform/src/core/billing.ts";
 import type { TenantOverview } from "../../platform/src/data/repository.ts";
 import { errorsForMonth, evaluateDay, issueForDay, validateBreakPolicy } from "../../platform/src/core/breaks.ts";
 import type { AppContext } from "./app.ts";
@@ -17,7 +18,7 @@ import { HttpError, badRequest, forbidden } from "./errors.ts";
 import type { Router } from "./http.ts";
 import type { Mail } from "./mailer.ts";
 import {
-  TIME_ENTRY_COLUMNS, toAllocation, toAudit, toEmployee, toLicense, toStatement, toTenant, toTimeEntry,
+  TIME_ENTRY_COLUMNS, toAllocation, toAudit, toBillingSummary, toEmployee, toLicense, toRevenueRow, toStatement, toTenant, toTimeEntry,
 } from "./mappers.ts";
 import * as v from "./validate.ts";
 
@@ -406,7 +407,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
   router.add("POST", "/api/employees/:employeeId/status", async (ctx) => {
     const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
     const b = v.object(ctx.body, ["status", "reason"]);
-    const status = v.oneOf(b.status, ["active", "deactivated"] as const, "Status");
+    const status = v.oneOf(b.status, ["active", "locked", "deactivated"] as const, "Status");
     const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Statusänderung angeben.");
     return app.asUser(ctx, async (q) => {
       const r = await one(q, "select * from public.set_employee_status($1, $2, $3)", [id, status, reason]);
@@ -608,7 +609,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
       const rows = await all(q,
         `select * from public.audit_log
-          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant')
+          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant', 'billing_period', 'billing_settings')
           order by created_at desc, id limit $1`, [limit]);
       return json(200, rows.map(toAudit));
     });
@@ -672,8 +673,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
 
   router.add("PUT", "/api/platform/tenants/:tenantId/license", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
-    const b = v.object(ctx.body, ["plan", "maxEmployees", "validUntil", "note", "features"]);
+    const b = v.object(ctx.body, ["plan", "maxEmployees", "validUntil", "note", "features",
+      "employeePriceCents", "freeOfCharge", "conditionNote", "conditionValidFrom", "conditionValidUntil", "reason"]);
     const plan = v.oneOf(b.plan, PLANS, "Tarif");
+    const cond = billingConditionPatch(b);
+    const reason = v.optReason(b.reason);
     const maxEmployees = b.maxEmployees === undefined ? undefined : b.maxEmployees === null ? null : v.int(b.maxEmployees, "Maximale Mitarbeiterzahl", 1, 100000);
     const validUntil = b.validUntil === undefined ? undefined : b.validUntil === null ? null : v.date(b.validUntil, "Enddatum");
     const note = b.note === undefined ? undefined : v.optStr(b.note, { label: "Die Notiz", max: 2000 });
@@ -684,6 +688,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     }
     return app.asUser(ctx, async (q) => {
       await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen Lizenzen ändern.");
+      if (reason) await q.query("select set_config('app.change_reason', $1, true)", [reason]);
       const cur = await one(q, "select * from public.licenses where tenant_id = $1 and status = 'active' for update", [id]);
       const free = plan === "pilot_free";
       let r: Row | undefined;
@@ -707,7 +712,97 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
            values ($1, $2, 'active', 0, $3, $4, $5, $6, coalesce($7::text[], '{}')) returning *`,
           [id, plan, free ? "none" : "manual", maxEmployees ?? null, validUntil ?? null, note ?? null, features ?? null]);
       }
+      // Special billing condition (price model 2026-10-28): only the fields that were sent.
+      const sets: string[] = [];
+      const params: unknown[] = [r!.id];
+      for (const [col, val] of cond) {
+        params.push(val);
+        sets.push(`${col} = $${params.length}`);
+      }
+      if (sets.length) r = await one(q, `update public.licenses set ${sets.join(", ")} where id = $1 returning *`, params);
       return json(200, toLicense(r!));
     });
   });
+
+  // ---------------------------------------------------------------- billing (price model 2026-10-28)
+  router.add("GET", "/api/tenants/:tenantId/billing", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const month = v.month(ctx.query.get("month"));
+    return app.asUser(ctx, async (q) => {
+      const r = await one(q, "select public.tenant_billing($1, $2) as b", [id, month]);
+      return json(200, r!.b as TenantBillingMonth);
+    });
+  });
+
+  router.add("GET", "/api/tenants/:tenantId/billing/history", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const limit = limitParam(ctx.query.get("limit"), 12, 36);
+    return app.asUser(ctx, async (q) => {
+      const rows = await all(q, "select * from public.tenant_billing_history($1, $2)", [id, limit]);
+      return json(200, rows.map(toBillingSummary));
+    });
+  });
+
+  async function billingSettings(q: Queryable): Promise<BillingSettings> {
+    await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
+    const r = await one(q, "select default_price_cents from public.billing_settings");
+    return { defaultPriceCents: Number(r!.default_price_cents), currency: "EUR" };
+  }
+
+  router.add("GET", "/api/platform/billing/settings", async (ctx) =>
+    app.asUser(ctx, async (q) => json(200, await billingSettings(q))));
+
+  router.add("PUT", "/api/platform/billing/settings", async (ctx) => {
+    const b = v.object(ctx.body, ["defaultPriceCents", "reason"]);
+    const cents = v.int(b.defaultPriceCents, "Standardpreis (Cent)", 0, 100000);
+    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Preisänderung angeben.");
+    return app.asUser(ctx, async (q) => {
+      await q.query("select public.platform_set_default_price($1, $2)", [cents, reason]);
+      return json(200, await billingSettings(q));
+    });
+  });
+
+  router.add("GET", "/api/platform/billing", async (ctx) => {
+    const month = v.month(ctx.query.get("month"));
+    return app.asUser(ctx, async (q) => {
+      const settings = await billingSettings(q);
+      const rows = (await all(q, "select * from public.platform_billing_overview($1)", [month])).map((r) => toRevenueRow(r, month));
+      const body: PlatformRevenue = {
+        month, defaultPriceCents: settings.defaultPriceCents, rows, totals: revenueTotals(rows),
+        paymentProvider: app.config.paymentProvider,
+      };
+      return json(200, body);
+    });
+  });
+
+  router.add("PUT", "/api/platform/tenants/:tenantId/billing/:month", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const month = v.month(ctx.params.month);
+    const b = v.object(ctx.body, ["status", "note"]);
+    const status = v.oneOf(b.status, ["open", "invoiced", "paid", "waived"] as const, "Abrechnungsstatus");
+    const note = v.optStr(b.note, { label: "Die Notiz", max: 500 });
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen den Abrechnungsstatus ändern.");
+      await q.query("select public.platform_set_billing_status($1, $2, $3, $4)", [id, month, status, note]);
+      const r = await one(q, "select * from public.platform_billing_overview($1) where tenant_id = $2", [month, id]);
+      if (!r) throw forbidden("Mandant nicht gefunden.");
+      return json(200, toBillingSummary({ ...r, month }));
+    });
+  });
+}
+
+/** Columns of the special billing condition sent with PUT …/license (validated; DB checks again). */
+function billingConditionPatch(b: v.Json): Array<[string, unknown]> {
+  const out: Array<[string, unknown]> = [];
+  if (b.employeePriceCents !== undefined) {
+    out.push(["employee_price_cents", b.employeePriceCents === null ? null : v.int(b.employeePriceCents, "Sonderpreis (Cent)", 0, 100000)]);
+  }
+  if (b.freeOfCharge !== undefined) out.push(["free_of_charge", v.bool(b.freeOfCharge, "Kostenloses Konto")]);
+  if (b.conditionNote !== undefined) out.push(["condition_note", v.optStr(b.conditionNote, { label: "Die Notiz zur Kondition", max: 500 })]);
+  const from = b.conditionValidFrom === undefined ? undefined : b.conditionValidFrom === null || b.conditionValidFrom === "" ? null : v.date(b.conditionValidFrom, "Datum (gültig ab)");
+  const until = b.conditionValidUntil === undefined ? undefined : b.conditionValidUntil === null || b.conditionValidUntil === "" ? null : v.date(b.conditionValidUntil, "Datum (gültig bis)");
+  if (from && until && until < from) throw badRequest("Die Kondition endet vor ihrem Beginn.");
+  if (from !== undefined) out.push(["condition_valid_from", from]);
+  if (until !== undefined) out.push(["condition_valid_until", until]);
+  return out;
 }

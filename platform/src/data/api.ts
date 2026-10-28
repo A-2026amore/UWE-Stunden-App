@@ -23,12 +23,12 @@
  * `Content-Type: application/json` as required by the server's CSRF check.
  */
 import type {
-  AuditEvent, Branding, CompanyContact, Employee, ISOMonth, License, LicensePlan,
-  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID,
+  AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, Employee, ISOMonth, License, LicensePlan,
+  MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, UUID,
 } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type BillingApi, type LicensePatch, type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
 } from "./repository";
 
@@ -95,7 +95,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -341,8 +341,28 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     setTenantStatus(tenantId, status, reason) {
       return request<Tenant>("POST", `/api/platform/tenants/${enc(tenantId)}/status`, { status, reason });
     },
-    setLicense(tenantId, plan: LicensePlan, patch: Partial<Pick<License, "maxEmployees" | "validUntil" | "note" | "features">> = {}) {
+    setLicense(tenantId, plan: LicensePlan, patch: LicensePatch = {}) {
       return request<License>("PUT", `/api/platform/tenants/${enc(tenantId)}/license`, { plan, ...patch });
+    },
+
+    // ---- billing (price model 2026-10-28)
+    getTenantBilling(tenantId, month) {
+      return request<TenantBillingMonth>("GET", `/api/tenants/${enc(tenantId)}/billing?month=${enc(month)}`);
+    },
+    listTenantBillingHistory(tenantId, limit) {
+      return request<BillingMonthSummary[]>("GET", `/api/tenants/${enc(tenantId)}/billing/history${limit ? `?limit=${limit}` : ""}`);
+    },
+    getPlatformRevenue(month) {
+      return request<PlatformRevenue>("GET", `/api/platform/billing?month=${enc(month)}`);
+    },
+    getBillingSettings() {
+      return request<BillingSettings>("GET", "/api/platform/billing/settings");
+    },
+    setDefaultPrice(cents, reason) {
+      return request<BillingSettings>("PUT", "/api/platform/billing/settings", { defaultPriceCents: cents, reason });
+    },
+    setBillingStatus(tenantId, month, status, note) {
+      return request<BillingMonthSummary>("PUT", `/api/platform/tenants/${enc(tenantId)}/billing/${enc(month)}`, note === undefined ? { status } : { status, note });
     },
   };
 }

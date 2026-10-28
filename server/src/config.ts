@@ -4,6 +4,7 @@
  */
 import { createHash } from "node:crypto";
 import { createProxyMatcher } from "./http.ts";
+import { parsePaymentProviderName, type PaymentProviderName } from "./payment.ts";
 
 export interface SmtpConfig {
   host: string;
@@ -70,6 +71,8 @@ export interface Config {
   /** Built frontend (platform/dist) served by the API itself; null = API only (e.g. Caddy serves the files). */
   staticDir: string | null;
   twoFactor: TwoFactorConfig;
+  /** Payment provider (PAYMENT_PROVIDER). Only "none" exists: nothing is charged automatically (server/src/payment.ts). */
+  paymentProvider: PaymentProviderName;
 }
 
 function int(env: NodeJS.ProcessEnv, name: string, def: number, min: number, max: number): number {
@@ -192,5 +195,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       twoFactorPerIp: int(env, "RATE_LIMIT_2FA_PER_IP", 50, 1, 100000),
     },
     twoFactor: loadTwoFactor(env, production),
+    paymentProvider: parsePaymentProviderName(env.PAYMENT_PROVIDER),
   };
 }

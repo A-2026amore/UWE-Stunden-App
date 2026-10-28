@@ -186,7 +186,8 @@ alter table public.licenses
   add constraint licenses_condition_range check (
     condition_valid_from is null or condition_valid_until is null or condition_valid_until >= condition_valid_from);
 
--- pilot_free is free of charge, always (existing pilots keep their status).
+-- pilot_free is free of charge, always (existing pilots keep their status). Leaving
+-- pilot_free ends the implicit free account unless free_of_charge is set explicitly.
 create or replace function private.licenses_billing_defaults() returns trigger
 language plpgsql
 set search_path = ''
@@ -194,6 +195,8 @@ as $$
 begin
   if new.plan = 'pilot_free' then
     new.free_of_charge := true;
+  elsif tg_op = 'UPDATE' and old.plan = 'pilot_free' and new.free_of_charge = old.free_of_charge then
+    new.free_of_charge := false;
   end if;
   return new;
 end
