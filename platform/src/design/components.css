@@ -212,6 +212,7 @@ img { max-width: 100%; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tr.is-summary td { background: var(--brand-primary-soft); font-weight: var(--weight-bold); }
 .table .td-right, .table .th-right { text-align: right; }
+@media (min-width: 1200px) { .table td.td-actions .btn-row { flex-wrap: nowrap; justify-content: flex-end; } }
 .table tbody tr { transition: background-color var(--duration-fast); }
 .table tbody tr:hover td { background: var(--color-surface-hover); }
 .table tbody tr.is-summary:hover td { background: var(--brand-primary-soft); }

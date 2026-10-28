@@ -4,7 +4,7 @@ import { evaluateDay, issueForDay, requiredPauseText } from "../../../core/break
 import type { BreakPolicy, ShiftLike, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
 import { syncStateOf } from "../../../data/sync";
-import { Alert, Button, Card, EmptyState, InputField, LinkButton, useDialogs, useToast } from "../../../design";
+import { Alert, Button, Card, EmptyState, InputField, LinkButton, Skeleton, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, hoursLabel, newId, todayISO } from "../../shared/format";
 import { navigate } from "../../shared/router";
@@ -198,7 +198,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
       </Card>
 
       <Card title={`Einsätze am ${dayLabel(date)}`} headingLevel={2}>
-        {q.loading && !q.data ? <p class="muted">Wird geladen …</p> : dayEntries.length === 0 ? (
+        {q.loading && !q.data ? <Skeleton title={false} lines={2} /> : dayEntries.length === 0 ? (
           <EmptyState icon="clock" title="Noch keine Einsätze an diesem Tag" />
         ) : (
           <div class="day-group">
