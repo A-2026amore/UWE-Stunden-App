@@ -82,10 +82,21 @@ describe("correction requests", () => {
     expect((await post("managerA", `/api/correction-requests/${changeId}/decide`, { decision: "rejected" })).status).toBe(400);
   });
 
-  it("accepting applies the correction in the locked month; statement figures stay, the month is flagged", async () => {
+  it("approved month: accepting needs a documented re-opening; the re-approval stores new figures", async () => {
     const before = await get("managerA", `/api/tenants/${A}/statements?month=2026-09`);
     const st = before.body.find((s: { employeeId: string }) => s.employeeId === E.emp1A);
     expect(st).toMatchObject({ status: "approved", correctedAfterApproval: null });
+
+    const locked = await post("managerA", `/api/correction-requests/${changeId}/decide`, { decision: "accepted", note: "Passt" });
+    expect(locked.status).toBe(423);
+    expect(locked.body.error.message).toContain("wieder geöffnet");
+
+    expect((await post("emp1A", `/api/statements/${st.id}/reopen`, { reason: "Bitte öffnen" })).status).toBe(403);
+    expect((await post("managerA", `/api/statements/${st.id}/reopen`, { reason: "kurz" })).status).toBe(400);
+    const reopened = await post("managerA", `/api/statements/${st.id}/reopen`, { reason: "Korrekturanfrage Fahrtenbuch" });
+    expect(reopened.status).toBe(200);
+    expect(reopened.body).toMatchObject({ status: "reopened", reviewNote: "Korrekturanfrage Fahrtenbuch" });
+    expect(reopened.body.reopenedAt).toBeTruthy();
 
     const r = await post("managerA", `/api/correction-requests/${changeId}/decide`, { decision: "accepted", note: "Passt" });
     expect(r.status).toBe(200);
@@ -93,13 +104,21 @@ describe("correction requests", () => {
 
     const list = await get("emp1A", `/api/employees/${E.emp1A}/time-entries?month=2026-09`);
     expect(list.body.find((e: { id: string }) => e.id === "demo-a03-20260901")).toMatchObject({ end: "14:45", version: 2, source: "correction" });
-
-    const after = (await get("managerA", `/api/tenants/${A}/statements?month=2026-09`)).body.find((s: { employeeId: string }) => s.employeeId === E.emp1A);
-    expect(after.workedMinutes).toBe(st.workedMinutes);
-    expect(after.billingMinutes).toBe(st.billingMinutes);
-    expect(after.correctedAfterApproval).toMatchObject({ count: 1 });
     const mine = await get("emp1A", `/api/employees/${E.emp1A}/statements/2026-09`);
-    expect(mine.body.correctedAfterApproval).toMatchObject({ count: 1 });
+    expect(mine.body).toMatchObject({ status: "reopened", correctedAfterApproval: null });
+
+    const approved = await post("managerA", `/api/statements/${st.id}/approve`, {});
+    expect(approved.status).toBe(200);
+    expect(approved.body.status).toBe("approved");
+    expect(approved.body.workedMinutes).not.toBe(st.workedMinutes);
+    const events = await get("emp1A", `/api/statements/${st.id}/events`);
+    expect(events.status).toBe(200);
+    expect(events.body.map((e: { action: string }) => e.action).slice(-2)).toEqual(["reopen", "approve"]);
+    expect(events.body.find((e: { action: string }) => e.action === "reopen")).toMatchObject({ reason: "Korrekturanfrage Fahrtenbuch", actorName: null });
+    const lead = await get("managerA", `/api/statements/${st.id}/events`);
+    expect(lead.body.find((e: { action: string }) => e.action === "reopen")).toMatchObject({ actorName: "Robin Leitung" });
+    expect((await get("emp2A", `/api/statements/${st.id}/events`)).status).toBe(403);
+    expect((await get("ownerB", `/api/statements/${st.id}/events`)).status).toBe(403);
 
     // the employee sees status, answer and who decided
     const own = (await get("emp1A", `/api/tenants/${A}/correction-requests`)).body[0];

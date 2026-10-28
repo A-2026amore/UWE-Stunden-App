@@ -10,6 +10,7 @@ import { buildStatementWithLogo } from "../../shared/statement";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { loadTenantMonth, useChef } from "../context";
 import { useStatementActions } from "../statementActions";
+import { StatementHistoryButton, useReopenStatement } from "../StatementHistory";
 
 interface Row { employee: Employee; statement: MonthlyStatement | null; worked: number; allocated: number; billing: number; issues: number }
 
@@ -34,6 +35,8 @@ export function StatementsPage() {
   const { approve: approveStatement, giveBack: returnStatement } = useStatementActions();
   const approve = (r: Row) => (r.statement ? approveStatement(r.employee, r.statement) : undefined);
   const giveBack = (r: Row) => (r.statement ? returnStatement(r.employee, r.statement) : undefined);
+  const reopenStatement = useReopenStatement();
+  const reopen = (r: Row) => (r.statement ? reopenStatement(r.employee, r.statement) : undefined);
 
   const pdf = async (r: Row) => {
     try {
@@ -44,7 +47,7 @@ export function StatementsPage() {
   };
 
   const rows = q.data ?? [];
-  const open = rows.filter((r) => r.statement?.status === "submitted").length;
+  const open = rows.filter((r) => r.statement?.status === "submitted" || r.statement?.status === "reopened").length;
   const corrected = rows.filter((r) => r.statement?.correctedAfterApproval);
 
   return (
@@ -58,8 +61,8 @@ export function StatementsPage() {
         {q.error && <Alert tone="danger" live>{q.error}</Alert>}
         {corrected.length > 0 && (
           <Alert tone="warning" title={`${corrected.length} freigegebene${corrected.length > 1 ? "" : "r"} Nachweis${corrected.length > 1 ? "e" : ""} nach Freigabe korrigiert`}>
-            <p>Die Spalten zeigen die Zahlen zum Zeitpunkt der Freigabe; die aktuellen Werte stehen unter „Hinweise“. Eine automatische Anpassung
-              freigegebener Nachweise ist noch nicht entschieden. Bei Bedarf kann der Inhaber den Nachweis zurückgeben und neu einreichen lassen.</p>
+            <p>Altfälle vor der Regel vom 28.10.2026: Die Spalten zeigen die Zahlen zum Zeitpunkt der Freigabe; die aktuellen Werte stehen unter „Hinweise“.
+              Zum Anpassen den Monat wieder öffnen und erneut freigeben – die Zahlen werden dabei neu berechnet.</p>
           </Alert>
         )}
         <Table<Row>
@@ -69,7 +72,7 @@ export function StatementsPage() {
           empty={<p class="muted">Keine Mitarbeitenden.</p>}
           columns={[
             { key: "n", header: "Mitarbeiter", render: (r) => <><strong>{r.employee.displayName}</strong><div class="xsmall muted">Nr. {r.employee.personnelNumber}</div></> },
-            { key: "s", header: "Status", render: (r) => <StatusPill status={r.statement?.status ?? "none"} label={r.statement ? undefined : "Nicht eingereicht"} /> },
+            { key: "s", header: "Status", render: (r) => <StatusPill status={r.statement?.status ?? "none"} label={r.statement ? (r.statement.status === "reopened" ? "Wieder geöffnet" : undefined) : "Nicht eingereicht"} /> },
             { key: "w", header: "Geleistet", align: "right", render: (r) => <span class="num">{hoursLabel(r.statement?.workedMinutes ?? r.worked)}</span> },
             ...(tenant.settings.workAccount.enabled ? [{ key: "k", header: "Ins Konto", align: "right" as const, render: (r: Row) => <span class="num">{hoursLabel(r.statement?.allocatedMinutes ?? r.allocated)}</span> }] : []),
             { key: "b", header: "Abrechnung", align: "right", render: (r) => <span class="num"><strong>{hoursLabel(r.statement?.billingMinutes ?? r.billing)}</strong></span> },
@@ -87,6 +90,7 @@ export function StatementsPage() {
                 )}
                 {r.statement?.submittedAt && <div class="xsmall muted">eingereicht {dateTimeDE(r.statement.submittedAt)}</div>}
                 {r.statement?.status === "returned" && <div class="xsmall">Grund: {r.statement.reviewNote}</div>}
+                {r.statement?.status === "reopened" && <div class="xsmall">Wieder geöffnet{r.statement.reopenedAt ? ` ${dateTimeDE(r.statement.reopenedAt)}` : ""}: {r.statement.reviewNote}</div>}
               </span>
             ) },
             {
@@ -98,7 +102,12 @@ export function StatementsPage() {
                     <Button size="sm" icon="check" onClick={() => approve(r)} aria-label={`Nachweis von ${r.employee.displayName} freigeben`}>Freigeben</Button>
                     <Button size="sm" variant="secondary" icon="undo" onClick={() => giveBack(r)} aria-label={`Nachweis von ${r.employee.displayName} zurückgeben`}>Zurückgeben</Button>
                   </>}
-                  {r.statement?.status === "approved" && <Button size="sm" variant="ghost" icon="undo" onClick={() => giveBack(r)} aria-label={`Freigabe für ${r.employee.displayName} zurücknehmen`}>Zurückgeben</Button>}
+                  {r.statement?.status === "reopened" && <>
+                    <Button size="sm" icon="check" onClick={() => approve(r)} aria-label={`Nachweis von ${r.employee.displayName} erneut freigeben`}>Erneut freigeben</Button>
+                    <Button size="sm" variant="secondary" icon="undo" onClick={() => giveBack(r)} aria-label={`Nachweis von ${r.employee.displayName} zurückgeben`}>Zurückgeben</Button>
+                  </>}
+                  {r.statement?.status === "approved" && <Button size="sm" variant="ghost" icon="undo" onClick={() => reopen(r)} aria-label={`Monat von ${r.employee.displayName} wieder öffnen`}>Monat wieder öffnen</Button>}
+                  {r.statement && <StatementHistoryButton statement={r.statement} employeeName={r.employee.displayName} />}
                 </div>
               ),
             },

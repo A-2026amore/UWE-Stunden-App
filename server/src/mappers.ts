@@ -111,6 +111,8 @@ export function toRevenueRow(r: Row, month: string): PlatformRevenueRow {
     plan: (r.plan as PlatformRevenueRow["plan"]) ?? null,
     note: (r.note as string | null) ?? null,
     closedAt: isoOrNull(r.closed_at),
+    blockSince: isoOrNull(r.block_since),
+    blockReason: (r.block_reason as string | null) ?? null,
   };
 }
 
@@ -137,6 +139,7 @@ export function toStatement(r: Row): MonthlyStatement {
     workedMinutes: Number(r.worked_minutes),
     allocatedMinutes: Number(r.allocated_minutes),
     billingMinutes: Number(r.billing_minutes),
+    reopenedAt: isoOrNull(r.reopened_at),
     // statement_correction_flags (0013), joined by the routes; null = no correction after approval.
     correctedAfterApproval: r.corrections ? { count: Number(r.corrections), lastAt: iso(r.last_corrected_at) } : null,
   };

@@ -28,9 +28,11 @@ import type {
   TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
+import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
+import type { StatementEvent } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
+  type BillingApi, type InvoiceApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
   type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type SystemOverview, type TenantOverview,
   type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
@@ -92,7 +94,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -332,6 +334,39 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     },
     returnStatement(statementId, reason) {
       return request<MonthlyStatement>("POST", `/api/statements/${enc(statementId)}/return`, { reason });
+    },
+    reopenStatement(statementId, reason) {
+      return request<MonthlyStatement>("POST", `/api/statements/${enc(statementId)}/reopen`, { reason });
+    },
+    listStatementEvents(statementId) {
+      return request<StatementEvent[]>("GET", `/api/statements/${enc(statementId)}/events`);
+    },
+
+    // ---- invoices (migration 0019)
+    getInvoiceSettings() {
+      return request<InvoiceSettings>("GET", "/api/platform/invoice-settings");
+    },
+    updateInvoiceSettings(patch, reason) {
+      return request<InvoiceSettings>("PUT", "/api/platform/invoice-settings", { ...patch, reason });
+    },
+    listInvoices(filter = {}) {
+      const p = new URLSearchParams();
+      if (filter.tenantId) p.set("tenantId", filter.tenantId);
+      if (filter.month) p.set("month", filter.month);
+      const qs = p.toString();
+      return request<Invoice[]>("GET", `/api/platform/invoices${qs ? `?${qs}` : ""}`);
+    },
+    listTenantInvoices(tenantId) {
+      return request<Invoice[]>("GET", `/api/tenants/${enc(tenantId)}/invoices`);
+    },
+    getInvoiceDraft(tenantId, month) {
+      return request<InvoiceDraft>("GET", `/api/platform/tenants/${enc(tenantId)}/invoices/${enc(month)}/draft`);
+    },
+    issueInvoice(tenantId, month) {
+      return request<Invoice>("POST", `/api/platform/tenants/${enc(tenantId)}/invoices/${enc(month)}`, {});
+    },
+    cancelInvoice(invoiceId, reason) {
+      return request<Invoice>("POST", `/api/platform/invoices/${enc(invoiceId)}/cancel`, { reason });
     },
 
     // ---- correction requests

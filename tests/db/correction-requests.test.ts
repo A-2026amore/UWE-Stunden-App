@@ -160,11 +160,17 @@ describe("deciding correction requests", () => {
     ]);
   });
 
-  it("accepting a change applies it as correction in the locked month (revision, audit); approved figures stay (N1) but the month is flagged", async () => {
+  it("approved month: accepting is refused (PT423) until the leadership re-opens the month (decision 28.10.2026)", async () => {
     const id = (await db.admin.query("select id from public.correction_requests where entry_id = 'demo-a03-20260901' and status = 'open'")).rows[0].id;
-    const before = (await db.admin.query("select worked_minutes, billing_minutes from public.monthly_statements where employee_id = $1 and month = '2026-09'", [E.emp1A])).rows[0];
-    const noFlag = await db.as(U.managerA, async (q) => (await q.query("select * from public.statement_correction_flags where employee_id = $1", [E.emp1A])).rows);
-    expect(noFlag).toEqual([]);
+    const locked = await pgError(decide(U.managerA, id, "accepted", "Passt, danke", false));
+    expect(locked.code).toBe("PT423");
+    expect(locked.message).toContain("wieder geöffnet");
+    expect((await db.admin.query("select status from public.correction_requests where id = $1", [id])).rows[0].status).toBe("open");
+    expect(await entryRow(E.emp1A, "demo-a03-20260901")).toMatchObject({ version: 1 });
+
+    const st = (await db.admin.query("select id from public.monthly_statements where employee_id = $1 and month = '2026-09'", [E.emp1A])).rows[0];
+    const reopened = await db.as(U.managerA, async (q) => (await q.query("select * from public.reopen_statement($1, $2)", [st.id, "Korrekturanfrage Fahrtenbuch"])).rows[0], { commit: true });
+    expect(reopened).toMatchObject({ status: "reopened", review_note: "Korrekturanfrage Fahrtenbuch", reopened_by: U.managerA });
 
     const r = await decide(U.managerA, id, "accepted", "Passt, danke");
     expect(r).toMatchObject({ status: "accepted", decided_by: U.managerA, decision_note: "Passt, danke", applied_entry_id: "demo-a03-20260901", applied_version: 2 });
@@ -175,19 +181,11 @@ describe("deciding correction requests", () => {
     expect(rev[1]).toMatchObject({ version: 2, operation: "update", is_correction: true, changed_by: U.managerA });
     expect(rev[1].reason).toBe("Korrekturanfrage: Fahrtenbuch: Ende 15:00 Uhr – Leitung: Passt, danke");
     const audit = (await db.admin.query("select action from public.audit_log where entity_id in ($1, $2) order by created_at, action", [id, `${E.emp1A}/demo-a03-20260901`])).rows.map((x) => x.action);
-    // accept and the applied correction share the transaction timestamp
     expect(audit).toEqual(["correction_request.create", "correction_request.accept", "time_entry.correction"]);
 
-    // N1: the approved statement keeps its figures …
-    const after = (await db.admin.query("select status, worked_minutes, billing_minutes from public.monthly_statements where employee_id = $1 and month = '2026-09'", [E.emp1A])).rows[0];
-    expect(after).toEqual({ status: "approved", ...before });
-    // … but the correction after approval is visible to the leadership and the employee
+    // the re-opened month is not "corrected after approval" (that state can no longer arise)
     for (const user of [U.managerA, U.emp1A]) {
-      const flags = await db.as(user, async (q) => (await q.query("select month, corrections from public.statement_correction_flags where employee_id = $1", [E.emp1A])).rows);
-      expect(flags).toEqual([{ month: "2026-09", corrections: 1 }]);
-    }
-    for (const user of [U.emp2A, U.ownerB, U.superAdmin]) {
-      const flags = await db.as(user, async (q) => (await q.query("select * from public.statement_correction_flags")).rows);
+      const flags = await db.as(user, async (q) => (await q.query("select * from public.statement_correction_flags where employee_id = $1", [E.emp1A])).rows);
       expect(flags).toEqual([]);
     }
   });
@@ -216,6 +214,22 @@ describe("deciding correction requests", () => {
     expect(e.code).toBe("23P01");
     const still = (await db.admin.query("select status from public.correction_requests where id = $1", [overlap.id])).rows[0];
     expect(still.status).toBe("open");
+  });
+
+  it("re-approval recalculates and stores the figures; the history shows approval, re-opening and re-approval", async () => {
+    const st = (await db.admin.query("select id, worked_minutes from public.monthly_statements where employee_id = $1 and month = '2026-09'", [E.emp1A])).rows[0];
+    const expected = (await db.admin.query("select * from private.statement_figures($1, '2026-09')", [E.emp1A])).rows[0];
+    expect(expected.worked).not.toBe(st.worked_minutes);
+    const ok = await db.as(U.managerA, async (q) => (await q.query("select * from public.approve_statement($1)", [st.id])).rows[0], { commit: true });
+    expect(ok).toMatchObject({ status: "approved", worked_minutes: expected.worked, allocated_minutes: expected.allocated, billing_minutes: expected.billing });
+    const ev = await db.as(U.emp1A, async (q) => (await q.query("select action, reason, worked_minutes from public.monthly_statement_events where statement_id = $1 order by created_at, id", [st.id])).rows);
+    expect(ev.map((x) => x.action)).toEqual(["approve", "reopen", "approve"]);
+    expect(ev[1].reason).toBe("Korrekturanfrage Fahrtenbuch");
+    expect(ev[2].worked_minutes).toBe(expected.worked);
+    // locked again for everybody
+    const r = await create(U.emp1A, E.emp1A, "change", "demo-a03-20260901", { end: "15:15" }, "Noch eine Viertelstunde");
+    const e = await pgError(decide(U.managerA, r.id, "accepted", null, false));
+    expect(e.code).toBe("PT423");
   });
 
   it("an entry changed since the request cannot be accepted (PT409)", async () => {

@@ -54,6 +54,8 @@ export type RequestRole = "app_user" | "app_anon" | "app_auth";
 export interface TestDb {
   /** Superuser connection (migration owner). */
   admin: pg.Client;
+  /** Connection string of the test database (for additional, e.g. parallel, connections). */
+  url: string;
   /** Run fn inside a transaction as a request role impersonating userId. Rolled back unless commit. */
   as<T>(userId: string | null, fn: (q: Queryable) => Promise<T>, opts?: { role?: RequestRole; commit?: boolean }): Promise<T>;
   close(): Promise<void>;
@@ -190,6 +192,7 @@ export async function setupTestDb(opts: { seed?: boolean } = {}): Promise<TestDb
 
   return {
     admin,
+    url: dbUrl,
     as,
     async close() {
       await admin.end();
