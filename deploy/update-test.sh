@@ -59,7 +59,11 @@ fi
 
 step "Stand $REF holen"
 git fetch --tags origin
-if git show-ref --verify --quiet "refs/remotes/origin/$REF"; then
+if [[ "$REF" =~ ^[0-9a-f]{40}$ ]]; then
+  # A full commit id is always taken as that commit, never as a branch that happens to carry the same name.
+  git -c advice.detachedHead=false checkout --detach "$REF^{commit}"
+  [ "$(git rev-parse HEAD)" = "$REF" ] || { echo "Abbruch: ausgecheckter Stand ist nicht $REF." >&2; exit 1; }
+elif git show-ref --verify --quiet "refs/remotes/origin/$REF"; then
   git checkout -B "$REF" "origin/$REF"
 else
   git checkout --detach "$REF"
@@ -76,7 +80,7 @@ step "Datenbank starten und Migrationen einspielen"
 "${C[@]}" run --rm migrate
 
 step "App neu starten"
-"${C[@]}" up -d app
+"${C[@]}" up -d stundenwerk-app
 
 step "Warten auf healthy"
 for _ in $(seq 1 30); do

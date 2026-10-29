@@ -4,7 +4,7 @@
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env build
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d db
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm migrate
-#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d app
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d stundenwerk-app
 #
 # Keine "ports:" – erreichbar nur über das externe Netz "proxy" (Caddy → stunden-<STAGE>-app:3000).
 name: stunden-${STAGE:?STAGE fehlt}
@@ -73,7 +73,7 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  app:
+  stundenwerk-app:
     <<: *app-image
     container_name: stunden-${STAGE:?STAGE fehlt}-app
     restart: unless-stopped

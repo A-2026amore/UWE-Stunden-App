@@ -35,7 +35,7 @@ die() { printf '\nABBRUCH: %s\n' "$*" >&2; exit 1; }
 COMMIT="${1:-}"
 [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || die "Aufruf: bash bootstrap-test.sh <40-stelliger Commit-SHA> (derselbe Commit, von dem dieses Skript geladen wurde)."
 [ "$(id -u)" = 0 ] || die "Bitte als root ausführen."
-for c in docker git openssl curl systemctl; do command -v "$c" >/dev/null || die "$c fehlt."; done
+for c in docker git openssl curl systemctl gpg; do command -v "$c" >/dev/null || die "$c fehlt (gpg: apt install gnupg)."; done
 docker compose version >/dev/null 2>&1 || die "Docker Compose (Plugin) fehlt."
 
 say "Netz proxy und zentraler Caddy (nur lesen)"
@@ -112,6 +112,9 @@ if [ "${1:-}" = --status ]; then
   tail -n 5 /var/lib/stunden-test/status.txt 2>/dev/null || true; exit 0
 fi
 [[ "${1:-}" =~ ^[0-9a-f]{40}$ ]] || { echo "Aufruf: stunden-test-freigeben <40-stelliger Commit-SHA> | --status" >&2; exit 2; }
+git -C /srv/stunden-test fetch --quiet origin
+git -C /srv/stunden-test cat-file -e "$1^{commit}" 2>/dev/null || { echo "Commit $1 gibt es im Repository nicht." >&2; exit 1; }
+rm -f "/var/lib/stunden-test/failed-$1"
 printf '%s\n' "$1" > "$F.tmp" && mv "$F.tmp" "$F"
 echo "Freigegeben: $1 – Bereitstellung startet (journalctl -u stunden-test-deploy -f)."
 systemctl start --no-block stunden-test-deploy.service

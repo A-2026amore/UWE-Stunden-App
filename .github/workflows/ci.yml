@@ -120,7 +120,7 @@ jobs:
           $C up -d --no-build db
           $C run --rm migrate
           $C run --rm migrate   # zweiter Lauf: nichts mehr zu tun
-          $C up -d --no-build app
+          $C up -d --no-build stundenwerk-app
           for i in $(seq 1 30); do
             status=$(docker inspect -f '{{.State.Health.Status}}' stunden-ci-app)
             [ "$status" = healthy ] && break

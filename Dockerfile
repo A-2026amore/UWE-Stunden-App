@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 #
 # Plattform-Image: Node-API (server/) + gebaute Oberflächen (platform/dist, API-Modus).
 # Die API liefert die Seiten selbst aus (STATIC_DIR, eigene CSP) – siehe docs/betrieb.md 7.2.

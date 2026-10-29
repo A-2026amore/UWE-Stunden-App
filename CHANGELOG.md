@@ -8,6 +8,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Testumgebung per Pull-Verfahren: `deploy/bootstrap-test.sh` (einmalig auf dem Server), `deploy/pull-deploy.sh`
   (systemd-Timer holt den Branch `stunden-test-deploy`), Workflow „Testumgebung prüfen“ mit
   `scripts/check-test-env.mjs`; `/api/health` meldet den Build-Commit. Anleitung `deploy/README.md`.
+
+### Sicherheit
+- Testumgebung: Der Server stellt nur den mit `stunden-test-freigeben <commit>` freigegebenen Commit bereit;
+  ein vollständiger Commit-SHA wird immer als genau dieser Commit ausgecheckt (nie als gleichnamiger Branch), vor
+  jedem Build geprüft. Caddy wird nicht automatisch verändert. Compose-Dienst `app` heißt jetzt `stundenwerk-app`
+  (kein allgemeiner DNS-Alias `app` im gemeinsamen Netz `proxy`). `# syntax`-Zeile im Dockerfile entfernt (kein
+  ungepinntes Build-Frontend). Bootstrap verlangt `gpg`; restic-Datei nur mit root/600.
 - Vertragsende (Branch `feature/mandanten-export-loeschung`, Migration `0020_tenant_offboarding.sql`, Doku
   `docs/betrieb.md` 6.1b – Fristen rechtlich prüfen):
   - Betreiberbefehl `cli.ts export-tenant <kurzname> --out <verzeichnis>`: Gesamtexport eines Mandanten in jedem

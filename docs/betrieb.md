@@ -136,7 +136,7 @@ dem Server mit einem echten Archiv durchgespielt werden.
    `$C exec -T db pg_restore -U "$POSTGRES_USER" -d stunden --clean --if-exists --exit-on-error < /root/restore/database.dump`.
 6. `$C run --rm migrate` – setzt das Passwort von `app_api` aus `deploy/.env` (Rollen sind ohne Passwörter
    gesichert) und spielt neuere Migrationen ein.
-7. `$C up -d app`, Anmeldung und eine Stichprobe prüfen, dann den Reverse Proxy auf die wiederhergestellte
+7. `$C up -d stundenwerk-app`, Anmeldung und eine Stichprobe prüfen, dann den Reverse Proxy auf die wiederhergestellte
    Umgebung zeigen lassen. Entpackte Dateien löschen (`rm -rf /root/restore`).
 
 ## 6. Node-API betreiben

@@ -19,7 +19,7 @@ Internet ─HTTPS─▶ Caddy (zentral, Netz "proxy")
 
 | Dienst | Container | Aufgabe |
 |---|---|---|
-| `app` | `stunden-${STAGE}-app` | API unter `/api/…`, alle anderen Pfade = Dateien aus `platform/dist` (API-Modus) mit eigener CSP. Lauscht auf **3000** (nur intern, keine `ports:`). |
+| `stundenwerk-app` | `stunden-${STAGE}-app` | API unter `/api/…`, alle anderen Pfade = Dateien aus `platform/dist` (API-Modus) mit eigener CSP. Lauscht auf **3000** (nur intern, keine `ports:`). |
 | `db` | `stunden-${STAGE}-db` | PostgreSQL 16.15, nur im internen Netz. |
 | `migrate` | (einmalig, `run --rm`) | Spielt `db/migrations/*.sql` ein, setzt das Passwort der Laufzeitrolle `app_api`. |
 
@@ -58,7 +58,7 @@ $C config --quiet            # Prüft, dass alle Pflichtwerte gesetzt sind
 $C build                     # Image stunden-app:local
 $C up -d db
 $C run --rm migrate          # Migrationen + Passwort für app_api
-$C up -d app
+$C up -d stundenwerk-app
 $C ps                        # app und db: "healthy"
 ```
 
@@ -83,7 +83,7 @@ $C exec db psql -U "$POSTGRES_USER" -d stunden \
   -c "insert into auth.users (email) values ('admin@firma.example') returning id;"
 $C exec db psql -U "$POSTGRES_USER" -d stunden \
   -c "insert into public.platform_admins (user_id, role) values ('<id>', 'super_admin');"
-$C exec -T app node --experimental-strip-types --disable-warning=ExperimentalWarning \
+$C exec -T stundenwerk-app node --experimental-strip-types --disable-warning=ExperimentalWarning \
   --import ./server/register.mjs server/src/cli.ts set-password admin@firma.example
 ```
 
@@ -100,7 +100,7 @@ und sind für eine öffentlich erreichbare Umgebung nicht gedacht. Nur bewusst u
 cd /srv/stunden-test && git pull
 $C build
 $C run --rm migrate          # nur neue Migrationen; vorher Backup (siehe unten)
-$C up -d app
+$C up -d stundenwerk-app
 ```
 
 Migrationen sind nur additiv. Rücksprung auf eine ältere App-Version ist möglich, solange keine neue Migration
@@ -198,7 +198,7 @@ $C config --quiet                     # Pflichtwerte gesetzt?
 BACKUP_PASSPHRASE_FILE=/root/.stunden-test-backup-pass deploy/backup.sh --compose deploy/.env   # vorher sichern
 $C build                              # neues Image stunden-app:local (enthält db/migrations bis 0016)
 $C run --rm migrate                   # nur neue Migrationen (z. B. 0015, 0016); bricht bei veränderten Dateien ab
-$C up -d app                          # ersetzt nur stunden-test-app
+$C up -d stundenwerk-app                          # ersetzt nur stunden-test-app
 docker inspect -f '{{.State.Health.Status}}' stunden-test-app            # → healthy (nach bis zu ~1 min)
 ```
 

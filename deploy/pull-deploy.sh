@@ -36,7 +36,8 @@ DEPLOYED="$(cat "$STATE/deployed-commit" 2>/dev/null || true)"
 if [ "$TARGET" = "$DEPLOYED" ] && [ "$(docker inspect -f '{{.State.Health.Status}}' stunden-test-app 2>/dev/null || true)" = healthy ]; then
   exit 0
 fi
-FAILS="$(cat "$STATE/failed-$TARGET" 2>/dev/null || echo 0)"
+FAILS="$(cat "$STATE/failed-$TARGET" 2>/dev/null || true)"
+[[ "$FAILS" =~ ^[0-9]+$ ]] || FAILS=0
 if [ "$FAILS" -ge 3 ]; then
   echo "Commit ${TARGET:0:12} ist 3-mal gescheitert – keine weiteren Versuche bis zur nächsten Freigabe."
   exit 0
@@ -45,8 +46,10 @@ git cat-file -e "$TARGET^{commit}" 2>/dev/null || { status "FEHLER: freigegebene
 
 status "Bereitstellung ${TARGET:0:12} beginnt"
 
-# update-test.sh checks out exactly this commit (detached); it must not seed (its seed prints passwords to the journal).
-if ! bash deploy/update-test.sh "$TARGET"; then
+# Check out exactly the approved commit before running anything from it; update-test.sh does the same again.
+# update-test.sh must not seed (its seed prints passwords to the journal).
+if ! { git -c advice.detachedHead=false checkout --quiet --detach "$TARGET^{commit}" \
+       && [ "$(git rev-parse HEAD)" = "$TARGET" ] && bash deploy/update-test.sh "$TARGET"; }; then
   echo $((FAILS + 1)) > "$STATE/failed-$TARGET"
   status "FEHLER: update-test.sh fehlgeschlagen, Versuch $((FAILS + 1))/3 (journalctl -u stunden-test-deploy)"
   exit 1
@@ -61,16 +64,18 @@ if [ ! -s "$ACCOUNTS" ] && [ ! -e "$STATE/seeded" ]; then
   ( umask 077
     if "${C[@]}" run --rm -T migrate node --experimental-strip-types --disable-warning=ExperimentalWarning \
         --import ./server/register.mjs server/src/cli.ts seed-test-env --confirm-test-environment \
-        --domain=stunden-test.example > "$ACCOUNTS.tmp" 2>&1; then
+        --domain=stunden-test.example > "$ACCOUNTS.tmp" 2> "$STATE/seed.log"; then
       mv "$ACCOUNTS.tmp" "$ACCOUNTS"; touch "$STATE/seeded"; status "OK: Testzugänge angelegt ($ACCOUNTS, nur root)"
     else
-      status "FEHLER: Testzugänge nicht angelegt (Details in $ACCOUNTS.tmp, nächster Versuch bei der nächsten Bereitstellung)"
+      status "FEHLER: Testzugänge nicht angelegt (Details in $STATE/seed.log, nächster Versuch bei der nächsten Bereitstellung)"
     fi )
 fi
 
 # Backup and restore test (never touches the running database).
 HOOK=""
-if [ -f "$RESTIC_ENV" ]; then
+if [ -f "$RESTIC_ENV" ] && [ "$(stat -c '%u %a' "$RESTIC_ENV")" != "0 600" ]; then
+  status "FEHLER: $RESTIC_ENV muss root gehören und Rechte 600 haben – Storage Box wird nicht genutzt"
+elif [ -f "$RESTIC_ENV" ]; then
   # shellcheck disable=SC1090
   set -a; . "$RESTIC_ENV"; set +a
   HOOK='restic backup --quiet --tag stunden --tag "$STAGE" "$@"'
@@ -81,7 +86,7 @@ if BACKUP_DIR="$BDIR" BACKUP_HOOK="$HOOK" BACKUP_STATUS_FILE="$STATE/last-backup
   SOURCE="lokal"
   if [ -n "$HOOK" ]; then
     FETCH="$(mktemp -d)"
-    if restic restore latest --tag stunden --target "$FETCH" --include "$ARCHIVE" --include "$ARCHIVE.sha256" >/dev/null 2>&1 \
+    if restic restore latest --tag stunden,test --target "$FETCH" --include "$ARCHIVE" --include "$ARCHIVE.sha256" >/dev/null 2>&1 \
        && [ -f "$FETCH$ARCHIVE" ]; then
       ARCHIVE="$FETCH$ARCHIVE"; SOURCE="Hetzner Storage Box (restic)"
     else
