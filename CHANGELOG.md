@@ -167,6 +167,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   die Karte hinaus zu verbreitern („Monat wieder öffnen“/„Zurückgeben“ waren bei 1440 px abgeschnitten).
 - Chef-Portal „Verlauf“ eines Monatsnachweises: breiterer Dialog (`Dialog wide`), die Spalte „Begründung“ ist ohne
   seitliches Scrollen lesbar.
+- Mitarbeiter-App „Monat“: Ein wieder geöffneter Monat hieß im Abschnitt „Einsätze“ noch „Dieser Monat ist
+  eingereicht.“ – jetzt „Dieser Monat ist wieder geöffnet.“
 - Test: `tests/e2e/platform/layout-final-qa.spec.ts`.
 
 ### Sicherheit (QA 2026-10-28)

@@ -164,7 +164,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
           {locked && <Button size="sm" variant="secondary" icon="plus" onClick={() => setCorrection({ kind: "add", date: `${month}-01` })}>Fehlenden Einsatz melden</Button>}
         </div>
         {locked && (
-          <p class="muted small mb-0">{status === "approved" ? "Dieser Monat ist freigegeben." : "Dieser Monat ist eingereicht."} Änderungen beantragst du über „Korrektur beantragen“ – deine Vorgesetzten entscheiden.</p>
+          <p class="muted small mb-0">{status === "approved" ? "Dieser Monat ist freigegeben." : status === "reopened" ? "Dieser Monat ist wieder geöffnet." : "Dieser Monat ist eingereicht."} Änderungen beantragst du über „Korrektur beantragen“ – deine Vorgesetzten entscheiden.</p>
         )}
         {data && data.entries.length === 0 && (
           <EmptyState icon="calendar" title="Keine Arbeitszeiten in diesem Monat" action={<LinkButton href="#/erfassen" variant="primary" icon="plus">Arbeitszeit erfassen</LinkButton>} />
