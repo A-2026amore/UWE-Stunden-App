@@ -174,8 +174,10 @@ nutzt die von dort zurückgeholte Kopie. Ergebnisse: `stunden-test-freigeben --s
 `/var/lib/stunden-test/status.txt` und `journalctl -u stunden-test-deploy`.
 
 **Neue Version freigeben:** Commit auf GitHub ansehen, dann auf dem Server `stunden-test-freigeben <commit>`. Der
-GitHub-Workflow „Testumgebung prüfen“ (`.github/workflows/test-env-check.yml`) prüft danach HTTPS,
-Sicherheits-Header, geschützte Schnittstellen und die Anmeldeseiten in Chromium und WebKit.
+GitHub-Workflow „Testumgebung prüfen“ (`.github/workflows/test-env-check.yml`) startet, wenn genau dieser Commit auf
+den Branch `stunden-test-check` gelegt wird (`git push origin <commit>:refs/heads/stunden-test-check`). Er wartet, bis
+`/api/health` den Commit meldet, und prüft dann HTTPS, Sicherheits-Header, geschützte Schnittstellen und die
+Anmeldeseiten in Chromium und WebKit.
 
 Abschalten: `systemctl disable --now stunden-test-deploy.timer` (die Container laufen weiter).
 

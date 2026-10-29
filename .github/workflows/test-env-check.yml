@@ -1,10 +1,12 @@
 name: Testumgebung prüfen
 
-# Checks the public test environment after a push to the deploy branch (the server pulls it every 2 minutes,
-# deploy/bootstrap-test.sh). Read-only: no secrets, no access to the server, only public HTTPS requests.
+# Checks the public test environment after a commit was approved on the server (`stunden-test-freigeben <commit>`,
+# deploy/bootstrap-test.sh). Started by pushing exactly that commit to the branch stunden-test-check
+# (git push origin <commit>:refs/heads/stunden-test-check); manual dispatch only works once the file is on main.
+# Read-only: no secrets, no access to the server, only public HTTPS requests.
 on:
   push:
-    branches: [stunden-test-deploy]
+    branches: [stunden-test-check]
   workflow_dispatch:
 
 permissions:
