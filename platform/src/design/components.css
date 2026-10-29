@@ -271,7 +271,7 @@ img { max-width: 100%; }
   width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); color: var(--color-text); background: var(--color-surface);
 }
 .dialog[open] { animation: sw-pop var(--duration-normal) var(--ease-out) both; }
-.dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(3px); }
+.dialog::backdrop { background: var(--color-overlay); }
 .dialog-inner { display: flex; flex-direction: column; max-height: calc(100dvh - 24px); }
 .dialog-header { padding: var(--space-5) var(--space-5) var(--space-2); display: flex; gap: var(--space-3); justify-content: space-between; align-items: flex-start; }
 .dialog-header h2 { margin: 0; font-size: var(--text-xl); padding-top: 6px; }
@@ -452,7 +452,7 @@ img { max-width: 100%; }
   .d-topbar {
     display: flex; position: sticky; top: 0; z-index: 30; align-items: center; gap: var(--space-2);
     background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-    -webkit-backdrop-filter: saturate(1.6) blur(14px); backdrop-filter: saturate(1.6) blur(14px);
+    /* EXPERIMENT no backdrop-filter */
     border-bottom: 1px solid var(--color-border);
     padding: calc(var(--space-2) + env(safe-area-inset-top)) calc(var(--space-3) + env(safe-area-inset-right)) var(--space-2) calc(var(--space-2) + env(safe-area-inset-left));
     min-height: 56px;
