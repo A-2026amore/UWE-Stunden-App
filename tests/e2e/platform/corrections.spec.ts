@@ -23,6 +23,20 @@ const minus15 = (t: string) => {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
 
+
+async function dbg(page: Page, loc: import("@playwright/test").Locator, tag: string) {
+  for (let i = 0; i < 4; i++) {
+    const info = await loc.evaluate((el) => {
+      const r = el.getBoundingClientRect(); const chain: string[] = []; let n: Element | null = el;
+      while (n) { const c = getComputedStyle(n); chain.push(`${n.tagName}.${String(n.className).slice(0, 40)} d=${c.display} v=${c.visibility} o=${c.opacity} t=${c.transform} a=${c.animationName}/${c.animationPlayState} pos=${c.position} h=${(n as HTMLElement).offsetHeight} w=${(n as HTMLElement).offsetWidth}`); n = n.parentElement; }
+      return { r: [r.x, r.y, r.width, r.height], sy: window.scrollY, ih: window.innerHeight, chain, anims: document.getAnimations().map((a) => `${(a as CSSAnimation).animationName ?? "?"}:${a.playState}:${String((a.effect as KeyframeEffect | null)?.target?.className).slice(0, 40)}`) };
+    }).catch((e) => String(e));
+    console.log("DEBUG", tag, i, JSON.stringify(info));
+    await page.waitForTimeout(400);
+  }
+  console.log("DEBUG", tag, "trial", await loc.click({ trial: true, timeout: 4000 }).then(() => "ok", (e) => String(e).slice(0, 1500)));
+}
+
 const de = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
 
 test("correction request in an approved month: employee asks, chef accepts one and rejects one", async ({ page }) => {
@@ -83,6 +97,7 @@ test("correction request in an approved month: employee asks, chef accepts one a
 
   // reject with mandatory reason
   const rejected = page.locator(".correction-request").filter({ hasText: "Doppelt erfasst" });
+  await dbg(page, rejected.getByRole("button", { name: "Anfrage von Anna Beispiel ablehnen" }), "ablehnen");
   await rejected.getByRole("button", { name: "Anfrage von Anna Beispiel ablehnen" }).click();
   const rd = page.getByRole("dialog", { name: "Korrekturanfrage ablehnen" });
   await rd.getByRole("button", { name: "Ablehnen", exact: true }).click();
@@ -111,15 +126,7 @@ test("correction request in an approved month: employee asks, chef accepts one a
   await expect(row).toContainText("Freigegeben");
   await expect(row.getByRole("button", { name: "Monat von Anna Beispiel wieder öffnen" })).toBeVisible();
   const vb = row.getByRole("button", { name: "Verlauf des Nachweises von Anna Beispiel" });
-  for (let i = 0; i < 5; i++) {
-    console.log("DEBUG", i, JSON.stringify(await vb.evaluate((el) => {
-      const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
-      const chain: string[] = []; let n: Element | null = el;
-      while (n) { const c = getComputedStyle(n); chain.push(`${n.tagName}.${n.className} d=${c.display} v=${c.visibility} o=${c.opacity} t=${c.transform} a=${c.animationName}/${c.animationPlayState} ov=${c.overflow} h=${(n as HTMLElement).offsetHeight} w=${(n as HTMLElement).offsetWidth}`); n = n.parentElement; }
-      return { r: [r.x, r.y, r.width, r.height], vis: cs.visibility, chain, anims: document.getAnimations().map((a) => `${(a as CSSAnimation).animationName ?? a.constructor.name}:${a.playState}:${(a.effect as KeyframeEffect | null)?.target?.className}`) };
-    })));
-    await page.waitForTimeout(500);
-  }
+  await dbg(page, vb, "verlauf");
   await vb.click();
   const events = page.getByRole("dialog", { name: /^Verlauf – Anna Beispiel/ });
   await expect(events).toContainText("Wieder geöffnet");
