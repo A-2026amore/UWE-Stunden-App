@@ -275,8 +275,8 @@ img { max-width: 100%; }
   width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); color: var(--color-text); background: var(--color-surface);
 }
 .dialog-wide { width: min(880px, calc(100vw - 24px)); }
-.dialog[open] { animation: sw-pop var(--duration-normal) var(--ease-out) both; }
-.dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(3px); }
+/* no entrance animation and no backdrop blur: in Safari/WebKit the dialog buttons were intermittently not tappable */
+.dialog::backdrop { background: var(--color-overlay); }
 .dialog-inner { display: flex; flex-direction: column; max-height: calc(100dvh - 24px); }
 .dialog-header { padding: var(--space-5) var(--space-5) var(--space-2); display: flex; gap: var(--space-3); justify-content: space-between; align-items: flex-start; }
 .dialog-header h2 { margin: 0; font-size: var(--text-xl); padding-top: 6px; }

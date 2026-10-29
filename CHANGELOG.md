@@ -160,6 +160,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Behoben
+- Dialoge ohne Einblend-Animation und ohne Unschärfe-Hintergrund: In der Safari-Engine (iPhone-Emulation) waren
+  Dialog-Knöpfe sonst zeitweise nicht antippbar (Vergleichslauf: vorher 4 von 36 Läufen fehlerhaft, danach 36/36).
 - Abrechnung (Migration `0021_invoiced_month_guard.sql`): Ein Monat mit gültiger Rechnung kann nicht mehr auf „offen“
   oder „erlassen“ gesetzt werden (die eingefrorenen Zahlen blieben sonst nicht zur Rechnung passend). Erst stornieren,
   dann wieder öffnen oder erlassen. Demo verhält sich gleich; DB- und Unit-Test ergänzt.
