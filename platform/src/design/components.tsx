@@ -477,9 +477,11 @@ export function Alert({ tone = "info", title, children, live }: {
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-export function Dialog({ open, title, onClose, children, footer, describedBy }: {
+export function Dialog({ open, title, onClose, children, footer, describedBy, wide }: {
   open: boolean; title: ComponentChildren; onClose: () => void; children?: ComponentChildren;
   footer?: ComponentChildren; describedBy?: string;
+  /** Wider on desktop (e.g. a table with several columns); full width on phones as usual. */
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -514,7 +516,7 @@ export function Dialog({ open, title, onClose, children, footer, describedBy }: 
   return (
     <dialog
       ref={ref}
-      class="dialog"
+      class={cx("dialog", wide && "dialog-wide")}
       aria-labelledby={titleId}
       aria-describedby={describedBy}
       onCancel={(e) => { e.preventDefault(); onClose(); }}

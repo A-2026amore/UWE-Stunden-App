@@ -47,6 +47,8 @@ img { max-width: 100%; }
 .xsmall { font-size: var(--text-xs); }
 .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nowrap { white-space: nowrap; }
+/* Running text inside a nowrap context (e.g. explanation next to a .stat-value amount). */
+.text-wrap { white-space: normal; }
 .stack { display: grid; gap: var(--space-4); }
 .stack > * { min-width: 0; }
 .stack-sm { display: grid; gap: var(--space-2); }
@@ -221,6 +223,8 @@ img { max-width: 100%; }
 .table tr.is-summary td { background: var(--brand-primary-soft); font-weight: var(--weight-bold); }
 .table .td-right, .table .th-right { text-align: right; }
 @media (min-width: 1200px) { .table td.td-actions .btn-row { flex-wrap: nowrap; justify-content: flex-end; } }
+/* Tables with many row actions (e.g. Monatsnachweise): buttons wrap instead of widening the table past the card. */
+.table td.td-actions .btn-row.btn-row-wrap { flex-wrap: wrap; }
 .table tbody tr { transition: background-color var(--duration-fast); }
 .table tbody tr:hover td { background: var(--color-surface-hover); }
 .table tbody tr.is-summary:hover td { background: var(--brand-primary-soft); }
@@ -270,6 +274,7 @@ img { max-width: 100%; }
   border: 1px solid var(--color-border); padding: 0; border-radius: var(--radius-xl); box-shadow: var(--shadow-lg);
   width: min(560px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); color: var(--color-text); background: var(--color-surface);
 }
+.dialog-wide { width: min(880px, calc(100vw - 24px)); }
 .dialog[open] { animation: sw-pop var(--duration-normal) var(--ease-out) both; }
 .dialog::backdrop { background: var(--color-overlay); backdrop-filter: blur(3px); }
 .dialog-inner { display: flex; flex-direction: column; max-height: calc(100dvh - 24px); }

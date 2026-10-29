@@ -18,7 +18,7 @@ Produktname: **Stundenwerk** (vorläufig, vorbehaltlich Markenprüfung). Der Nam
 | Bereich | Datei | Inhalt |
 |---|---|---|
 | Tokens | `design/tokens.css` | Farben (hell/dunkel), Typografie, Abstände (4-px-Raster), Radien, Schatten, Bewegung |
-| Komponenten-CSS | `design/components.css` | Buttons, Karten, Kennzahlen, Tabellen (mobil als Karten), Dialoge (mobil als Bottom-Sheet), Navigation, Anmeldeseiten, Diagramme, Skeleton |
+| Komponenten-CSS | `design/components.css` | Buttons, Karten, Kennzahlen, Tabellen (mobil als Karten), Dialoge (mobil als Bottom-Sheet; `wide` für Dialoge mit Tabellen, z. B. Verlauf eines Monatsnachweises), Navigation, Anmeldeseiten, Diagramme, Skeleton |
 | Komponenten | `design/components.tsx` | u. a. `StatTile` (mit Symbol/Link als Kennzahl-Kachel), `BarChart` (SVG), `Skeleton`, `Avatar`, `ThemeSwitch`, `Sidebar` mit Gruppen |
 | Logo | `design/logo.tsx`, `public/product-mark.svg` | eigenes Produktlogo (Uhr mit offenem Ring), inline SVG |
 | Symbole | `design/icons.tsx` | 24-px-Strichsymbole, erweitert (Sonne, Mond, Euro, Karte, …) |

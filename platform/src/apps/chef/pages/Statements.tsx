@@ -95,7 +95,7 @@ export function StatementsPage() {
             ) },
             {
               key: "a", header: "Aktionen", actions: true, render: (r) => (
-                <div class="btn-row" style={{ justifyContent: "flex-end" }}>
+                <div class="btn-row btn-row-wrap" style={{ justifyContent: "flex-end" }}>
                   <LinkButton size="sm" variant="ghost" icon="calendar" href={`#/stunden?m=${month}&ma=${r.employee.id}`} aria-label={`Tage von ${r.employee.displayName} anzeigen`}>Tage</LinkButton>
                   <Button size="sm" variant="ghost" icon="download" onClick={() => pdf(r)} aria-label={`PDF für ${r.employee.displayName}`}>PDF</Button>
                   {r.statement?.status === "submitted" && <>

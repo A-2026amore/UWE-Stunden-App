@@ -72,33 +72,35 @@ function SettingsCard({ readOnly, onSaved }: { readOnly: boolean; onSaved: () =>
   const set = (k: keyof SettingsForm) => (v: string) => setF({ ...f, [k]: v });
   return (
     <Card title="Rechnungsangaben (Absender)">
-      {s.missing.length > 0
-        ? <Alert tone="warning" title="Pflichtangaben fehlen"><p>{s.missing.join(", ")}. Bis dahin sind nur Entwürfe mit dem Wasserzeichen „Entwurf – Pflichtangaben fehlen“ möglich.</p></Alert>
-        : <Alert tone="success" title="Pflichtangaben vollständig"><p>Rechnungen können erzeugt werden.</p></Alert>}
-      {!s.vatRateConfirmed && <Alert tone="info" title={VAT_CONFIRMATION_NOTE}><p>Der USt-Satz ({String(s.vatRatePercent).replace(".", ",")} %) ist voreingestellt und wird bis zur Bestätigung auf jeder Rechnung als Hinweis gedruckt.</p></Alert>}
-      <form class="stack" onSubmit={save} noValidate>
-        <fieldset disabled={readOnly} class="stack fieldset-plain">
-          <div class="grid-2">
-            <InputField label="Name / Firma" value={f.issuerName} onValue={set("issuerName")} maxLength={200} />
-            <InputField label="Straße und Hausnummer" value={f.issuerStreet} onValue={set("issuerStreet")} maxLength={200} />
-            <InputField label="PLZ" value={f.issuerPostalCode} onValue={set("issuerPostalCode")} maxLength={10} />
-            <InputField label="Ort" value={f.issuerCity} onValue={set("issuerCity")} maxLength={120} />
-            <InputField label="Land" value={f.issuerCountry} onValue={set("issuerCountry")} maxLength={80} />
-            <InputField label="E-Mail" optional value={f.issuerEmail} onValue={set("issuerEmail")} maxLength={254} />
-            <InputField label="Telefon" optional value={f.issuerPhone} onValue={set("issuerPhone")} maxLength={40} />
-            <InputField label="Steuernummer" optional hint="Steuernummer oder USt-IdNr. ist Pflicht." value={f.taxNumber} onValue={set("taxNumber")} maxLength={40} />
-            <InputField label="USt-IdNr." optional value={f.vatId} onValue={set("vatId")} maxLength={20} />
-            <InputField label="USt-Satz (%)" value={f.vatRatePercent} onValue={set("vatRatePercent")} inputMode="decimal" />
-            <InputField label="Zahlungsziel (Tage)" value={f.paymentTermsDays} onValue={set("paymentTermsDays")} inputMode="numeric" />
-            <InputField label="Präfix der Rechnungsnummer" hint="z. B. SW → SW-2026-000001" value={f.numberPrefix} onValue={set("numberPrefix")} maxLength={6} />
-          </div>
-          <TextareaField label="Zahlungshinweis (z. B. Bankverbindung)" optional value={f.paymentDetails} onValue={set("paymentDetails")} maxLength={500} />
-          <Checkbox label="USt-Satz vom Auftraggeber bestätigt" checked={f.vatRateConfirmed} onChange={(v) => setF({ ...f, vatRateConfirmed: v })} />
-          {!readOnly && <InputField label="Grund der Änderung (Pflicht)" value={f.reason} onValue={set("reason")} maxLength={1000} />}
-        </fieldset>
-        {error && <Alert tone="danger" live>{error}</Alert>}
-        {!readOnly && <div class="btn-row"><Button type="submit" busy={busy}>Rechnungsangaben speichern</Button></div>}
-      </form>
+      <div class="stack" data-testid="invoice-settings-body">
+        {s.missing.length > 0
+          ? <Alert tone="warning" title="Pflichtangaben fehlen"><p>{s.missing.join(", ")}. Bis dahin sind nur Entwürfe mit dem Wasserzeichen „Entwurf – Pflichtangaben fehlen“ möglich.</p></Alert>
+          : <Alert tone="success" title="Pflichtangaben vollständig"><p>Rechnungen können erzeugt werden.</p></Alert>}
+        {!s.vatRateConfirmed && <Alert tone="info" title={VAT_CONFIRMATION_NOTE}><p>Der USt-Satz ({String(s.vatRatePercent).replace(".", ",")} %) ist voreingestellt und wird bis zur Bestätigung auf jeder Rechnung als Hinweis gedruckt.</p></Alert>}
+        <form class="stack" onSubmit={save} noValidate>
+          <fieldset disabled={readOnly} class="stack fieldset-plain">
+            <div class="grid-2">
+              <InputField label="Name / Firma" value={f.issuerName} onValue={set("issuerName")} maxLength={200} />
+              <InputField label="Straße und Hausnummer" value={f.issuerStreet} onValue={set("issuerStreet")} maxLength={200} />
+              <InputField label="PLZ" value={f.issuerPostalCode} onValue={set("issuerPostalCode")} maxLength={10} />
+              <InputField label="Ort" value={f.issuerCity} onValue={set("issuerCity")} maxLength={120} />
+              <InputField label="Land" value={f.issuerCountry} onValue={set("issuerCountry")} maxLength={80} />
+              <InputField label="E-Mail" optional value={f.issuerEmail} onValue={set("issuerEmail")} maxLength={254} />
+              <InputField label="Telefon" optional value={f.issuerPhone} onValue={set("issuerPhone")} maxLength={40} />
+              <InputField label="Steuernummer" optional hint="Steuernummer oder USt-IdNr. ist Pflicht." value={f.taxNumber} onValue={set("taxNumber")} maxLength={40} />
+              <InputField label="USt-IdNr." optional value={f.vatId} onValue={set("vatId")} maxLength={20} />
+              <InputField label="USt-Satz (%)" value={f.vatRatePercent} onValue={set("vatRatePercent")} inputMode="decimal" />
+              <InputField label="Zahlungsziel (Tage)" value={f.paymentTermsDays} onValue={set("paymentTermsDays")} inputMode="numeric" />
+              <InputField label="Präfix der Rechnungsnummer" hint="z. B. SW → SW-2026-000001" value={f.numberPrefix} onValue={set("numberPrefix")} maxLength={6} />
+            </div>
+            <TextareaField label="Zahlungshinweis (z. B. Bankverbindung)" optional value={f.paymentDetails} onValue={set("paymentDetails")} maxLength={500} />
+            <Checkbox label="USt-Satz vom Auftraggeber bestätigt" checked={f.vatRateConfirmed} onChange={(v) => setF({ ...f, vatRateConfirmed: v })} />
+            {!readOnly && <InputField label="Grund der Änderung (Pflicht)" value={f.reason} onValue={set("reason")} maxLength={1000} />}
+          </fieldset>
+          {error && <Alert tone="danger" live>{error}</Alert>}
+          {!readOnly && <div class="btn-row"><Button type="submit" busy={busy}>Rechnungsangaben speichern</Button></div>}
+        </form>
+      </div>
     </Card>
   );
 }

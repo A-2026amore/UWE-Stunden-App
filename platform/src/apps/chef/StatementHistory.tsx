@@ -59,7 +59,7 @@ export function StatementHistoryButton({ statement, employeeName }: { statement:
   return (
     <>
       <Button size="sm" variant="ghost" icon="info" onClick={show} aria-label={`Verlauf des Nachweises von ${employeeName}`}>Verlauf</Button>
-      <Dialog open={open} onClose={() => setOpen(false)} title={`Verlauf – ${employeeName}, ${monthLabelDE(statement.month)}`}>
+      <Dialog wide open={open} onClose={() => setOpen(false)} title={`Verlauf – ${employeeName}, ${monthLabelDE(statement.month)}`}>
         {error && <Alert tone="danger" live>{error}</Alert>}
         <Table<StatementEvent & { i: number }>
           caption="Freigaben, Wiederöffnungen und Rückgaben"

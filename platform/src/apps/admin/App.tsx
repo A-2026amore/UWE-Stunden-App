@@ -516,7 +516,7 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
     <div class="stack">
       <h1 class="page-title">Preismodell</h1>
       <Card title="Preis je Mitarbeiter" accent>
-        <p class="stat-value" data-testid="default-price">{formatEuro(current)} <span class="small muted">netto je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE}</span></p>
+        <p class="stat-value" data-testid="default-price">{formatEuro(current)} <span class="small muted text-wrap">netto je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE}</span></p>
         <ul class="stack-sm small" style={{ margin: 0, paddingLeft: "1.3em" }}>
           <li>Keine Grundgebühr, keine Mindestanzahl, keine Staffeln. Beispiele: 5 → {formatEuro(5 * current)}, 20 → {formatEuro(20 * current)}, 100 → {formatEuro(100 * current)}.</li>
           <li>Abrechenbar: Mitarbeiter/innen, die im Monat mindestens zeitweise aktiv waren. Gesperrte/deaktivierte ab dem Folgemonat nicht mehr; nur eingeladene nie.</li>
