@@ -159,17 +159,21 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Tests: 284 Unit-, 209 Datenbank-/API-, 122 Browsertests (Demo-Build und Alt-App, Chromium Desktop und
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
-### Behoben (Schlussprüfung 1.0, Branch `fix/final-qa`)
-- Super-Admin „Rechnungen“: Hinweise „Pflichtangaben vollständig/fehlen“ und „USt-Satz vom Auftraggeber zu bestätigen“
-  klebten aneinander und direkt auf dem ersten Eingabefeld – jetzt mit regulärem Abstand.
-- Super-Admin „Preismodell“: Der Satz neben dem Standardpreis brach auf dem Handy nicht um (seitliches Scrollen).
-- Chef-Portal „Monatsnachweise“: Die Aktionsknöpfe einer Zeile brechen auf Desktop-Breite um, statt die Tabelle über
-  die Karte hinaus zu verbreitern („Monat wieder öffnen“/„Zurückgeben“ waren bei 1440 px abgeschnitten).
-- Chef-Portal „Verlauf“ eines Monatsnachweises: breiterer Dialog (`Dialog wide`), die Spalte „Begründung“ ist ohne
-  seitliches Scrollen lesbar.
-- Mitarbeiter-App „Monat“: Ein wieder geöffneter Monat hieß im Abschnitt „Einsätze“ noch „Dieser Monat ist
-  eingereicht.“ – jetzt „Dieser Monat ist wieder geöffnet.“
-- Test: `tests/e2e/platform/layout-final-qa.spec.ts`.
+### Behoben
+- Hinweis-Meldungen (Toasts) unten am Bildschirm blockieren keine Tipps mehr auf darunterliegende Schaltflächen;
+  nur das Schließen-Kreuz bleibt antippbar (fiel in der iPhone-Emulation auf).
+- Gesamttest der Korrekturanfrage folgt dem Ablauf „Monat wieder öffnen → annehmen“ (Migration 0017).
+- Schlussprüfung 1.0 (Branch `fix/final-qa`):
+  - Super-Admin „Rechnungen“: Hinweise „Pflichtangaben vollständig/fehlen“ und „USt-Satz vom Auftraggeber zu bestätigen“
+    klebten aneinander und direkt auf dem ersten Eingabefeld – jetzt mit regulärem Abstand.
+  - Super-Admin „Preismodell“: Der Satz neben dem Standardpreis brach auf dem Handy nicht um (seitliches Scrollen).
+  - Chef-Portal „Monatsnachweise“: Die Aktionsknöpfe einer Zeile brechen auf Desktop-Breite um, statt die Tabelle über
+    die Karte hinaus zu verbreitern („Monat wieder öffnen“/„Zurückgeben“ waren bei 1440 px abgeschnitten).
+  - Chef-Portal „Verlauf“ eines Monatsnachweises: breiterer Dialog (`Dialog wide`), die Spalte „Begründung“ ist ohne
+    seitliches Scrollen lesbar.
+  - Mitarbeiter-App „Monat“: Ein wieder geöffneter Monat hieß im Abschnitt „Einsätze“ noch „Dieser Monat ist
+    eingereicht.“ – jetzt „Dieser Monat ist wieder geöffnet.“
+  - Test: `tests/e2e/platform/layout-final-qa.spec.ts`.
 
 ### Sicherheit (QA 2026-10-28)
 - Sicherheitsprüfung release/1.0 (Ergebnis `docs/security.md` Abschnitt 8): Fehlanmeldungen und Reset-Mails
