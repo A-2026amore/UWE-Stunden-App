@@ -37,6 +37,9 @@ describe("invoices (demo)", () => {
     expect(inv.lines[0]).toMatchObject({ quantity: draft.lines[0]!.quantity, unitPriceCents: 500 });
     expect((await w.admin.getPlatformRevenue(previous)).rows.find((r) => r.tenantId === PFLEGE)!.status).toBe("invoiced");
     await expect(w.admin.issueInvoice(PFLEGE, previous)).rejects.toThrow("bereits die Rechnung");
+    // like 0021: no re-opening or waiving while a valid invoice exists
+    await expect(w.admin.setBillingStatus(PFLEGE, previous, "open", "Neu berechnen")).rejects.toThrow("Bitte zuerst stornieren");
+    await expect(w.admin.setBillingStatus(PFLEGE, previous, "waived", "Kulanz")).rejects.toThrow("Bitte zuerst stornieren");
 
     await expect(w.admin.cancelInvoice(inv.id, "kurz")).rejects.toThrow("mind. 5 Zeichen");
     const c = await w.admin.cancelInvoice(inv.id, "Falsche Anschrift");

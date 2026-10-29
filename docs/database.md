@@ -275,3 +275,10 @@ npx vitest run --project db
 Ohne `DATABASE_URL` startet der Test einen Wegwerf-Cluster (`initdb`/`pg_ctl`, als Benutzer
 `postgres`, wenn als root gestartet). Mit `DATABASE_URL` (CI: Service-Container `postgres:16`,
 Superuser) wird je Testdatei eine neue Datenbank angelegt und wieder gelöscht.
+
+## Rechnung schützt den Abrechnungsmonat (0021)
+
+Trigger `billing_periods_invoice_guard`: Solange für Mandant und Monat eine gültige (nicht stornierte) Rechnung
+besteht, lehnt die Datenbank den Wechsel des Abrechnungsmonats auf `open` oder `waived` ab (Fehler 55000 mit
+Rechnungsnummer). `invoiced` → `paid` bleibt möglich. Korrekturweg: Rechnung stornieren (0019), danach Monat
+wieder öffnen oder erlassen.

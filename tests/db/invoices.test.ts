@@ -193,3 +193,21 @@ describe("visibility (RLS)", () => {
     expect(e.code).toBe("42501");
   });
 });
+
+describe("invoiced month guard (0021)", () => {
+  it("a month with a valid invoice cannot be re-opened or waived; after cancellation it can", async () => {
+    const inv = (await db.admin.query("select id, number from public.invoices where tenant_id = $1 and month = '2026-06' and kind = 'invoice' and cancelled_at is null", [B])).rows[0];
+    for (const status of ["open", "waived"]) {
+      const e = await pgError(sa((q) => q.query("select public.platform_set_billing_status($1, '2026-06', $2, 'Korrektur Testmonat')", [B, status]), false));
+      expect(e.code).toBe("55000");
+      expect(e.message).toContain(inv.number);
+    }
+    const frozen = (await db.admin.query("select status, amount_cents from public.billing_periods where tenant_id = $1 and month = '2026-06'", [B])).rows[0];
+    expect(frozen).toEqual({ status: "invoiced", amount_cents: 500 });
+    await sa((q) => q.query("select public.platform_set_billing_status($1, '2026-06', 'paid', 'Zahlung eingegangen')", [B]));
+    await sa((q) => q.query("select public.platform_cancel_invoice($1, 'Monat wird neu berechnet')", [inv.id]));
+    await sa((q) => q.query("select public.platform_set_billing_status($1, '2026-06', 'open', 'Monat wird neu berechnet')", [B]));
+    const p = (await db.admin.query("select status, amount_cents from public.billing_periods where tenant_id = $1 and month = '2026-06'", [B])).rows[0];
+    expect(p).toEqual({ status: "open", amount_cents: null });
+  });
+});

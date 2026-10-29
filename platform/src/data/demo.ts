@@ -2015,6 +2015,11 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         let p = billingPeriod(db, tenantId, month);
         const before = p ? clone(p) : null;
         const frozen = !!p && p.status !== "open" && !!p.snapshot;
+        // like migration 0021: a month with a valid invoice is neither re-opened nor waived
+        const validInvoice = (db.invoices ?? []).find((i) => i.tenantId === tenantId && i.month === month && i.kind === "invoice" && !i.cancelledAt);
+        if (validInvoice && (status === "open" || status === "waived") && p?.status !== status) {
+          throw new Error(`Für diesen Monat gibt es die gültige Rechnung ${validInvoice.number}. Bitte zuerst stornieren, dann den Monat wieder öffnen oder erlassen.`);
+        }
         if (status === "waived" || (status === "open" && frozen)) {
           n = requireReason(n, status === "waived" ? "Bitte einen Grund für den Erlass angeben." : "Bitte einen Grund für das Wiederöffnen angeben.");
         }
