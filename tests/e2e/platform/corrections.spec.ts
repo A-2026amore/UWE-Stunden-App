@@ -26,6 +26,7 @@ const minus15 = (t: string) => {
 const de = (d: string) => `${d.slice(8, 10)}.${d.slice(5, 7)}.${d.slice(0, 4)}`;
 
 test("correction request in an approved month: employee asks, chef accepts one and rejects one", async ({ page }) => {
+  test.slow(); // long flow over employee app and chef portal; WebKit (iPhone emulation) needs more than 30 s
   await loginEmployee(page);
   const [change, remove] = await annaShifts(page);
   const newEnd = minus15(change.end);

@@ -159,6 +159,11 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Tests: 284 Unit-, 209 Datenbank-/API-, 122 Browsertests (Demo-Build und Alt-App, Chromium Desktop und
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
+### Behoben
+- Hinweis-Meldungen (Toasts) unten am Bildschirm blockieren keine Tipps mehr auf darunterliegende Schaltflächen;
+  nur das Schließen-Kreuz bleibt antippbar (fiel in der iPhone-Emulation auf).
+- Gesamttest der Korrekturanfrage folgt dem Ablauf „Monat wieder öffnen → annehmen“ (Migration 0017).
+
 ### Sicherheit (QA 2026-10-28)
 - Sicherheitsprüfung release/1.0 (Ergebnis `docs/security.md` Abschnitt 8): Fehlanmeldungen und Reset-Mails
   werden zusätzlich je E-Mail-Adresse über alle IPs begrenzt (`RATE_LIMIT_LOGIN_PER_EMAIL`, Standard 30;
