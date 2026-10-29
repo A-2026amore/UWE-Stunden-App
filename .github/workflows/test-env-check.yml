@@ -1,8 +1,9 @@
 name: Testumgebung prüfen
 
 # Checks the public test environment after a commit was approved on the server (`stunden-test-freigeben <commit>`,
-# deploy/bootstrap-test.sh). Started by pushing exactly that commit to the branch stunden-test-check
-# (git push origin <commit>:refs/heads/stunden-test-check); manual dispatch only works once the file is on main.
+# deploy/bootstrap-test.sh). Started by a push to the branch stunden-test-check: either exactly the approved commit,
+# or a commit whose file .github/test-env-commit names it (for approved commits that predate this workflow).
+# Manual dispatch only works once the file is on main.
 # Read-only: no secrets, no access to the server, only public HTTPS requests.
 on:
   push:
@@ -29,6 +30,9 @@ jobs:
       - name: Warten, bis der Server den Stand ausgerollt hat
         run: |
           want="$(git rev-parse HEAD)"
+          [ ! -f .github/test-env-commit ] || want="$(tr -d '[:space:]' < .github/test-env-commit)"
+          [[ "$want" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Ungültiger Commit: $want"; exit 1; }
+          echo "Erwarteter Stand: $want"
           for i in $(seq 1 70); do
             body="$(curl -fsS --max-time 10 "$URL/api/health" 2>/dev/null || true)"
             got="$(printf '%s' "$body" | sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p')"
