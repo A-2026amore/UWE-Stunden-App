@@ -45,5 +45,5 @@ Feature-Branches gehen per Draft-PR nach `release/1.0`. Nichts geht ohne Freigab
 2. Testversion auf dem Server starten: `deploy/update-test.sh release/1.0 --seed-test-env` (braucht Serverzugang).
 3. Echter Wiederherstellungstest aus der Storage Box: `docs/backup-bericht-1.0.md`.
 4. Test auf echten Geräten; offene Punkte in `docs/abnahme-1.0.md` Abschnitt 3.
-5. Der Hilfs-Branch `feature/ci-webkit-debug` (nur Fehlersuche für die iPhone-Emulation) kann gelöscht werden; das
-   Löschen war aus dieser Umgebung nicht erlaubt.
+5. Die Hilfs-Branches `feature/ci-webkit-debug`, `-debug2` und `-debug3` (nur Fehlersuche für die iPhone-Emulation)
+   können gelöscht werden; das Löschen war aus dieser Umgebung nicht erlaubt.
