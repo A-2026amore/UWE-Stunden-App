@@ -26,7 +26,7 @@ beforeAll(async () => {
   writeFileSync(join(dir, "assets", "employee-C9h7_Rzi.js"), "console.log(1);");
   writeFileSync(join(dir, ".env"), "SECRET=1");
   symlinkSync(join(outside, "secret.txt"), join(dir, "link.txt"));
-  t = await startTestServer({ STATIC_DIR: dir });
+  t = await startTestServer({ STATIC_DIR: dir, APP_COMMIT: "3a0f587" });
 });
 
 afterAll(async () => {
@@ -80,7 +80,7 @@ describe("STATIC_DIR", () => {
   it("/api stays the API with its own headers", async () => {
     const r = await get("/api/health");
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ ok: true });
+    expect(await r.json()).toEqual({ ok: true, commit: "3a0f587" }); // build commit for deployment checks
     expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
     expect((await get("/api/gibt-es-nicht")).status).toBe(404);
   });

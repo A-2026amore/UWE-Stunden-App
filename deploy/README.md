@@ -141,6 +141,37 @@ Zusätzlich (prüfbar, verschlüsselt, mit Wiederherstellungsprobe):
 Einrichtung, Zeitplan, restic-Übergabe und die Notfall-Wiederherstellung Schritt für Schritt:
 [`docs/betrieb.md`](../docs/betrieb.md), Abschnitt 5.1.
 
+## Testumgebung automatisch bereitstellen (Pull-Verfahren)
+
+Für die Testumgebung gibt es einen Weg ohne Server-Sitzung: Der Server holt sich den Stand selbst.
+
+**Einmalig auf dem Server (als root, z. B. über die netcup-Konsole oder SSH):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/A-2026amore/UWE-Stunden-App/stunden-test-deploy/deploy/bootstrap-test.sh | bash
+```
+
+`deploy/bootstrap-test.sh` prüft Docker, das Netz `proxy` und den zentralen Caddy, klont das Repository nach
+`/srv/stunden-test`, legt `deploy/.env` mit Zufallsgeheimnissen (Rechte 600) und eine Backup-Passphrase in
+`/root/.stunden-test-backup-pass` an, ergänzt im Caddyfile nur den Block für `stunden-test.appzentrale24.de`
+(Sicherungskopie, `caddy validate`, `caddy reload`; bei Fehler wird die alte Datei zurückgespielt) und richtet den
+systemd-Timer `stunden-test-deploy.timer` ein. Es werden keine Ports geöffnet und keine Zugangsdaten zu GitHub
+benötigt (öffentliches Repository, nur Lesen).
+
+**Danach:** Alle 2 Minuten prüft `deploy/pull-deploy.sh`, ob der Branch `stunden-test-deploy` einen neuen Stand hat.
+Wenn ja: Sicherung, Bauen, Migrationen, Neustart, Healthcheck (`deploy/update-test.sh`), einmalig Testzugänge in
+`/root/stundenwerk-testzugaenge.txt` (nur root lesbar, nie im Journal), dann Sicherung mit
+Wiederherstellungsprobe. Liegt `/root/.stunden-test-restic.env` vor (Variablen `RESTIC_REPOSITORY`,
+`RESTIC_PASSWORD_FILE` für das vorhandene Storage-Box-Repository), geht das Archiv per restic auf die Hetzner
+Storage Box und die Probe nutzt die von dort zurückgeholte Kopie. Ergebnisse: `/var/lib/stunden-test/status.txt`
+und `journalctl -u stunden-test-deploy`.
+
+Freigegeben wird ein Stand, indem der Branch `stunden-test-deploy` auf ihn gesetzt wird. Der GitHub-Workflow
+„Testumgebung prüfen“ (`.github/workflows/test-env-check.yml`) wartet, bis `/api/health` den neuen Commit meldet, und
+prüft dann HTTPS, Sicherheits-Header, geschützte Schnittstellen und die Anmeldeseiten in Chromium und WebKit.
+
+Abschalten: `systemctl disable --now stunden-test-deploy.timer` (die Container laufen weiter).
+
 ## Testumgebung `stunden-test.appzentrale24.de` aktualisieren (Server-Sitzung)
 
 **Kurzform (ein Befehl):** `deploy/update-test.sh release/1.0 [--seed-test-env]` führt die Schritte unten aus

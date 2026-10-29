@@ -185,7 +185,8 @@ export function createApp(deps: AppDeps) {
   // ---------------------------------------------------------------- health & public
   router.add("GET", "/api/health", async () => {
     await app.asAnon((q) => q.query("select 1"));
-    return { status: 200, body: { ok: true } };
+    // The build commit (public repository) lets a deployment check confirm which version is live.
+    return { status: 200, body: config.system.commit ? { ok: true, commit: config.system.commit } : { ok: true } };
   });
 
   router.add("GET", "/api/public/tenants/:slug/branding", async (ctx) => {

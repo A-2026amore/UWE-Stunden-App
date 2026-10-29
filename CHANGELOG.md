@@ -5,6 +5,9 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Testumgebung per Pull-Verfahren: `deploy/bootstrap-test.sh` (einmalig auf dem Server), `deploy/pull-deploy.sh`
+  (systemd-Timer holt den Branch `stunden-test-deploy`), Workflow „Testumgebung prüfen“ mit
+  `scripts/check-test-env.mjs`; `/api/health` meldet den Build-Commit. Anleitung `deploy/README.md`.
 - Vertragsende (Branch `feature/mandanten-export-loeschung`, Migration `0020_tenant_offboarding.sql`, Doku
   `docs/betrieb.md` 6.1b – Fristen rechtlich prüfen):
   - Betreiberbefehl `cli.ts export-tenant <kurzname> --out <verzeichnis>`: Gesamtexport eines Mandanten in jedem
