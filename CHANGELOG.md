@@ -14,7 +14,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   ein vollständiger Commit-SHA wird immer als genau dieser Commit ausgecheckt (nie als gleichnamiger Branch), vor
   jedem Build geprüft. Caddy wird nicht automatisch verändert. Compose-Dienst `app` heißt jetzt `stundenwerk-app`
   (kein allgemeiner DNS-Alias `app` im gemeinsamen Netz `proxy`). `# syntax`-Zeile im Dockerfile entfernt (kein
-  ungepinntes Build-Frontend). Bootstrap verlangt `gpg`; restic-Datei nur mit root/600.
+  ungepinntes Build-Frontend). Bootstrap verlangt `gpg`; restic-Datei nur mit root/600. Der Timer startet über
+  `/usr/local/lib/stunden-test/deploy-approved` (nicht aus dem Repository), das den Checkout vor jedem Lauf auf den
+  freigegebenen Commit setzt; `UMask=0022`, damit das Image die Dateien lesen kann. Datenbank-Host in den
+  Verbindungs-URLs ist der eindeutige Containername `stunden-<STAGE>-db` statt des Alias `db`.
 - Vertragsende (Branch `feature/mandanten-export-loeschung`, Migration `0020_tenant_offboarding.sql`, Doku
   `docs/betrieb.md` 6.1b – Fristen rechtlich prüfen):
   - Betreiberbefehl `cli.ts export-tenant <kurzname> --out <verzeichnis>`: Gesamtexport eines Mandanten in jedem

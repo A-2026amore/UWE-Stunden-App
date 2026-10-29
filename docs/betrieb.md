@@ -123,7 +123,7 @@ dem Server mit einem echten Archiv durchgespielt werden.
 
 **Echte Wiederherstellung (Notfall, nur nach Freigabe).** Die Schritte 4–5 entsprechen dem, was die Probe automatisch tut; der Ablauf als Ganzes ist auf dem Server noch **nicht** erprobt.
 
-1. Ruhe herstellen: `$C stop app` (keine neuen Schreibzugriffe). Letztes **geprüftes** Archiv wählen.
+1. Ruhe herstellen: `$C stop stundenwerk-app` (keine neuen Schreibzugriffe). Letztes **geprüftes** Archiv wählen.
 2. Erst die Probe laufen lassen (oben) – nur ein Archiv mit „erfolgreich geprüft“ verwenden.
 3. Neue, leere Datenbank-Umgebung: vorhandenes Volume **nicht löschen**, sondern z. B. mit anderem `STAGE`
    (`prod-restore`) neu aufsetzen: `$C up -d db`.

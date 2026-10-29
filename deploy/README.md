@@ -96,6 +96,10 @@ und sind für eine öffentlich erreichbare Umgebung nicht gedacht. Nur bewusst u
 
 ## Aktualisieren
 
+Testumgebung mit Timer (`deploy/bootstrap-test.sh`): **nicht** von Hand `git pull`/`git checkout`, sondern nur
+`stunden-test-freigeben <commit>`; der Timer setzt den Checkout sonst ohnehin auf den freigegebenen Commit zurück.
+Ohne Timer (z. B. später Produktion):
+
 ```bash
 cd /srv/stunden-test && git pull
 $C build
@@ -187,6 +191,7 @@ Abschalten: `systemctl disable --now stunden-test-deploy.timer` (die Container l
 (Sicherung, Stand holen, Bauen mit `APP_COMMIT`, Migrationen, Neustart, Healthcheck, optional Testzugänge). Es bricht
 ab, wenn `deploy/.env` nicht `STAGE=test` enthält oder das Arbeitsverzeichnis lokale Änderungen hat.
 
+Nur ohne eingerichteten Timer; mit Timer gilt ausschließlich `stunden-test-freigeben <commit>`.
 Nur die Container `stunden-test-*` werden angefasst; andere Dienste, der zentrale Caddy und das zentrale Backup
 bleiben unverändert. Ausschließlich erfundene Testfirmen, keine echten Mitarbeiterdaten.
 

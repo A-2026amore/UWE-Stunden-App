@@ -122,6 +122,24 @@ EOF
 chmod 755 /usr/local/sbin/stunden-test-freigeben
 
 say "Bereitstellungsdienst (systemd)"
+# Entry point of the timer, written here and never taken from the repository: it puts the working tree on the
+# approved commit before any script from the repository runs (also after a manual git pull/checkout).
+install -d -m 755 /usr/local/lib/stunden-test
+cat > /usr/local/lib/stunden-test/deploy-approved <<'EOF'
+#!/usr/bin/env bash
+# Runs deploy/pull-deploy.sh only from the approved commit (installed by deploy/bootstrap-test.sh).
+set -euo pipefail
+T="$({ tr -d '[:space:]' < /etc/stunden-test/approved-commit; } 2>/dev/null || true)"
+[[ "$T" =~ ^[0-9a-f]{40}$ ]] || { echo "Kein gültiger freigegebener Commit – nichts zu tun."; exit 0; }
+cd /srv/stunden-test
+if [ "$(git rev-parse HEAD)" != "$T" ]; then
+  git fetch --quiet origin
+  git -c advice.detachedHead=false checkout --quiet --detach "$T^{commit}"
+fi
+[ "$(git rev-parse HEAD)" = "$T" ] || { echo "Ausgecheckter Stand ist nicht $T." >&2; exit 1; }
+exec /bin/bash deploy/pull-deploy.sh
+EOF
+chmod 755 /usr/local/lib/stunden-test/deploy-approved
 cat > /etc/systemd/system/stunden-test-deploy.service <<EOF
 [Unit]
 Description=Stundenwerk Testumgebung: freigegebenen Commit bereitstellen
@@ -132,10 +150,11 @@ Wants=network-online.target
 Type=oneshot
 WorkingDirectory=$DIR
 Environment=BACKUP_PASSPHRASE_FILE=$PASS_FILE
-ExecStart=/bin/bash $DIR/deploy/pull-deploy.sh
+ExecStart=/usr/local/lib/stunden-test/deploy-approved
 TimeoutStartSec=1800
 NoNewPrivileges=yes
-UMask=0077
+# 022: checked-out files must stay readable for the non-root user in the image; secrets set their own umask.
+UMask=0022
 EOF
 cat > /etc/systemd/system/stunden-test-deploy.timer <<'EOF'
 [Unit]
