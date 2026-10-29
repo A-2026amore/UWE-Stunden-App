@@ -141,34 +141,41 @@ Zusätzlich (prüfbar, verschlüsselt, mit Wiederherstellungsprobe):
 Einrichtung, Zeitplan, restic-Übergabe und die Notfall-Wiederherstellung Schritt für Schritt:
 [`docs/betrieb.md`](../docs/betrieb.md), Abschnitt 5.1.
 
-## Testumgebung automatisch bereitstellen (Pull-Verfahren)
+## Testumgebung bereitstellen (Pull-Verfahren mit Freigabe)
 
-Für die Testumgebung gibt es einen Weg ohne Server-Sitzung: Der Server holt sich den Stand selbst.
+Der Server holt sich den Stand selbst, führt aber **nur einen ausdrücklich freigegebenen Commit** aus. Ein Push auf
+GitHub allein startet auf dem Server nichts (sonst hätte jeder mit Schreibrechten am Repository root auf dem Server).
 
-**Einmalig auf dem Server (als root, z. B. über die netcup-Konsole oder SSH):**
+**Einmalig auf dem Server (als root).** Nie `curl … | bash` von einer Branch-URL, sondern fest auf einen Commit:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/A-2026amore/UWE-Stunden-App/stunden-test-deploy/deploy/bootstrap-test.sh | bash
+C=<40-stelliger Commit>
+curl -fsSL -o /root/bootstrap-test.sh "https://raw.githubusercontent.com/A-2026amore/UWE-Stunden-App/$C/deploy/bootstrap-test.sh"
+sha256sum /root/bootstrap-test.sh      # mit der mitgeteilten Prüfsumme vergleichen
+less /root/bootstrap-test.sh           # lesen
+bash /root/bootstrap-test.sh "$C"      # bei mehreren Caddy-Containern: CADDY_CONTAINER=<name> bash ...
 ```
 
-`deploy/bootstrap-test.sh` prüft Docker, das Netz `proxy` und den zentralen Caddy, klont das Repository nach
-`/srv/stunden-test`, legt `deploy/.env` mit Zufallsgeheimnissen (Rechte 600) und eine Backup-Passphrase in
-`/root/.stunden-test-backup-pass` an, ergänzt im Caddyfile nur den Block für `stunden-test.appzentrale24.de`
-(Sicherungskopie, `caddy validate`, `caddy reload`; bei Fehler wird die alte Datei zurückgespielt) und richtet den
-systemd-Timer `stunden-test-deploy.timer` ein. Es werden keine Ports geöffnet und keine Zugangsdaten zu GitHub
-benötigt (öffentliches Repository, nur Lesen).
+`deploy/bootstrap-test.sh` prüft Docker, das Netz `proxy` und den zentralen Caddy (nur lesend), klont das Repository
+nach `/srv/stunden-test` und checkt **genau** diesen Commit aus, legt `deploy/.env` mit Zufallsgeheimnissen (Rechte 600)
+und eine Backup-Passphrase in `/root/.stunden-test-backup-pass` an, schreibt die Freigabe nach
+`/etc/stunden-test/approved-commit`, installiert `/usr/local/sbin/stunden-test-freigeben` und richtet als letzten Schritt
+den systemd-Timer `stunden-test-deploy.timer` ein. **Caddy wird nicht verändert**; das Skript gibt den Site-Block und
+den sicheren Ablauf (Sicherung, `caddy validate`, erst dann `caddy reload`) aus. Es werden keine Ports geöffnet und keine
+Zugangsdaten zu GitHub benötigt.
 
-**Danach:** Alle 2 Minuten prüft `deploy/pull-deploy.sh`, ob der Branch `stunden-test-deploy` einen neuen Stand hat.
-Wenn ja: Sicherung, Bauen, Migrationen, Neustart, Healthcheck (`deploy/update-test.sh`), einmalig Testzugänge in
-`/root/stundenwerk-testzugaenge.txt` (nur root lesbar, nie im Journal), dann Sicherung mit
-Wiederherstellungsprobe. Liegt `/root/.stunden-test-restic.env` vor (Variablen `RESTIC_REPOSITORY`,
-`RESTIC_PASSWORD_FILE` für das vorhandene Storage-Box-Repository), geht das Archiv per restic auf die Hetzner
-Storage Box und die Probe nutzt die von dort zurückgeholte Kopie. Ergebnisse: `/var/lib/stunden-test/status.txt`
-und `journalctl -u stunden-test-deploy`.
+**Danach:** Alle 2 Minuten prüft `deploy/pull-deploy.sh`, ob der freigegebene Commit läuft. Wenn nein: Sicherung,
+Bauen, Migrationen, Neustart, Healthcheck (`deploy/update-test.sh <commit>`), einmalig Testzugänge in
+`/root/stundenwerk-testzugaenge.txt` (nur root lesbar, nie im Journal), dann Sicherung mit Wiederherstellungsprobe.
+Nach drei Fehlversuchen mit demselben Commit wird bis zur nächsten Freigabe nicht erneut gebaut. Ein neuerer Stand auf
+dem Branch `stunden-test-deploy` wird nur im Status gemeldet. Liegt `/root/.stunden-test-restic.env` vor (Variablen
+`RESTIC_REPOSITORY`, `RESTIC_PASSWORD_FILE`), geht das Archiv per restic auf die Hetzner Storage Box und die Probe
+nutzt die von dort zurückgeholte Kopie. Ergebnisse: `stunden-test-freigeben --status`,
+`/var/lib/stunden-test/status.txt` und `journalctl -u stunden-test-deploy`.
 
-Freigegeben wird ein Stand, indem der Branch `stunden-test-deploy` auf ihn gesetzt wird. Der GitHub-Workflow
-„Testumgebung prüfen“ (`.github/workflows/test-env-check.yml`) wartet, bis `/api/health` den neuen Commit meldet, und
-prüft dann HTTPS, Sicherheits-Header, geschützte Schnittstellen und die Anmeldeseiten in Chromium und WebKit.
+**Neue Version freigeben:** Commit auf GitHub ansehen, dann auf dem Server `stunden-test-freigeben <commit>`. Der
+GitHub-Workflow „Testumgebung prüfen“ (`.github/workflows/test-env-check.yml`) prüft danach HTTPS,
+Sicherheits-Header, geschützte Schnittstellen und die Anmeldeseiten in Chromium und WebKit.
 
 Abschalten: `systemctl disable --now stunden-test-deploy.timer` (die Container laufen weiter).
 
