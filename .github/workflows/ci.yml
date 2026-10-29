@@ -70,7 +70,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
+      - run: npx playwright test tests/e2e/platform/corrections.spec.ts --project=mobile-iphone --retries 0
+      - if: failure()
+        run: find test-results -name error-context.md -exec cat {} \;
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

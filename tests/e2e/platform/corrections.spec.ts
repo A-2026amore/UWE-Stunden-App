@@ -110,7 +110,17 @@ test("correction request in an approved month: employee asks, chef accepts one a
   await confirmDialog(page, "Freigeben");
   await expect(row).toContainText("Freigegeben");
   await expect(row.getByRole("button", { name: "Monat von Anna Beispiel wieder öffnen" })).toBeVisible();
-  await row.getByRole("button", { name: "Verlauf des Nachweises von Anna Beispiel" }).click();
+  const vb = row.getByRole("button", { name: "Verlauf des Nachweises von Anna Beispiel" });
+  for (let i = 0; i < 5; i++) {
+    console.log("DEBUG", i, JSON.stringify(await vb.evaluate((el) => {
+      const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+      const chain: string[] = []; let n: Element | null = el;
+      while (n) { const c = getComputedStyle(n); chain.push(`${n.tagName}.${n.className} d=${c.display} v=${c.visibility} o=${c.opacity} t=${c.transform} a=${c.animationName}/${c.animationPlayState} ov=${c.overflow} h=${(n as HTMLElement).offsetHeight} w=${(n as HTMLElement).offsetWidth}`); n = n.parentElement; }
+      return { r: [r.x, r.y, r.width, r.height], vis: cs.visibility, chain, anims: document.getAnimations().map((a) => `${(a as CSSAnimation).animationName ?? a.constructor.name}:${a.playState}:${(a.effect as KeyframeEffect | null)?.target?.className}`) };
+    })));
+    await page.waitForTimeout(500);
+  }
+  await vb.click();
   const events = page.getByRole("dialog", { name: /^Verlauf – Anna Beispiel/ });
   await expect(events).toContainText("Wieder geöffnet");
   await expect(events).toContainText("Korrekturanfrage Fahrtenbuch");
