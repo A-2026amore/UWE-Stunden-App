@@ -1,7 +1,7 @@
 # Arbeitsstand Stunden-App 1.0 (Übergabe zwischen Sitzungen)
 
 Diese Datei hält fest, wo die Entwicklung steht, damit eine neue Sitzung nahtlos weitermachen kann.
-Stand: 28.10.2026, abends.
+Stand: 29.10.2026, 01:00.
 
 ## Branches
 | Branch | Zweck | Basis |
@@ -40,6 +40,10 @@ Feature-Branches gehen per Draft-PR nach `release/1.0`. Nichts geht ohne Freigab
   erlaubter Domain und ggf. SSH-Schlüssel als Geheimnis. Bis dahin: Entwicklung und Tests nur hier (lokales PostgreSQL).
 
 ## Nächste Schritte
-1. Gesamttest release/1.0 (65bc737): Unit 339, DB/Server 285, E2E Demo 142, Fullstack 38 – grün (lokal, Chromium/Android).
-2. Branches `feature/chef-admin-feinschliff` und `feature/sicherheit-dsgvo-backup` fertigstellen, zusammenführen, Gesamttest.
-3. Draft-PR `release/1.0` → `develop`, Abnahmebericht mit offenen Punkten vor dem Verkauf.
+1. Alle Feature-Branches, Design (`feature/design-stundenwerk`) und Schlussprüfung (`fix/final-qa`) sind in `release/1.0`;
+   zusätzlich Migration 0021 (Monat mit gültiger Rechnung nur nach Storno änderbar). Ergebnisse: `docs/abnahme-1.0.md`.
+2. Testversion auf dem Server starten: `deploy/update-test.sh release/1.0 --seed-test-env` (braucht Serverzugang).
+3. Echter Wiederherstellungstest aus der Storage Box: `docs/backup-bericht-1.0.md`.
+4. Test auf echten Geräten; offene Punkte in `docs/abnahme-1.0.md` Abschnitt 3.
+5. Der Hilfs-Branch `feature/ci-webkit-debug` (nur Fehlersuche für die iPhone-Emulation) kann gelöscht werden; das
+   Löschen war aus dieser Umgebung nicht erlaubt.
