@@ -25,7 +25,7 @@ Ausführlicher Prüfbericht der unabhängigen Schlussprüfung: `/mnt/project-fil
 | Datenbank + Server (inkl. Mandantentrennung, Backup/Restore lokal) | 393/393 |
 | Browser Demo (Desktop-Chromium + Android-Emulation) | 170 bestanden, 2 übersprungen |
 | Gesamttest API + PostgreSQL + Browser | 44/44 |
-| iPhone-Emulation (WebKit, nur in der CI) | der zuletzt hängende Test lief nach der Korrektur 3× grün |
+| iPhone-Emulation (WebKit, nur in der CI) | läuft mit „Bewegung reduzieren“; vorher blockierten Animationen dort zeitweise Klicks (Dialoge ohne Einblend-Animation korrigiert). Auf echtem iPhone prüfen |
 
 Nicht getestet: echte iPhones/Android-Geräte, Windows-PC mit echtem Browser, Betrieb auf dem netcup-Server,
 Wiederherstellung eines echten Archivs aus der Hetzner Storage Box. Zwei Tests waren unter hoher Rechnerlast je einmal
