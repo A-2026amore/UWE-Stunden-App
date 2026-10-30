@@ -30,6 +30,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Testumgebung per Pull-Verfahren: `deploy/bootstrap-test.sh` (einmalig auf dem Server), `deploy/pull-deploy.sh`
   (systemd-Timer holt den Branch `stunden-test-deploy`), Workflow „Testumgebung prüfen“ mit
   `scripts/check-test-env.mjs`; `/api/health` meldet den Build-Commit. Anleitung `deploy/README.md`.
+- Betrieb ohne GitHub (`docs/betrieb-ohne-github.md`): signierte Release-Pakete (`deploy/release-paket.sh`,
+  Hochladen vom PC mit `deploy/windows/paket-hochladen.ps1`), einmalige Umstellung des Servers auf ein eigenes
+  Repository (`deploy/umstellen-ohne-github.sh`, installiert `stunden-test-paket`; `stunden-test-freigeben` gibt nur
+  noch Commits aus geprüften Paketen frei), Tests ohne GitHub Actions (`deploy/pruefen.sh`) und Online-Prüfung der
+  Testumgebung ohne GitHub (`deploy/test-env-check.sh`).
+- Storage Box für die Testsicherungen: `deploy/storagebox-einrichten.sh` (SSH-Schlüssel für den Sub-Account,
+  restic-Repository, Probe mit Hochladen und Zurückholen).
 
 ### Sicherheit
 - Testumgebung: Der Server stellt nur den mit `stunden-test-freigeben <commit>` freigegebenen Commit bereit;
