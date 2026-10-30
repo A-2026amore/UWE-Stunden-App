@@ -41,7 +41,7 @@ for p in / /app/ /chef/ /admin/ /app/manifest.webmanifest; do
   [ "$(code "$URL$p")" = 200 ] || fail "$p liefert nicht 200"
 done
 [ "$(curl -fsS "$URL/api/auth/session")" = "null" ] || fail "/api/auth/session ohne Sitzung nicht null"
-[ "$(code "$URL/api/employees/00000000-0000-0000-0000-000000000000/time-entries")" = 401 ] || fail "geschützte Daten nicht 401"
+[ "$(code "$URL/api/employees/3f6c2a1e-8b4d-4c7a-9e21-5d0b7f9a4c13/time-entries?month=2026-10")" = 401 ] || fail "geschützte Daten nicht 401"
 [ "$(code -X POST -H 'Origin: https://angreifer.example' -H 'Content-Type: application/json' \
       --data '{"email":"x@example.com","password":"x"}' "$URL/api/auth/login")" = 403 ] || fail "fremde Herkunft nicht abgewiesen"
 echo "OK: HTTPS, Header, Schnittstellen"
