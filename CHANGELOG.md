@@ -5,6 +5,19 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Mitarbeiter-App leichter installieren (ohne App-Store, 30.10.2026):
+  - Startseite: deutlicher Hinweis „Zeiterfassung als App aufs Handy“ mit bebilderten, nummerierten Schritten
+    (Android: Knopf „App installieren“, sonst Browser-Menü; iPhone: Safari-Schritte inkl. „•••“-Menü neuerer
+    iPhones). „Später erinnern“ blendet ihn eine Woche aus statt für immer; nach erfolgreicher Installation
+    (Android meldet das) verschwindet er.
+  - Anmeldeseite auf Handys: „Tipp: Erst als App speichern, dann anmelden“ (das iPhone hält die Anmeldung der
+    installierten App getrennt von Safari).
+  - Erkennt Browser in anderen Apps (Facebook, Instagram, Google-App, Android-WebView) und Chrome/Firefox/Edge auf
+    dem iPhone: erklärt „In Safari/Chrome öffnen“ und bietet „Link kopieren“.
+  - Nach „Einladung annehmen“: „Letzter Schritt: die App aufs Handy holen“ mit Knopf „Weiter zur Mitarbeiter-App“.
+    Einladungs-E-Mail und WhatsApp-Text erklären denselben Weg; die E-Mail nennt zusätzlich die App-Adresse.
+  - Chef-Portal → Mitarbeiter → „Anleitung mit QR-Code“: druckbare Kurzanleitung (eine A4-Seite) mit QR-Code zur
+    Mitarbeiter-App und den Schritten für iPhone und Android, auch als PDF speicherbar.
 - Preis und Aktionscodes (Entscheidung 30.10.2026, Migration `0022_promo_codes_gross_prices.sql`, Doku
   `docs/preismodell.md`):
   - Preise sind jetzt **brutto**: 5,00 € inkl. USt. je abrechenbarem Mitarbeiter und Monat. Rechnungen weisen die

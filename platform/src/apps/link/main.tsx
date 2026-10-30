@@ -44,6 +44,21 @@ function SignInLinks() {
   );
 }
 
+/**
+ * After accepting an invitation: straight on to the employee app, which shows
+ * how to put it on the home screen (installing works only from the app's own
+ * address – not from this page).
+ */
+function NextStepApp() {
+  return (
+    <div class="stack-sm" data-testid="invitation-next-step">
+      <h2 class="h3 mb-0">Letzter Schritt: die App aufs Handy holen</h2>
+      <p class="small mb-0">Tippe auf den Knopf. Die Zeiterfassung zeigt dir dann genau, wie du sie als Symbol auf deinen Startbildschirm legst – kostenlos, ohne App-Store.</p>
+      <LinkButton href="../app/" variant="primary" icon="clock">Weiter zur Mitarbeiter-App</LinkButton>
+    </div>
+  );
+}
+
 function Shell({ title, children }: { title: string; children: ComponentChildren }) {
   return (
     <AuthLayout area="link">
@@ -139,7 +154,8 @@ function InvitePage({ token }: { token: string | null }) {
         <Alert tone="success" live title={result.existingAccount ? "Einladung verknüpft" : "Einladung angenommen"}>
           <p data-testid="invitation-result">{result.message}</p>
         </Alert>
-        <SignInLinks />
+        <NextStepApp />
+        <LinkButton href="../chef/" icon="building">Ich bin Chef: zum Chef-Portal</LinkButton>
       </div>
     );
   }

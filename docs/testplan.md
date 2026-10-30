@@ -132,6 +132,8 @@ Android-Gerät (Chrome **und** installierte PWA) prüfen, mit Testmitarbeiter un
 
 1. **Installation als PWA** (Teilen → Zum Home-Bildschirm / Chrome „App installieren“): Start, Icon, Titel. Auf iOS hat die
    Home-Bildschirm-App einen **eigenen Speicher** – Login und Daten aus Safari sind dort nicht vorhanden (Hinweis in der App prüfen).
+   Dazu: Installationshinweise auf Anmelde- und Startseite Schritt für Schritt nachvollziehen; ausgedruckte Kurzanleitung
+   (Chef-Portal → Mitarbeiter → „Anleitung mit QR-Code“) mit der echten Handykamera scannen.
 2. **Einladungslink aus WhatsApp öffnen** (In-App-Browser von WhatsApp vs. Safari/Chrome), Login mit PIN, Sitzung nach App-Neustart.
 3. **Datums-/Zeit-Picker** (iOS-Räder, Android-Dialoge), Zahlentastatur für PIN und Pause, Dezimal-Komma im Arbeitszeitkonto.
 4. **PDF per WhatsApp / E-Mail** über das Teilen-Menü (`navigator.share` mit Datei): Datei kommt als `.pdf`-Dokument an,
