@@ -5,6 +5,15 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Preis und Aktionscodes (Entscheidung 30.10.2026, Migration `0022_promo_codes_gross_prices.sql`, Doku
+  `docs/preismodell.md`):
+  - Preise sind jetzt **brutto**: 5,00 € inkl. USt. je abrechenbarem Mitarbeiter und Monat. Rechnungen weisen die
+    enthaltene USt. aus (netto = brutto − USt.); bereits erzeugte Rechnungen bleiben unverändert.
+  - Keine kostenlosen Konten mehr für neue Kunden: „Kostenlosen Testkunden anlegen“, die Pilot-Lizenz und
+    „Kostenloses Konto“ sind für neue Kunden entfernt (bestehende bleiben).
+  - Aktionscodes: Super-Admin legt Codes mit 1–100 % Nachlass an (optional Höchstzahl, „einlösbar bis“), der
+    Inhaber löst im Chef-Portal ein. Der Rabatt läuft, bis der Super-Admin ihn je Kunde oder für den ganzen Code
+    beendet; der Monat des Beendens bleibt rabattiert. Protokolliert, gegen Raten gebremst (10 Versuche/15 Min.).
 - Testumgebung per Pull-Verfahren: `deploy/bootstrap-test.sh` (einmalig auf dem Server), `deploy/pull-deploy.sh`
   (systemd-Timer holt den Branch `stunden-test-deploy`), Workflow „Testumgebung prüfen“ mit
   `scripts/check-test-env.mjs`; `/api/health` meldet den Build-Commit. Anleitung `deploy/README.md`.

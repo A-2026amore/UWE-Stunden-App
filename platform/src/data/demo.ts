@@ -23,12 +23,12 @@
  */
 import type {
   AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingStatus, Branding, CompanyContact, CorrectionRequest,
-  Employee, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, Tenant,
+  Employee, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, PromoCode, PromoRedemption, Tenant,
   StatementEvent, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import {
   DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
-  tenantBlockFor, type TenantStatusPeriod,
+  promoFor, tenantBlockFor, type PromoPeriod, type TenantStatusPeriod,
   type StatusPeriod,
 } from "../core/billing";
 import { activeShifts, addDays, findOverlapAcrossDays, grossMinutes, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
@@ -41,7 +41,7 @@ import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validat
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvoiceApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
+  type BillingApi, type InvoiceApi, type PromoApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
   type Session, type SystemOverview, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
@@ -184,10 +184,13 @@ interface DemoDb {
   invoiceSettings?: Omit<InvoiceSettings, "missing">;
   invoiceCounters?: Record<string, number>;
   invoices?: Invoice[];
+  /** Added with promo codes (0022). */
+  promoCodes?: Array<Omit<PromoCode, "redemptionCount" | "activeCount" | "redemptions">>;
+  promoRedemptions?: Array<Omit<PromoRedemption, "code" | "tenantName">>;
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi {
+export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi {
   /**
    * Demo only: current 6-digit code of the account that is signing in
    * (second step) or signed in – so 2FA can be tried without an app.
@@ -849,12 +852,28 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     }
     const lic = db.licenses.find((l) => l.tenantId === tenantId) ?? null;
     const block = tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === tenantId), month);
-    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block);
+    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block, promoOf(db, tenantId, month));
     const lines = billingLines(db, tenantId, month);
     return {
       month, status: "open", final: false, condition, plan: lic?.plan ?? null, unitPriceCents,
       billableCount: lines.length, amountCents: billingAmount(lines.length, unitPriceCents), note: p?.note ?? null, closedAt: null, lines,
     };
+  }
+  // ---- promo codes (like migration 0022)
+  function promoOf(db: DemoDb, tenantId: UUID, month: ISOMonth): PromoPeriod | null {
+    const periods = (db.promoRedemptions ?? []).filter((r) => r.tenantId === tenantId).map((r) => ({
+      code: db.promoCodes?.find((c) => c.id === r.promoCodeId)?.code ?? "", discountPercent: r.discountPercent, from: r.redeemedAt, to: r.endedAt,
+    }));
+    return promoFor(periods, month);
+  }
+  function redemptionOut(db: DemoDb, r: NonNullable<DemoDb["promoRedemptions"]>[number], withTenant: boolean): PromoRedemption {
+    return { ...r, code: db.promoCodes?.find((c) => c.id === r.promoCodeId)?.code ?? "",
+      tenantName: withTenant ? db.tenants.find((t) => t.id === r.tenantId)?.name ?? null : null };
+  }
+  function promoCodeOut(db: DemoDb, c: NonNullable<DemoDb["promoCodes"]>[number]): PromoCode {
+    const rs = (db.promoRedemptions ?? []).filter((r) => r.promoCodeId === c.id);
+    return { ...c, redemptionCount: rs.length, activeCount: rs.filter((r) => !r.endedAt).length,
+      redemptions: rs.slice().sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt)).map((r) => redemptionOut(db, r, true)) };
   }
   function invoiceSettingsOf(db: DemoDb): InvoiceSettings {
     const st = db.invoiceSettings!;
@@ -869,7 +888,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     const today = localISODate(new Date());
     const missing = [...st.missing];
     if (!t.contact.street.trim() || !t.contact.postalCode.trim() || !t.contact.city.trim()) missing.push("Anschrift des Kunden (Firmenprofil)");
-    const lines = [{ description: `Zeiterfassung – abrechenbare Mitarbeitende ${month.slice(5, 7)}/${month.slice(0, 4)}${m.condition === "special" ? " (Sonderpreis)" : ""}`,
+    const promo = m.condition === "promo" ? promoOf(db, tenantId, month) : null;
+    const label = m.condition === "special" ? " (Sonderpreis)" : promo ? ` (Aktionscode ${promo.code}, −${promo.discountPercent} %)` : "";
+    const lines = [{ description: `Zeiterfassung – abrechenbare Mitarbeitende ${month.slice(5, 7)}/${month.slice(0, 4)}${label}`,
       quantity: m.billableCount, unitPriceCents: m.unitPriceCents, amountCents: m.amountCents }];
     const totals = invoiceTotals(lines, st.vatRatePercent);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1777,7 +1798,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         assertPlatform(s);
         return db.audit
           .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant"
-            || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings")
+            || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings"
+            || e.entity === "promo_code" || e.entity === "promo_redemption")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, limit);
       });
@@ -1958,6 +1980,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         };
         const block = tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === tenantId), month);
         result.tenantBlock = m.condition.startsWith("tenant_") && block ? { status: block.status, since: block.since } : null;
+        const promo = m.condition === "promo" ? promoOf(db, tenantId, month) : null;
+        result.promo = promo ? { code: promo.code, discountPercent: promo.discountPercent } : null;
         return result;
       });
     },
@@ -1979,8 +2003,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
             const m = billingMonth(db, t.id, month);
             // Numbers only – never names or billable persons.
             const block = m.condition.startsWith("tenant_") ? tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === t.id), month) : null;
+            const promo = m.condition === "promo" ? promoOf(db, t.id, month) : null;
             return { ...summaryOf(m), tenantId: t.id, tenantName: t.name, slug: t.slug, isDemo: t.isDemo, tenantStatus: t.status, plan: m.plan, note: m.note, closedAt: m.closedAt,
-              blockSince: block?.since ?? null, blockReason: block?.reason ?? null };
+              blockSince: block?.since ?? null, blockReason: block?.reason ?? null, promoCode: promo?.code ?? null, promoDiscountPercent: promo?.discountPercent ?? null };
           });
         return { month, defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, rows, totals: revenueTotals(rows), paymentProvider: "none" as const };
       });
@@ -2041,6 +2066,88 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const numbers = (x: DemoBillingPeriod | null) => x && { status: x.status, note: x.note, billableCount: x.snapshot?.billableCount ?? null, amountCents: x.snapshot?.amountCents ?? null };
         addAudit(db, s, { tenantId, action: "billing_period.status", entity: "billing_period", entityId: `${tenantId}:${month}`, before: numbers(before), after: numbers(p), reason: n });
         return summaryOf(billingMonth(db, tenantId, month));
+      });
+    },
+
+    // ------------------------------------------------ promo codes (like migration 0022)
+    async listPromoCodes() {
+      return read((db, s) => {
+        assertPlatform(s);
+        return (db.promoCodes ?? []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.code.localeCompare(b.code)).map((c) => promoCodeOut(db, c));
+      });
+    },
+    async createPromoCode(input) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const code = (input.code ?? "").trim().toUpperCase();
+        if (!/^[A-Z0-9-]{6,32}$/.test(code)) throw new Error("Der Aktionscode muss 6–32 Zeichen lang sein (Buchstaben A–Z, Ziffern, Bindestrich).");
+        if (!Number.isInteger(input.discountPercent) || input.discountPercent < 1 || input.discountPercent > 100) throw new Error("Der Nachlass muss zwischen 1 und 100 % liegen.");
+        const max = input.maxRedemptions ?? null;
+        if (max !== null && (!Number.isInteger(max) || max < 1 || max > 100000)) throw new Error("Die Anzahl der Einlösungen muss zwischen 1 und 100000 liegen (leer = unbegrenzt).");
+        const until = input.redeemableUntil || null;
+        if (until && until < localISODate(new Date())) throw new Error("Das Datum „einlösbar bis“ liegt in der Vergangenheit.");
+        const codes = (db.promoCodes ??= []);
+        if (codes.some((c) => c.code === code)) throw new Error("Diesen Aktionscode gibt es bereits.");
+        const c = { id: uuid(), code, discountPercent: input.discountPercent, note: input.note?.trim() || null, maxRedemptions: max, redeemableUntil: until,
+          createdAt: new Date().toISOString(), endedAt: null, endReason: null };
+        codes.push(c);
+        addAudit(db, s, { tenantId: null, action: "promo_code.create", entity: "promo_code", entityId: c.id, before: null,
+          after: { code, discountPercent: c.discountPercent, maxRedemptions: max, redeemableUntil: until }, reason: null });
+        return promoCodeOut(db, c);
+      });
+    },
+    async endPromoCode(promoCodeId, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(reason, "Bitte einen Grund für das Beenden angeben.");
+        const c = (db.promoCodes ?? []).find((x) => x.id === promoCodeId);
+        if (!c) throw new AccessDeniedError("Aktionscode nicht gefunden.");
+        if (c.endedAt) throw new Error("Der Aktionscode ist bereits beendet.");
+        const now = new Date().toISOString();
+        Object.assign(c, { endedAt: now, endReason: r });
+        for (const x of (db.promoRedemptions ?? []).filter((y) => y.promoCodeId === c.id && !y.endedAt)) {
+          Object.assign(x, { endedAt: now, endReason: r });
+          addAudit(db, s, { tenantId: x.tenantId, action: "promo.end", entity: "promo_redemption", entityId: x.id, before: { code: c.code }, after: { code: c.code, endedAt: now }, reason: r });
+        }
+        addAudit(db, s, { tenantId: null, action: "promo_code.end", entity: "promo_code", entityId: c.id, before: { code: c.code }, after: { code: c.code, endedAt: now }, reason: r });
+        return promoCodeOut(db, c);
+      });
+    },
+    async endTenantPromo(tenantId, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(reason, "Bitte einen Grund für das Beenden angeben.");
+        const x = (db.promoRedemptions ?? []).find((y) => y.tenantId === tenantId && !y.endedAt);
+        if (!x) throw new Error("Für diesen Mandanten läuft kein Aktionsrabatt.");
+        Object.assign(x, { endedAt: new Date().toISOString(), endReason: r });
+        const out = redemptionOut(db, x, true);
+        addAudit(db, s, { tenantId, action: "promo.end", entity: "promo_redemption", entityId: x.id, before: { code: out.code }, after: { code: out.code, endedAt: x.endedAt }, reason: r });
+        return out;
+      });
+    },
+    async listTenantPromo(tenantId) {
+      return read((db, s) => {
+        if (!(s.platformRole && !s.tenantId)) assertManager(s, tenantId);
+        return (db.promoRedemptions ?? []).filter((r) => r.tenantId === tenantId).sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt))
+          .map((r) => redemptionOut(db, r, false));
+      });
+    },
+    async redeemPromoCode(tenantId, code) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Aktionscodes kann nur der Inhaber einlösen.");
+        const rs = (db.promoRedemptions ??= []);
+        if (rs.some((r) => r.tenantId === tenantId && !r.endedAt)) throw new Error("Für Ihre Firma läuft bereits ein Aktionsrabatt.");
+        const input = (code ?? "").trim().toUpperCase();
+        const c = (db.promoCodes ?? []).find((x) => x.code === input);
+        const used = c ? rs.filter((r) => r.promoCodeId === c.id).length : 0;
+        if (!c || c.endedAt || (c.redeemableUntil && c.redeemableUntil < localISODate(new Date())) || (c.maxRedemptions !== null && used >= c.maxRedemptions)) {
+          throw new Error("Der Aktionscode ist ungültig oder nicht mehr einlösbar.");
+        }
+        if (rs.some((r) => r.promoCodeId === c.id && r.tenantId === tenantId)) throw new Error("Diesen Aktionscode hat Ihre Firma bereits eingelöst.");
+        const x = { id: uuid(), promoCodeId: c.id, tenantId, discountPercent: c.discountPercent, redeemedAt: new Date().toISOString(), endedAt: null, endReason: null };
+        rs.push(x);
+        addAudit(db, s, { tenantId, action: "promo.redeem", entity: "promo_redemption", entityId: x.id, before: null, after: { code: c.code, discountPercent: c.discountPercent }, reason: null });
+        return redemptionOut(db, x, false);
       });
     },
 

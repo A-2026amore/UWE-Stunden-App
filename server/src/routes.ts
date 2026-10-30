@@ -790,7 +790,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
       const rows = await all(q,
         `select * from public.audit_log
-          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant', 'billing_period', 'billing_settings', 'invoice', 'invoice_settings')
+          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant', 'billing_period', 'billing_settings', 'invoice', 'invoice_settings', 'promo_code', 'promo_redemption')
           order by created_at desc, id limit $1`, [limit]);
       return json(200, rows.map(toAudit));
     });

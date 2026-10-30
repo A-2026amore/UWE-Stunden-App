@@ -147,23 +147,25 @@ test("chef on a phone: collapsible menu, tables as cards, no horizontal scrollin
   }
 });
 
-test("super-admin: overview, free test customer, deactivate and reactivate, system status", async ({ page }) => {
+test("super-admin: overview, new paying customer, deactivate and reactivate, system status", async ({ page }) => {
   await login(page, ADMIN, "admin@plattform.example");
   await expect(page.getByRole("heading", { level: 1, name: "Mandanten" })).toBeVisible();
   await expect(statValue(page, "Mitarbeitende gesamt")).not.toHaveText("0");
-  await expect(statValue(page, "Umsatz netto November 2026")).toHaveText("0,00 €");
+  await expect(statValue(page, "Umsatz brutto November 2026")).toHaveText("0,00 €");
 
-  await page.getByRole("button", { name: "Kostenlosen Testkunden anlegen" }).click();
-  const dialog = page.getByRole("dialog", { name: "Kostenlosen Testkunden anlegen" });
+  // No free test customers any more (decision 30.10.2026): new customers pay, discounts only via promo codes.
+  await expect(page.getByRole("button", { name: "Kostenlosen Testkunden anlegen" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Mandant anlegen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Mandant anlegen" });
   await dialog.getByLabel("Firmenname").fill("Test Fahrdienst Aachen");
   await dialog.getByLabel("E-Mail des Inhabers").fill("inhaber@test-fahrdienst.example");
-  await expect(dialog.getByLabel("Kostenlos testen")).toBeChecked();
-  await expect(dialog.getByLabel("Kostenlos bis")).toHaveValue("2026-12-20");
+  await expect(dialog.getByLabel("Lizenz")).toHaveValue("standard");
+  await expect(dialog.getByLabel("Lizenz").locator("option", { hasText: "Kostenlos – Pilot" })).toHaveCount(0);
+  await expect(dialog.getByLabel("Kostenlos testen")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Anlegen" }).click();
-  await expect(page.locator(".toast").filter({ hasText: "Kostenloser Testkunde „Test Fahrdienst Aachen“ angelegt." })).toBeVisible();
+  await expect(page.locator(".toast").filter({ hasText: "Mandant „Test Fahrdienst Aachen“ angelegt." })).toBeVisible();
   const row = page.getByRole("row", { name: /Test Fahrdienst Aachen/ });
-  await expect(row).toContainText("0,00 € – kostenloses Konto");
-  await expect(statValue(page, "Pilotkunden \\(kostenlos\\)").locator("xpath=..")).toContainText("1 kostenlose Testkunden");
+  await expect(row).toContainText("5,00 € je Mitarbeiter/Monat (Standardpreis)");
 
   // Deactivate (contract ended) – data stays, reactivation possible.
   await page.getByRole("link", { name: "Muster Pflegedienst GmbH verwalten" }).click();

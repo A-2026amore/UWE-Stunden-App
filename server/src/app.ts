@@ -22,6 +22,7 @@ import { oneTimeLink } from "./operator.ts";
 import { RateLimiter } from "./rateLimit.ts";
 import { registerInvoiceRoutes } from "./invoices.ts";
 import { registerPrivacyRoutes } from "./privacy.ts";
+import { registerPromoRoutes } from "./promo.ts";
 import { registerDomainRoutes } from "./routes.ts";
 import { withStaticFiles } from "./static.ts";
 import { CHALLENGE_MINUTES, createTwoFactorService, parseProof, type Proof } from "./twoFactor.ts";
@@ -477,6 +478,7 @@ export function createApp(deps: AppDeps) {
   registerDomainRoutes(router, app);
   registerPrivacyRoutes(router, app);
   registerInvoiceRoutes(router, app);
+  registerPromoRoutes(router, app);
 
   const apiHandler = createRequestHandler(router, {
     allowedOrigins: config.publicOrigins,

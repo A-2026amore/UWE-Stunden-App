@@ -237,8 +237,21 @@ Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …
 | `cancelInvoice` | `POST /api/platform/invoices/:invoiceId/cancel` `{reason}` → 201 `Invoice` (Stornorechnung) · 400 ohne Grund · 409 bereits storniert | Super-Admin |
 | `listTenantInvoices` | `GET /api/tenants/:tenantId/invoices` → `Invoice[]` (nur eigene Firma) | Inhaber |
 
-`getTenantBilling` liefert zusätzlich `tenantBlock: {status, since} | null` (gesperrte Firma, ohne Grund);
-`getPlatformRevenue` je Zeile `blockSince`/`blockReason` (0018).
+**Aktionscodes (0022, `docs/preismodell.md`)**
+
+| Repository | HTTP | Wer |
+|---|---|---|
+| `listPromoCodes` | `GET /api/platform/promo-codes` → `PromoCode[]` (mit Einlösungen, nur Firmennamen) | Super-Admin, Support |
+| `createPromoCode` | `POST /api/platform/promo-codes` `{code, discountPercent, note?, maxRedemptions?, redeemableUntil?}` → 201 `PromoCode` · 400 Format · 409 Code existiert | Super-Admin |
+| `endPromoCode` | `POST /api/platform/promo-codes/:id/end` `{reason}` → `PromoCode` (alle laufenden Rabatte enden) | Super-Admin |
+| `endTenantPromo` | `POST /api/platform/tenants/:tenantId/promo/end` `{reason}` → `PromoRedemption` · 409 kein laufender Rabatt | Super-Admin |
+| `listTenantPromo` | `GET /api/tenants/:tenantId/promo` → `PromoRedemption[]` | Inhaber, Leitung, Plattform |
+| `redeemPromoCode` | `POST /api/tenants/:tenantId/promo` `{code}` → 201 `PromoRedemption` · 400 ungültig (einheitlicher Text) · 409 schon ein Rabatt/schon eingelöst · 429 nach 10 Versuchen je IP bzw. Firma im Rate-Limit-Fenster | Inhaber |
+
+Alle Beträge sind seit 0022 brutto (inkl. USt.).
+`getTenantBilling` liefert zusätzlich `tenantBlock: {status, since} | null` (gesperrte Firma, ohne Grund) und
+`promo: {code, discountPercent} | null`; `getPlatformRevenue` je Zeile `blockSince`/`blockReason` (0018) und
+`promoCode`/`promoDiscountPercent` (0022).
 
 `setEmployeeStatus` (`POST /api/employees/:id/status`) akzeptiert seit 0012 `{status: "active" | "locked" | "deactivated", reason}`.
 Gesperrte Personen haben sofort keinen Zugriff mehr (bestehende Sitzungen: 403), die Anmeldung antwortet wie bei
