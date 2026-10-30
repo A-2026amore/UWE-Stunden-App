@@ -4,7 +4,11 @@
  * the demo repository uses this module. Money in integer cents, time as instants
  * (ms / ISO strings) – month boundaries in Europe/Berlin.
  *
- *  - 5,00 € net per billable employee and month, no base fee, no minimum, no tiers.
+ *  - 5,00 € gross (incl. VAT) per billable employee and month in the 12-month subscription,
+ *    6,50 € in the monthly plan (decision 30.10.2026, subscription.ts / migration 0023),
+ *    no base fee, no minimum, no tiers. Free trial only as introductory offer (trial window).
+ *  - Promo codes (migration 0022): a discount of 1–100 % on the price that applies
+ *    otherwise, for every month the redemption period touches, until the super admin ends it.
  *  - Billable in month M: role "employee" and active at any time in M;
  *    leadership (manager/owner) only when active in M with own non-deleted time entries in M.
  *  - Locked/deactivated persons are billed for the month of the change, not afterwards.
@@ -12,14 +16,14 @@
  */
 import type {
   BillableReason, BillingCondition, EmployeeStatus, ISODate, ISOMonth, License, PlatformRevenue, PlatformRevenueRow, TenantBlock, TenantRole,
-  TenantStatus,
+  SubscriptionInterval, TenantStatus,
 } from "./types";
 
-/** Platform default: 5,00 € net per billable employee and month. */
+/** Platform default: 5,00 € gross (incl. VAT) per billable employee and month. */
 export const DEFAULT_EMPLOYEE_PRICE_CENTS = 500;
 export const BILLING_TIME_ZONE = "Europe/Berlin";
-/** Shown next to every net amount. */
-export const VAT_NOTE = "zzgl. gesetzlicher USt.";
+/** Shown next to every amount: prices are gross since 30.10.2026. */
+export const VAT_NOTE = "inkl. gesetzlicher USt.";
 
 export const BILLING_CONDITION_LABEL: Record<BillingCondition, string> = {
   standard: "Standardpreis",
@@ -28,6 +32,10 @@ export const BILLING_CONDITION_LABEL: Record<BillingCondition, string> = {
   pilot_free: "Kostenlos – Pilot",
   tenant_suspended: "Firma gesperrt – nicht berechnet",
   tenant_deactivated: "Firma deaktiviert – nicht berechnet",
+  promo: "Aktionscode",
+  monthly: "Monatstarif",
+  trial: "Testphase – kostenlos",
+  ended: "Kein laufender Vertrag – nicht berechnet",
 };
 
 export const BILLING_STATUS_LABEL: Record<string, string> = {
@@ -111,6 +119,13 @@ export function berlinMonthOf(instant: Date | number | string): ISOMonth {
   return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Calendar day (Berlin) of an instant, e.g. "today" for the subscription rules. */
+export function berlinDateOf(instant: Date | number | string): ISODate {
+  const ms = instant instanceof Date ? instant.getTime() : typeof instant === "number" ? instant : Date.parse(instant);
+  const local = new Date(ms + berlinOffsetMinutes(ms) * 60000);
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, "0")}-${String(local.getUTCDate()).padStart(2, "0")}`;
+}
+
 // ------------------------------------------------------------------ rules
 
 function overlaps(p: StatusPeriod, b: MonthBounds): boolean {
@@ -154,26 +169,80 @@ export function tenantBlockFor(periods: readonly TenantStatusPeriod[], month: IS
   return { status: last.status as TenantBlock["status"], since: last.from, reason: last.reason ?? null };
 }
 
-export type LicenseCondition = Pick<License, "plan" | "status" | "employeePriceCents" | "freeOfCharge" | "conditionValidFrom" | "conditionValidUntil">;
-
-/**
- * Price of a tenant for a month: pilot_free is always free; a special condition
- * (free of charge or own price) applies when its validity overlaps the month;
- * otherwise (or without active licence) the platform default price.
- */
-export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null): { condition: BillingCondition; unitPriceCents: number } {
-  const b = monthBounds(month);
-  if (block) return { condition: block.status === "suspended" ? "tenant_suspended" : "tenant_deactivated", unitPriceCents: 0 };
-  if (!license || license.status !== "active") return { condition: "standard", unitPriceCents: defaultPriceCents };
-  if (license.plan === "pilot_free") return { condition: "pilot_free", unitPriceCents: 0 };
-  const applies = (license.conditionValidFrom === null || license.conditionValidFrom <= b.lastDay)
-    && (license.conditionValidUntil === null || license.conditionValidUntil >= b.firstDay);
-  if (applies && license.freeOfCharge) return { condition: "free", unitPriceCents: 0 };
-  if (applies && license.employeePriceCents !== null) return { condition: "special", unitPriceCents: license.employeePriceCents };
-  return { condition: "standard", unitPriceCents: defaultPriceCents };
+/** One promo redemption of a tenant (migration 0022); `to` null = still running. */
+export interface PromoPeriod {
+  code: string;
+  discountPercent: number;
+  /** ISO instant of the redemption (inclusive). */
+  from: string;
+  /** ISO instant of the end or null. */
+  to: string | null;
 }
 
-/** Net amount in cents: count × unit price (both non-negative integers). */
+/**
+ * Promo discount for a month: the redemption whose period touches the month (several:
+ * the highest discount) – same rule as private.promo_for. The month in which the super
+ * admin ends a discount is still discounted; the following month is regular.
+ */
+export function promoFor(periods: readonly PromoPeriod[], month: ISOMonth): PromoPeriod | null {
+  const b = monthBounds(month);
+  const ov = periods.filter((p) => Date.parse(p.from) < b.end && (p.to === null || Date.parse(p.to) > b.start))
+    .sort((x, y) => y.discountPercent - x.discountPercent || y.from.localeCompare(x.from));
+  return ov[0] ?? null;
+}
+
+/** Price after a discount in percent, rounded half up to whole cents (PostgreSQL round). */
+export function discountedPrice(priceCents: number, discountPercent: number): number {
+  if (!Number.isInteger(discountPercent) || discountPercent < 0 || discountPercent > 100) throw new Error("Der Nachlass muss zwischen 0 und 100 % liegen.");
+  return Math.floor((priceCents * (100 - discountPercent) + 50) / 100);
+}
+
+export type LicenseCondition = Pick<License, "plan" | "status" | "employeePriceCents" | "freeOfCharge" | "conditionValidFrom" | "conditionValidUntil">;
+
+/** Subscription data of a tenant for a month (migration 0023). */
+export interface SubscriptionForMonth {
+  trialEndsOn: ISODate | null;
+  /** Interval of the term covering the month, null = no term (ended / not started). */
+  interval: SubscriptionInterval | null;
+  monthlyPriceCents: number;
+  /**
+   * First day of the subscription model for tenants that existed before migration 0023: earlier months
+   * keep the previous rule (platform default price, no term needed). Null for new tenants.
+   */
+  termsFrom?: ISODate | null;
+}
+
+/**
+ * Price of a tenant for a month: blocked tenants and pilot_free are free; a "free" special
+ * condition overlapping the month is free. With subscription data (0023): a trial month is free,
+ * a month without term is not billed ("ended"); otherwise the special price, else the price of
+ * the interval (annual = platform default "standard", monthly = monthly price). Without
+ * subscription data the platform default applies (behaviour before 0023). A promo discount
+ * (0022) reduces the resulting price.
+ */
+export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null, promo?: Pick<PromoPeriod, "discountPercent"> | null, subscription?: SubscriptionForMonth | null): { condition: BillingCondition; unitPriceCents: number } {
+  const b = monthBounds(month);
+  if (block) return { condition: block.status === "suspended" ? "tenant_suspended" : "tenant_deactivated", unitPriceCents: 0 };
+  const active = license && license.status === "active" ? license : null;
+  if (active?.plan === "pilot_free") return { condition: "pilot_free", unitPriceCents: 0 };
+  const applies = !!active && (active.conditionValidFrom === null || active.conditionValidFrom <= b.lastDay)
+    && (active.conditionValidUntil === null || active.conditionValidUntil >= b.firstDay);
+  if (applies && active.freeOfCharge) return { condition: "free", unitPriceCents: 0 };
+  if (subscription?.termsFrom && b.firstDay < subscription.termsFrom) subscription = null;
+  if (subscription) {
+    if (subscription.trialEndsOn && b.firstDay <= subscription.trialEndsOn) return { condition: "trial", unitPriceCents: 0 };
+    if (!subscription.interval) return { condition: "ended", unitPriceCents: 0 };
+  }
+  const base: { condition: BillingCondition; unitPriceCents: number } = applies && active.employeePriceCents !== null
+    ? { condition: "special", unitPriceCents: active.employeePriceCents }
+    : subscription?.interval === "monthly"
+      ? { condition: "monthly", unitPriceCents: subscription.monthlyPriceCents }
+      : { condition: "standard", unitPriceCents: defaultPriceCents };
+  if (promo && base.unitPriceCents > 0) return { condition: "promo", unitPriceCents: discountedPrice(base.unitPriceCents, promo.discountPercent) };
+  return base;
+}
+
+/** Amount in cents (gross since 30.10.2026): count × unit price (both non-negative integers). */
 export function billingAmount(billableCount: number, unitPriceCents: number): number {
   if (!Number.isInteger(billableCount) || billableCount < 0) throw new Error("Anzahl muss eine ganze Zahl ≥ 0 sein.");
   if (!Number.isInteger(unitPriceCents) || unitPriceCents < 0) throw new Error("Preis muss in ganzen Cent ≥ 0 angegeben werden.");

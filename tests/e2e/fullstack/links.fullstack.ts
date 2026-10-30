@@ -72,7 +72,7 @@ test("invitation: chef invites → mail link → password → new employee signs
   await invitee.getByRole("button", { name: "Einladung annehmen" }).click();
   await expect(invitee.getByTestId("invitation-result")).toHaveText("Dein Passwort ist gespeichert. Du kannst dich jetzt anmelden.");
 
-  await invitee.getByRole("link", { name: "Zur Mitarbeiter-App" }).click();
+  await invitee.getByRole("link", { name: "Weiter zur Mitarbeiter-App" }).click();
   await invitee.getByLabel("E-Mail-Adresse").fill(email);
   await invitee.getByLabel("Passwort", { exact: true }).fill(NEW_PASSWORD);
   await invitee.getByRole("button", { name: "Anmelden", exact: true }).click();
@@ -105,7 +105,7 @@ test("invitation for an e-mail with an existing account: linked without changing
     "Für diese E-Mail-Adresse gibt es bereits ein Benutzerkonto. Die Einladung wurde damit verknüpft – bitte melde dich mit deinem bisherigen Passwort an.");
 
   // The old password still works.
-  await invitee.getByRole("link", { name: "Zur Mitarbeiter-App" }).click();
+  await invitee.getByRole("link", { name: "Weiter zur Mitarbeiter-App" }).click();
   await invitee.getByLabel("E-Mail-Adresse").fill(USERS.emp2A);
   await invitee.getByLabel("Passwort", { exact: true }).fill(PASSWORD);
   await invitee.getByRole("button", { name: "Anmelden", exact: true }).click();

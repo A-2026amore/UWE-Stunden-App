@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  createInvoicePdfBytes, formatInvoiceNumber, invoiceFileName, invoiceTotals, missingIssuerData, vatCents, addDaysISO,
+  createInvoicePdfBytes, formatInvoiceNumber, invoiceFileName, invoiceTotals, linesAreGross, missingIssuerData, vatCents, vatFromGross, addDaysISO,
   type InvoiceData,
 } from "./invoice";
 
@@ -36,9 +36,26 @@ describe("invoice calculation", () => {
     expect(() => vatCents(100, 101)).toThrow();
   });
 
-  it("totals: count × unit price, net + VAT = gross", () => {
-    expect(invoiceTotals([{ amountCents: 20 * 500 }], 19)).toEqual({ netCents: 10000, vatCents: 1900, grossCents: 11900 });
+  it("VAT contained in a gross amount (prices incl. VAT since 30.10.2026), rounded like PostgreSQL", () => {
+    expect(vatFromGross(500, 19)).toBe(80); // 79.83
+    expect(vatFromGross(10000, 19)).toBe(1597); // 1596.64
+    expect(vatFromGross(1190, 19)).toBe(190);
+    expect(vatFromGross(-500, 19)).toBe(-80);
+    expect(vatFromGross(107, 7)).toBe(7);
+    expect(vatFromGross(500, 0)).toBe(0);
+    expect(() => vatFromGross(1.5, 19)).toThrow();
+  });
+
+  it("totals: line amounts are gross; net = gross − contained VAT", () => {
+    expect(invoiceTotals([{ amountCents: 20 * 500 }], 19)).toEqual({ netCents: 8403, vatCents: 1597, grossCents: 10000 });
+    expect(invoiceTotals([{ amountCents: 500 }], 19)).toEqual({ netCents: 420, vatCents: 80, grossCents: 500 });
     expect(invoiceTotals([], 19)).toEqual({ netCents: 0, vatCents: 0, grossCents: 0 });
+  });
+
+  it("older invoices with net line amounts are recognised (PDF header)", () => {
+    const line = [{ description: "x", quantity: 1, unitPriceCents: 500, amountCents: 500 }];
+    expect(linesAreGross({ lines: line, netCents: 420, grossCents: 500 })).toBe(true);
+    expect(linesAreGross({ lines: line, netCents: 500, grossCents: 595 })).toBe(false);
   });
 
   it("numbers: prefix, year, six digits", () => {

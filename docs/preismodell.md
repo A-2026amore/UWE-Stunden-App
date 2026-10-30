@@ -1,16 +1,59 @@
 # Preismodell
 
-Verbindliche Entscheidung des Auftraggebers vom 28.10.2026. Umsetzung: Migration
-`db/migrations/0012_billing.sql`, Fachlogik `platform/src/core/billing.ts`, Chef-Portal „Abrechnung“,
-Super-Admin „Umsatz“ und „Preismodell“.
+Verbindliche Entscheidung des Auftraggebers vom 28.10.2026, geändert am 30.10.2026 (Bruttopreis,
+keine kostenlosen Konten, Aktionscodes, 12-Monats-Abo und Monatstarif). Umsetzung: Migrationen
+`db/migrations/0012_billing.sql`, `0022_promo_codes_gross_prices.sql` und `0023_subscriptions.sql`,
+Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`, Chef-Portal „Abrechnung“
+(Karte „Tarif“), Super-Admin „Umsatz“, „Preismodell“ und „Aktionscodes“.
 
 ## Kurz gesagt
 
-- **5,00 € netto je abrechenbarem Mitarbeiter und Monat**, zzgl. gesetzlicher USt.
+- **12-Monats-Abo: 5,00 € brutto** je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.
+  (bei 19 %: 4,20 € netto + 0,80 € USt.).
+- **Monatstarif: 6,50 € brutto** je abrechenbarem Mitarbeiter und Monat. **Ohne Wahl gilt der Monatstarif.**
 - Keine Grundgebühr, keine Mindestanzahl, keine Staffeln.
-- Beispiele: 5 Mitarbeiter → 25,00 €, 20 → 100,00 €, 100 → 500,00 € (jeweils netto).
-- Kostenlose Kundenkonten (Pilot, Test) und Sonderpreise je Kunde sind möglich.
+- Beispiel 20 Mitarbeitende: 100,00 € im 12-Monats-Abo, 130,00 € im Monatstarif (jeweils brutto).
+- **Keine kostenlosen Konten** für neue Kunden. Rabatte bis 100 % gibt es nur über **Aktionscodes**
+  (siehe unten); der Rabatt läuft, bis der Super-Admin ihn beendet. Sonderpreise je Kunde bleiben möglich.
 - Es ist **kein Zahlungsdienstleister** angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.
+
+## Tarife, Testphase und Kündigung (seit 30.10.2026)
+
+| | 12-Monats-Abo | Monatstarif |
+|---|---|---|
+| Preis je Mitarbeiter/Monat (brutto) | 5,00 € (Standardpreis) | 6,50 € |
+| Laufzeit | 12 Monate fest, ab dem 1. eines Monats | monatlich |
+| Verlängerung | jeweils um 6 Monate, wenn nicht bis zum letzten Tag der Laufzeit gekündigt (Kündigungsfrist in Tagen einstellbar, Standard 0) | läuft weiter |
+| Kündigung | zum Ende der Laufzeit; wahlweise „danach im Monatstarif weiter“ | zum Ende des laufenden Monats |
+
+- **Vertragsschluss:** Bei der ersten Anmeldung sieht der Inhaber nur „Firma freischalten“: Bestätigung als
+  Unternehmer (§ 14 BGB), Zustimmung zu AGB (mit Anlage A) und AVV, Tarifwahl (Monatstarif vorausgewählt).
+  Zeitpunkt und Versionen werden gespeichert. Vorher können Vorgesetzte und Mitarbeitende das Konto nicht nutzen.
+- **Wechsel:** Monatstarif → 12-Monats-Abo jederzeit ab dem Folgemonat (in der Testphase ab dem ersten
+  bezahlten Monat). 12-Monats-Abo → Monatstarif nur zum Laufzeitende (kündigen mit „danach monatlich weiter“).
+- **Kündigung zurücknehmen** geht, solange der Vertrag noch nicht beendet ist.
+- **Nach dem Vertragsende** wird nichts berechnet („Kein laufender Vertrag“); der Inhaber kann einen neuen Tarif
+  wählen.
+- **Einführungsangebot:** Der Super-Admin legt einen Zeitraum fest (von/bis, Anlagedatum des Mandanten) und
+  die Länge der Testphase (Standard 3 Monate). Die Testphase reicht bis zum Ende des Kalendermonats, in dem
+  diese Monate enden (angelegt am 15.11. → kostenlos bis 28.02.). Abgerechnet wird ab dem Folgemonat.
+  Ohne Zeitraum gibt es keine Testphase.
+- **Willkommenscode:** Optional ein Aktionscode, der in der Einladung jedes neuen Mandanten steht, solange er
+  einlösbar ist.
+- **Bestehende Kunden** (vor 0023): keine Testphase. Bis zum Ende des Monats der Umstellung gilt die
+  bisherige Regel (Standardpreis 5,00 €, kein Vertrag nötig); ab dem Folgemonat (`termsFrom`) der Monatstarif,
+  sofern der Inhaber nichts anderes wählt. In der Demo (heute 20.11.2026) wird „Muster Pflegedienst“ daher bis
+  November mit 5,00 €, ab Dezember mit 6,50 € berechnet. Der Vertragsschluss gilt als erfolgt („bestand“).
+- **Kündigung eines geplanten Wechsels:** Ist das 12-Monats-Abo gewählt, hat aber noch nicht begonnen, nimmt
+  „Kündigen“ den Wechsel zurück; der Monatstarif läuft weiter.
+- **Vor dem Vertragsschluss** lehnen Plattform und Demo Änderungen ab (Tarif, Arbeitszeiten, Mitarbeitende,
+  Einladungen): „Die Firma ist noch nicht freigeschaltet: Der Inhaber muss zuerst den Nutzungsbedingungen
+  zustimmen.“
+- Reihenfolge der Preisregeln je Monat: Firma gesperrt → Pilot → kostenloses Konto → Testphase →
+  kein Vertrag (0 €) → Sonderpreis → 12-Monats-Abo bzw. Monatstarif → Aktionsrabatt darauf.
+- Abgeschlossene Monate und ausgestellte Rechnungen ändern sich nie.
+- Jede Tarifänderung steht im Änderungsprotokoll (Vertrag abgeschlossen, Tarif gewählt, gekündigt,
+  Kündigung zurückgenommen); Änderungen der Preiseinstellungen im Plattform-Protokoll.
 
 ## Wer wird berechnet?
 
@@ -45,26 +88,50 @@ Technisch: Jede Status- und Rollenänderung wird mit Zeitpunkt in einer Historie
 
 ## Preise und Sonderkonditionen (Super-Admin)
 
-- **Standardpreis** (Super-Admin → „Preismodell“): 5,00 € netto, änderbar nur mit Begründung; jede
-  Änderung steht im Plattform-Protokoll.
+- **Preise und Tarifeinstellungen** (Super-Admin → „Preismodell“, ein Formular mit Begründung):
+  12-Monats-Abo (Standardpreis, 5,00 €), Monatstarif (6,50 €), Einführungsangebot von/bis, Testphase in
+  Monaten, Kündigungsfrist in Tagen, Willkommenscode. Jede Änderung steht im Plattform-Protokoll.
 - **Sonderkondition je Kunde** (Mandanten → Verwalten → Lizenz):
-  - eigener Preis je Mitarbeiter (z. B. 3,50 €),
-  - „Kostenloses Konto“ (z. B. Testkunde),
+  - eigener Preis je Mitarbeiter, brutto (z. B. 3,50 €),
+  - „Kostenloses Konto“ – nur noch für bestehende Konten sichtbar (Haken entfernen = kostenpflichtig),
   - Gültigkeit von/bis – gilt für **jeden Monat, den der Zeitraum berührt** (kundenfreundlich bei
     Teilmonaten); leer = unbefristet,
   - Notiz.
-- **Pilotkunden** (Lizenz „Kostenlos – Pilot“, bisher `pilot_free`) sind immer kostenlos, ohne
-  Zahlungsdaten und ohne automatische Umstellung. Bestehende Pilotlizenzen wurden unverändert übernommen.
+- **Pilotkunden** (Lizenz „Kostenlos – Pilot“, `pilot_free`): seit 30.10.2026 nicht mehr für neue Kunden
+  wählbar. Bestehende Pilotlizenzen bleiben unverändert kostenlos, bis der Super-Admin sie umstellt.
 - Die übrigen Lizenzen (Standard, Business, Enterprise) unterscheiden sich nur noch in der
   Mitarbeiter-Obergrenze, nicht im Preis.
 
-Reihenfolge der Preisfindung je Monat: Pilot → kostenlos · sonst kostenloses Konto (wenn gültig) →
-0 € · sonst Sonderpreis (wenn gültig) · sonst Standardpreis.
+Reihenfolge der Preisfindung je Monat: Firma ganzen Monat gesperrt → 0 € · Pilot → kostenlos · sonst
+kostenloses Konto (wenn gültig) → 0 € · Testphase → 0 € · kein laufender Vertrag → 0 € · sonst Sonderpreis
+(wenn gültig) oder Preis des Tarifs (12-Monats-Abo bzw. Monatstarif), davon ggf. der Aktionsrabatt
+(gerundet auf ganze Cent).
+
+## Aktionscodes (Entscheidung 30.10.2026)
+
+- **Anlegen** (Super-Admin → „Aktionscodes“): Code (6–32 Zeichen, A–Z, Ziffern, Bindestrich; Knopf
+  „Zufallscode erzeugen“), Nachlass 1–100 %, optional maximale Zahl der Einlösungen, „einlösbar bis“ und
+  interne Notiz. Support sieht die Codes nur.
+- **Einlösen** (Chef-Portal → „Abrechnung“, nur der Inhaber): Code eingeben. Je Firma läuft höchstens ein
+  Rabatt; denselben Code kann eine Firma nur einmal einlösen. Unbekannte, beendete, abgelaufene und
+  ausgeschöpfte Codes ergeben dieselbe Meldung; mehr als 10 Versuche in 15 Minuten werden gebremst.
+- **Wirkung:** Der Rabatt gilt für **jeden Monat, den die Laufzeit berührt** – auch den Monat des
+  Einlösens – und läuft **ohne Enddatum**, bis der Super-Admin ihn beendet.
+- **Beenden** (Begründung Pflicht, protokolliert): je Kunde („Rabatt beenden“ in der Liste oder im Mandanten)
+  oder für den ganzen Code („Code beenden“: keine neuen Einlösungen, alle laufenden Rabatte enden). Der
+  **Monat des Beendens bleibt rabattiert**, ab dem Folgemonat gilt der normale Preis. Beispiel: eingelöst am
+  15.07., beendet am 20.09. → Juli bis September rabattiert, ab Oktober der normale Preis des Tarifs.
+- Laut AGB (§ 4) teilt der Anbieter dem Kunden das Ende vorher in Textform mit. Überall, wo ein Code oder
+  ein laufender Rabatt angezeigt wird, steht der Hinweis „Rabatt bis auf Weiteres; der Anbieter kann ihn zum
+  Ende eines Kalendermonats beenden.“
+- Ein 100-%-Monat kostet 0 € – dafür gibt es keine Rechnung. Bei Teilrabatt steht auf der Rechnung
+  „(Aktionscode CODE, −50 %)“.
+- Abrechnung: Kondition „Aktionscode“; Chef-Portal und Umsatz zeigen Code und Nachlass.
 
 ## Abrechnung je Monat
 
 **Chef-Portal → Abrechnung** (Inhaber und Vorgesetzte): laufender Monat als Vorschau, frühere Monate
-mit Anzahl, Preis je Person, Summe netto und Status; Liste der berechneten Personen mit Grund.
+mit Anzahl, Preis je Person, Summe (brutto) und Status; Liste der berechneten Personen mit Grund.
 
 **Super-Admin → Umsatz**: je Monat alle Kunden mit Anzahl, Kondition, Preis, Betrag und Status; Summen
 (ohne Demo-Kunden, erlassene Monate getrennt). Das Plattformpersonal sieht **nur Zahlen, keine Namen**.
@@ -120,7 +187,9 @@ Eine Firma, die gesperrt („vorübergehend gesperrt“) oder deaktiviert („Ve
 - **Storno:** erzeugt eine Stornorechnung mit eigener Nummer und negativen Beträgen; die ursprüngliche Rechnung
   bleibt erhalten und wird als storniert gekennzeichnet. Gelöscht wird nichts. Danach kann für den Monat eine neue
   Rechnung erzeugt werden.
-- **Umsatzsteuer:** voreingestellt 19 %. Solange der Satz nicht als „vom Auftraggeber bestätigt“ markiert ist,
+- **Umsatzsteuer:** voreingestellt 19 %. Seit 30.10.2026 sind die Preise **brutto**: Die Rechnung weist den
+  Gesamtbetrag brutto, die enthaltene USt. (`round(brutto × Satz / (100 + Satz))`) und die Summe netto aus.
+  Ältere Rechnungen behalten ihre gespeicherten Beträge (Nettopositionen). Solange der Satz nicht als „vom Auftraggeber bestätigt“ markiert ist,
   steht auf jeder Rechnung der Hinweis „USt-Satz vom Auftraggeber zu bestätigen“.
 - **Zahlungsziel** (Standard 14 Tage) und Zahlungshinweis (z. B. Bankverbindung) sind Einstellungen.
 - **Pflichtangaben nach § 14 UStG** (Name und Anschrift des Absenders, Steuernummer oder USt-IdNr.) trägt der
@@ -154,4 +223,4 @@ Datenschutzprüfung und eine eigene Umsetzung mit Tests.
 
 - Rechnungen werden erzeugt (siehe oben), aber nicht versendet; Zahlungseingang wird manuell als „Bezahlt“ gepflegt.
 - USt-Satz 19 % ist vom Auftraggeber zu bestätigen; Absenderangaben (§ 14 UStG) sind einzutragen.
-- Umsatzsteuer: Es werden nur Nettobeträge mit dem Hinweis „zzgl. gesetzlicher USt.“ angezeigt.
+- Umsatzsteuer: Alle Beträge in den Apps sind Bruttobeträge mit dem Hinweis „inkl. gesetzlicher USt.“.

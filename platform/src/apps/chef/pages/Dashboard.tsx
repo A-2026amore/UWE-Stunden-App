@@ -89,7 +89,7 @@ export function DashboardPage() {
         <StatTile icon="message" href="#/korrekturen" label="Offene Korrekturanfragen" value={openCorrections.length} tone={openCorrections.length ? "warning" : "default"} hint="warten auf Entscheidung" />
         <StatTile icon="users" href="#/mitarbeiter" label="Mitarbeitende" value={staff.length} hint={`${active.length} aktiv, ${staff.length - active.length} eingeladen`} />
         <StatTile icon="creditCard" href="#/abrechnung" label={`Kosten ${monthLabelDE(month)}`} value={billingInfo ? formatEuro(billingInfo.amountCents) : "—"}
-          hint={billingInfo ? `netto · ${billingInfo.billableCount} abrechenbar · ${BILLING_CONDITION_LABEL[billingInfo.condition]}` : "nicht verfügbar"} />
+          hint={billingInfo ? `inkl. USt. · ${billingInfo.billableCount} abrechenbar · ${BILLING_CONDITION_LABEL[billingInfo.condition]}` : "nicht verfügbar"} />
       </div>
 
       <div class="dash-grid">

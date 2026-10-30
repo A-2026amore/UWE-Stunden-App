@@ -66,6 +66,9 @@ beforeAll(async () => {
      values ($1, 'abrechnung-test', 'Abrechnung Test GmbH', 'active',
              '{"legalName": "Abrechnung Test GmbH", "street": "", "postalCode": "", "city": ""}', '2026-08-01 00:00 Europe/Berlin')`, [C]);
   await db.admin.query("insert into public.licenses (tenant_id, plan, billing, valid_from) values ($1, 'standard', 'manual', '2026-08-01')", [C]);
+  // Subscription (0023): tenant C is created after 0023 (no legacy rule); it has the 12-month subscription, so
+  // the platform default price ("standard", 5,00 €) applies – without a choice the monthly plan (6,50 €) would.
+  await db.admin.query("update public.subscription_terms set billing_interval = 'annual', automatic = false where tenant_id = $1", [C]);
   await db.admin.query(
     `insert into public.employees (id, tenant_id, user_id, personnel_number, display_name, role, status)
      values ($1, $2, $3, 'C-0', 'Inhaberin Test', 'owner', 'active')`, [OWNER_C, C, OWNER_C_USER]);
@@ -132,13 +135,13 @@ describe("billable persons (Europe/Berlin)", () => {
     expect((await pgError(billing(OWNER_C_USER, C, "2026-13"))).code).toBe("22023");
   });
 
-  it("seed data: tenant A is a free pilot, tenant B pays the default price", async () => {
+  it("seed data: tenant A is a free pilot, tenant B pays the default price (months before the subscription model)", async () => {
     const a = await billing(U.ownerA, A, "2026-10");
     expect(a).toMatchObject({ condition: "pilot_free", unitPriceCents: 0, amountCents: 0, billableCount: 3 });
     expect(a.lines.find((l: { displayName: string }) => l.displayName === "Robin Leitung")?.reason).toBe("leader_with_time");
     expect(a.lines.map((l: { displayName: string }) => l.displayName)).not.toContain("Alex Beispiel");
     const b = await billing(U.ownerB, B, "2026-10");
-    expect(b).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 1, amountCents: 500 });
+    expect(b).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 1, amountCents: 500, interval: null, trialEndsOn: null });
     expect(b.lines.map((l: { displayName: string }) => l.displayName)).toEqual(["Charlie Test"]);
   });
 
