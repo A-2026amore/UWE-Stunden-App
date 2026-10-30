@@ -173,6 +173,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Behoben
+- Testserver-Erstinstallation: `update-test.sh` hielt ein übrig gebliebenes Docker-Netz `stunden-test-db` für die
+  Datenbank und brach bei der Sicherung ab; Prüfungen fragen jetzt nur Container ab (`--type container`).
+  `backup.sh` bricht bei nicht erreichbarer Datenbank mit der eigentlichen Meldung ab statt mit
+  „PSQL_PID: unbound variable“.
 - Browsertests iPhone-Emulation (WebKit) laufen mit „Bewegung reduzieren“, weil Animationen dort die Klickprüfung von
   Playwright unter Last zeitweise blockierten. Ob Dialoge auf echten iPhones sauber reagieren, ist im Gerätetest zu prüfen.
 - Dialoge ohne Einblend-Animation und ohne Unschärfe-Hintergrund: In der Safari-Engine (iPhone-Emulation) waren

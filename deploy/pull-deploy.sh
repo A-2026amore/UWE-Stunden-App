@@ -33,7 +33,7 @@ if [ -n "$HEAD_BRANCH" ] && [ "$HEAD_BRANCH" != "$TARGET" ] && [ "$(cat "$STATE/
 fi
 
 DEPLOYED="$(cat "$STATE/deployed-commit" 2>/dev/null || true)"
-if [ "$TARGET" = "$DEPLOYED" ] && [ "$(docker inspect -f '{{.State.Health.Status}}' stunden-test-app 2>/dev/null || true)" = healthy ]; then
+if [ "$TARGET" = "$DEPLOYED" ] && [ "$(docker inspect --type container -f '{{.State.Health.Status}}' stunden-test-app 2>/dev/null || true)" = healthy ]; then
   exit 0
 fi
 FAILS="$(cat "$STATE/failed-$TARGET" 2>/dev/null || true)"

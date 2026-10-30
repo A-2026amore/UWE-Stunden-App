@@ -49,7 +49,7 @@ step "Konfiguration prüfen"
 "${C[@]}" config --quiet
 
 if [ "$BACKUP" = 1 ]; then
-  if docker inspect stunden-test-db >/dev/null 2>&1; then
+  if docker inspect --type container stunden-test-db >/dev/null 2>&1; then
     step "Sicherung vor dem Update"
     deploy/backup.sh --compose "$ENV_FILE"
   else
@@ -84,7 +84,7 @@ step "App neu starten"
 
 step "Warten auf healthy"
 for _ in $(seq 1 30); do
-  status="$(docker inspect -f '{{.State.Health.Status}}' stunden-test-app 2>/dev/null || echo unbekannt)"
+  status="$(docker inspect --type container -f '{{.State.Health.Status}}' stunden-test-app 2>/dev/null || echo unbekannt)"
   [ "$status" = healthy ] && break
   sleep 3
 done
