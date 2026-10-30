@@ -172,6 +172,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Tests: 284 Unit-, 209 Datenbank-/API-, 122 Browsertests (Demo-Build und Alt-App, Chromium Desktop und
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
+### Geändert
+- Stundennachweis-PDF: Ein hochgeladenes Firmenlogo erscheint zusätzlich groß und blass als Wasserzeichen in der
+  Mitte jeder Seite (wie der UWE-Flügel); Zahlen und Text bleiben gut lesbar.
+
 ### Behoben
 - Chef-Portal, Monatsnachweise: Die Seite öffnete immer den Vormonat, das Dashboard zählt aber auch eingereichte
   Nachweise des laufenden Monats. Jetzt öffnet sie den Monat mit offenen Nachweisen, weist auf offene Nachweise im

@@ -7,7 +7,7 @@
  *    shows "Seite x von y";
  *  - UWE brand: original vector logo + wing watermark (paths copied 1:1);
  *    other tenants: their uploaded logo (as JPEG, see StatementPdfLogo) next
- *    to the company name, or the company name as typographic logo in the
+ *    to the company name and faint as watermark in the middle of every page, or the company name as typographic logo in the
  *    primary colour when there is no logo;
  *  - optional work-account section; worked hours are never replaced.
  *  - Layout (Stundenwerk design, 2026-10): info panel (person, personnel
@@ -489,6 +489,12 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   const product = args.productName ? String(args.productName) : "";
   for (let p = 0; p < pages.length; p++) {
     const page = pages[p]!;
+    if (logoInfo) {
+      // Uploaded logo, large and faint in the middle of every page as watermark. Drawn last: the
+      // tinted table rows would otherwise cover it (a JPEG has no transparency).
+      const [ww, wh] = fit(logoInfo.width, logoInfo.height, 380, 380);
+      page.push("q /GSWatermark gs " + ww.toFixed(2) + " 0 0 " + wh.toFixed(2) + " " + ((W - ww) / 2).toFixed(2) + " " + ((H - wh) / 2).toFixed(2) + " cm /Logo Do Q\n");
+    }
     page.push(line(M, 62, W - M, 62, "0.80 0.83 0.86"));
     page.push(txt(M, 46, "Erstellt: " + createdText, 8, false, "0.25 0.30 0.36"));
     if (product) {
