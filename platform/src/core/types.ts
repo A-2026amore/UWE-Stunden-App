@@ -119,7 +119,7 @@ export interface License {
   features: string[];
   note: string | null;
   /**
-   * Special condition (price model 2026-10-28): own net price per billable
+   * Special condition (price model 2026-10-28): own gross price per billable
    * employee and month in cents; null = platform default price.
    */
   employeePriceCents: number | null;
@@ -136,7 +136,9 @@ export interface License {
 /** Which price applies to a tenant in a month. */
 export type BillingCondition = "standard" | "special" | "free" | "pilot_free"
   /** Customer blocked (suspended / deactivated) for the whole month: 0 € (decision 28.10.2026, migration 0018). */
-  | "tenant_suspended" | "tenant_deactivated";
+  | "tenant_suspended" | "tenant_deactivated"
+  /** Promo code discount (migration 0022). */
+  | "promo";
 
 /** Block of a customer covering a whole month (status and start of the block). */
 export interface TenantBlock {
@@ -149,7 +151,7 @@ export type BillingStatus = "open" | "invoiced" | "paid" | "waived";
 export type BillableReason = "employee" | "leader_with_time";
 
 export interface BillingSettings {
-  /** Net price per billable employee and month in cents (default 500 = 5,00 €). */
+  /** Gross price (incl. VAT) per billable employee and month in cents (default 500 = 5,00 €). */
   defaultPriceCents: number;
   currency: "EUR";
 }
@@ -173,7 +175,7 @@ export interface BillingMonthSummary {
   condition: BillingCondition;
   unitPriceCents: number;
   billableCount: number;
-  /** Net amount in cents (billableCount × unitPriceCents). */
+  /** Gross amount in cents (billableCount × unitPriceCents). */
   amountCents: number;
 }
 
@@ -187,6 +189,8 @@ export interface TenantBillingMonth extends BillingMonthSummary {
   lines: BillingLine[];
   /** Set when the customer was blocked for the whole month (condition tenant_*), else null. */
   tenantBlock?: TenantBlock | null;
+  /** Set when a promo discount applies (condition "promo"), else null. */
+  promo?: { code: string; discountPercent: number } | null;
 }
 
 /** One row of the platform revenue overview – numbers only, never names. */
@@ -202,6 +206,51 @@ export interface PlatformRevenueRow extends BillingMonthSummary {
   /** Condition tenant_*: start of the block and the reason given by the super-admin. */
   blockSince?: string | null;
   blockReason?: string | null;
+  /** Condition promo: the code and its discount. */
+  promoCode?: string | null;
+  promoDiscountPercent?: number | null;
+}
+
+// ---------------------------------------------------------------- promo codes (migration 0022)
+
+/** One redemption of a promo code by a tenant. endedAt null = the discount is running. */
+export interface PromoRedemption {
+  id: UUID;
+  promoCodeId: UUID;
+  code: string;
+  tenantId: UUID;
+  /** Only in the platform view. */
+  tenantName: string | null;
+  discountPercent: number;
+  redeemedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+}
+
+/** Promo code created by the super admin (discount 1–100 %). */
+export interface PromoCode {
+  id: UUID;
+  code: string;
+  discountPercent: number;
+  note: string | null;
+  /** null = unlimited. */
+  maxRedemptions: number | null;
+  /** Last day for redeeming; null = no end. */
+  redeemableUntil: ISODate | null;
+  createdAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  redemptionCount: number;
+  activeCount: number;
+  redemptions: PromoRedemption[];
+}
+
+export interface NewPromoCode {
+  code: string;
+  discountPercent: number;
+  note?: string | null;
+  maxRedemptions?: number | null;
+  redeemableUntil?: ISODate | null;
 }
 
 export interface PlatformRevenue {

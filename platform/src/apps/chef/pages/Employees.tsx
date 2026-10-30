@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { Employee, TenantRole } from "../../../core/types";
-import { Alert, Button, Card, Dialog, InputField, SelectField, StatusPill, Table, useDialogs, useToast } from "../../../design";
+import { Alert, Button, Card, Dialog, InputField, LinkButton, SelectField, StatusPill, Table, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
 import type { InvitationChannel, InvitationInfo, InvitedEmployee } from "../../../data/repository";
@@ -109,7 +109,10 @@ export function EmployeesPage() {
     <div class="stack">
       <div class="row-between">
         <h1 class="page-title">Mitarbeiter</h1>
-        <Button icon="plus" onClick={() => open("new")}>Mitarbeiter einladen</Button>
+        <div class="btn-row">
+          <LinkButton href="#/app-anleitung" icon="printer">Anleitung mit QR-Code</LinkButton>
+          <Button icon="plus" onClick={() => open("new")}>Mitarbeiter einladen</Button>
+        </div>
       </div>
       {q.error && <Alert tone="danger" live>{q.error}</Alert>}
       {sent && <Alert tone={sent.tone} live title="Einladung"><p data-testid="invitation-status">{sent.text}</p></Alert>}

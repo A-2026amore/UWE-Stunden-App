@@ -17,7 +17,7 @@
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
   Employee, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
-  TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
+  NewPromoCode, PromoCode, PromoRedemption, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings, InvoiceSettingsPatch } from "../core/invoice";
@@ -332,4 +332,24 @@ export interface InvoiceApi {
   issueInvoice(tenantId: UUID, month: ISOMonth): Promise<Invoice>;
   /** super_admin: cancellation document with its own number; the original stays. */
   cancelInvoice(invoiceId: UUID, reason: string): Promise<Invoice>;
+}
+
+/**
+ * Promo codes (decision 30.10.2026, migration 0022). The super admin creates codes
+ * with 1–100 % discount and ends them; the owner of a tenant redeems one. The
+ * discount runs until the super admin ends it (effective from the following month).
+ */
+export interface PromoApi {
+  /** Platform staff: all codes with their redemptions (company names only). */
+  listPromoCodes(): Promise<PromoCode[]>;
+  /** super_admin. */
+  createPromoCode(input: NewPromoCode): Promise<PromoCode>;
+  /** super_admin: no new redemptions; all running discounts of the code end (reason required). */
+  endPromoCode(promoCodeId: UUID, reason: string): Promise<PromoCode>;
+  /** super_admin: ends the running discount of one tenant (reason required). */
+  endTenantPromo(tenantId: UUID, reason: string): Promise<PromoRedemption>;
+  /** Leadership of the tenant (and platform staff): redemptions of the tenant, newest first. */
+  listTenantPromo(tenantId: UUID): Promise<PromoRedemption[]>;
+  /** Owner: redeem a code. */
+  redeemPromoCode(tenantId: UUID, code: string): Promise<PromoRedemption>;
 }

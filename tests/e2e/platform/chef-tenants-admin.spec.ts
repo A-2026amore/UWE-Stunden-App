@@ -164,7 +164,7 @@ test("super-admin: pilot licence badge, no personal time data without support gr
   const kt = page.getByRole("row", { name: /Demo Krankentransporte/ });
   await expect(kt).toContainText("Kostenlos – Pilot");
   await expect(page.getByRole("row", { name: /Muster Pflegedienst/ })).not.toContainText("Kostenlos – Pilot");
-  await expect(statValue(page, "Pilotkunden \\(kostenlos\\)")).toHaveText("1");
+  await expect(statValue(page, "Mit Aktionsrabatt")).toHaveText("0");
 
   await kt.getByRole("link", { name: "Demo Krankentransporte verwalten" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Demo Krankentransporte" })).toBeVisible();

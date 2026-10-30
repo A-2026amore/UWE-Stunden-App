@@ -60,6 +60,9 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   licenses_note_check: "Die Notiz ist zu lang (max. 2000 Zeichen).",
   work_account_allocations_minutes_check: "Ungültige Minutenzahl.",
   monthly_statements_return_reason: "Bitte einen Grund für die Rückgabe angeben.",
+  promo_codes_code_key: "Diesen Aktionscode gibt es bereits.",
+  promo_redemptions_one_active: "Für Ihre Firma läuft bereits ein Aktionsrabatt.",
+  promo_redemptions_once: "Diesen Aktionscode hat Ihre Firma bereits eingelöst.",
 };
 
 function constraintMessage(e: PgLikeError, fallback: string): string {

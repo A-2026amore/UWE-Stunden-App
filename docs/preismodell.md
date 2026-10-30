@@ -1,15 +1,18 @@
 # Preismodell
 
-Verbindliche Entscheidung des Auftraggebers vom 28.10.2026. Umsetzung: Migration
-`db/migrations/0012_billing.sql`, Fachlogik `platform/src/core/billing.ts`, Chef-Portal „Abrechnung“,
-Super-Admin „Umsatz“ und „Preismodell“.
+Verbindliche Entscheidung des Auftraggebers vom 28.10.2026, geändert am 30.10.2026 (Bruttopreis,
+keine kostenlosen Konten, Aktionscodes). Umsetzung: Migrationen `db/migrations/0012_billing.sql` und
+`0022_promo_codes_gross_prices.sql`, Fachlogik `platform/src/core/billing.ts`, Chef-Portal „Abrechnung“,
+Super-Admin „Umsatz“, „Preismodell“ und „Aktionscodes“.
 
 ## Kurz gesagt
 
-- **5,00 € netto je abrechenbarem Mitarbeiter und Monat**, zzgl. gesetzlicher USt.
+- **5,00 € brutto je abrechenbarem Mitarbeiter und Monat**, inkl. gesetzlicher USt. (bei 19 %: 4,20 € netto
+  + 0,80 € USt.).
 - Keine Grundgebühr, keine Mindestanzahl, keine Staffeln.
-- Beispiele: 5 Mitarbeiter → 25,00 €, 20 → 100,00 €, 100 → 500,00 € (jeweils netto).
-- Kostenlose Kundenkonten (Pilot, Test) und Sonderpreise je Kunde sind möglich.
+- Beispiele: 5 Mitarbeiter → 25,00 €, 20 → 100,00 €, 100 → 500,00 € (jeweils brutto).
+- **Keine kostenlosen Konten** für neue Kunden. Rabatte bis 100 % gibt es nur über **Aktionscodes**
+  (siehe unten); der Rabatt läuft, bis der Super-Admin ihn beendet. Sonderpreise je Kunde bleiben möglich.
 - Es ist **kein Zahlungsdienstleister** angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.
 
 ## Wer wird berechnet?
@@ -45,26 +48,46 @@ Technisch: Jede Status- und Rollenänderung wird mit Zeitpunkt in einer Historie
 
 ## Preise und Sonderkonditionen (Super-Admin)
 
-- **Standardpreis** (Super-Admin → „Preismodell“): 5,00 € netto, änderbar nur mit Begründung; jede
+- **Standardpreis** (Super-Admin → „Preismodell“): 5,00 € brutto, änderbar nur mit Begründung; jede
   Änderung steht im Plattform-Protokoll.
 - **Sonderkondition je Kunde** (Mandanten → Verwalten → Lizenz):
-  - eigener Preis je Mitarbeiter (z. B. 3,50 €),
-  - „Kostenloses Konto“ (z. B. Testkunde),
+  - eigener Preis je Mitarbeiter, brutto (z. B. 3,50 €),
+  - „Kostenloses Konto“ – nur noch für bestehende Konten sichtbar (Haken entfernen = kostenpflichtig),
   - Gültigkeit von/bis – gilt für **jeden Monat, den der Zeitraum berührt** (kundenfreundlich bei
     Teilmonaten); leer = unbefristet,
   - Notiz.
-- **Pilotkunden** (Lizenz „Kostenlos – Pilot“, bisher `pilot_free`) sind immer kostenlos, ohne
-  Zahlungsdaten und ohne automatische Umstellung. Bestehende Pilotlizenzen wurden unverändert übernommen.
+- **Pilotkunden** (Lizenz „Kostenlos – Pilot“, `pilot_free`): seit 30.10.2026 nicht mehr für neue Kunden
+  wählbar. Bestehende Pilotlizenzen bleiben unverändert kostenlos, bis der Super-Admin sie umstellt.
 - Die übrigen Lizenzen (Standard, Business, Enterprise) unterscheiden sich nur noch in der
   Mitarbeiter-Obergrenze, nicht im Preis.
 
-Reihenfolge der Preisfindung je Monat: Pilot → kostenlos · sonst kostenloses Konto (wenn gültig) →
-0 € · sonst Sonderpreis (wenn gültig) · sonst Standardpreis.
+Reihenfolge der Preisfindung je Monat: Firma ganzen Monat gesperrt → 0 € · Pilot → kostenlos · sonst
+kostenloses Konto (wenn gültig) → 0 € · sonst Sonderpreis (wenn gültig) oder Standardpreis, davon ggf. der
+Aktionsrabatt (gerundet auf ganze Cent).
+
+## Aktionscodes (Entscheidung 30.10.2026)
+
+- **Anlegen** (Super-Admin → „Aktionscodes“): Code (6–32 Zeichen, A–Z, Ziffern, Bindestrich; Knopf
+  „Zufallscode erzeugen“), Nachlass 1–100 %, optional maximale Zahl der Einlösungen, „einlösbar bis“ und
+  interne Notiz. Support sieht die Codes nur.
+- **Einlösen** (Chef-Portal → „Abrechnung“, nur der Inhaber): Code eingeben. Je Firma läuft höchstens ein
+  Rabatt; denselben Code kann eine Firma nur einmal einlösen. Unbekannte, beendete, abgelaufene und
+  ausgeschöpfte Codes ergeben dieselbe Meldung; mehr als 10 Versuche in 15 Minuten werden gebremst.
+- **Wirkung:** Der Rabatt gilt für **jeden Monat, den die Laufzeit berührt** – auch den Monat des
+  Einlösens – und läuft **ohne Enddatum**, bis der Super-Admin ihn beendet.
+- **Beenden** (Begründung Pflicht, protokolliert): je Kunde („Rabatt beenden“ in der Liste oder im Mandanten)
+  oder für den ganzen Code („Code beenden“: keine neuen Einlösungen, alle laufenden Rabatte enden). Der
+  **Monat des Beendens bleibt rabattiert**, ab dem Folgemonat gilt der normale Preis. Beispiel: eingelöst am
+  15.07., beendet am 20.09. → Juli bis September rabattiert, ab Oktober 5,00 € je Mitarbeiter.
+- Laut AGB (§ 4) teilt der Anbieter dem Kunden das Ende vorher in Textform mit.
+- Ein 100-%-Monat kostet 0 € – dafür gibt es keine Rechnung. Bei Teilrabatt steht auf der Rechnung
+  „(Aktionscode CODE, −50 %)“.
+- Abrechnung: Kondition „Aktionscode“; Chef-Portal und Umsatz zeigen Code und Nachlass.
 
 ## Abrechnung je Monat
 
 **Chef-Portal → Abrechnung** (Inhaber und Vorgesetzte): laufender Monat als Vorschau, frühere Monate
-mit Anzahl, Preis je Person, Summe netto und Status; Liste der berechneten Personen mit Grund.
+mit Anzahl, Preis je Person, Summe (brutto) und Status; Liste der berechneten Personen mit Grund.
 
 **Super-Admin → Umsatz**: je Monat alle Kunden mit Anzahl, Kondition, Preis, Betrag und Status; Summen
 (ohne Demo-Kunden, erlassene Monate getrennt). Das Plattformpersonal sieht **nur Zahlen, keine Namen**.
@@ -120,7 +143,9 @@ Eine Firma, die gesperrt („vorübergehend gesperrt“) oder deaktiviert („Ve
 - **Storno:** erzeugt eine Stornorechnung mit eigener Nummer und negativen Beträgen; die ursprüngliche Rechnung
   bleibt erhalten und wird als storniert gekennzeichnet. Gelöscht wird nichts. Danach kann für den Monat eine neue
   Rechnung erzeugt werden.
-- **Umsatzsteuer:** voreingestellt 19 %. Solange der Satz nicht als „vom Auftraggeber bestätigt“ markiert ist,
+- **Umsatzsteuer:** voreingestellt 19 %. Seit 30.10.2026 sind die Preise **brutto**: Die Rechnung weist den
+  Gesamtbetrag brutto, die enthaltene USt. (`round(brutto × Satz / (100 + Satz))`) und die Summe netto aus.
+  Ältere Rechnungen behalten ihre gespeicherten Beträge (Nettopositionen). Solange der Satz nicht als „vom Auftraggeber bestätigt“ markiert ist,
   steht auf jeder Rechnung der Hinweis „USt-Satz vom Auftraggeber zu bestätigen“.
 - **Zahlungsziel** (Standard 14 Tage) und Zahlungshinweis (z. B. Bankverbindung) sind Einstellungen.
 - **Pflichtangaben nach § 14 UStG** (Name und Anschrift des Absenders, Steuernummer oder USt-IdNr.) trägt der
@@ -154,4 +179,4 @@ Datenschutzprüfung und eine eigene Umsetzung mit Tests.
 
 - Rechnungen werden erzeugt (siehe oben), aber nicht versendet; Zahlungseingang wird manuell als „Bezahlt“ gepflegt.
 - USt-Satz 19 % ist vom Auftraggeber zu bestätigen; Absenderangaben (§ 14 UStG) sind einzutragen.
-- Umsatzsteuer: Es werden nur Nettobeträge mit dem Hinweis „zzgl. gesetzlicher USt.“ angezeigt.
+- Umsatzsteuer: Alle Beträge in den Apps sind Bruttobeträge mit dem Hinweis „inkl. gesetzlicher USt.“.

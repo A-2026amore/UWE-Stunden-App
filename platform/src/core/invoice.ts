@@ -120,11 +120,31 @@ export function vatCents(netCents: number, ratePercent: number): number {
   return raw < 0 ? -rounded : rounded;
 }
 
-/** Net, VAT and gross of invoice lines. */
+/**
+ * VAT contained in a gross amount, rounded half away from zero (PostgreSQL round):
+ * round(gross × rate / (100 + rate)). Prices are gross since 30.10.2026 (migration 0022).
+ */
+export function vatFromGross(grossCents: number, ratePercent: number): number {
+  if (!Number.isInteger(grossCents)) throw new Error("Bruttobetrag muss in ganzen Cent angegeben werden.");
+  if (!(ratePercent >= 0 && ratePercent <= 100)) throw new Error("USt-Satz muss zwischen 0 und 100 % liegen.");
+  const bp = Math.round(ratePercent * 100);
+  const num = Math.abs(grossCents) * bp;
+  const den = 10000 + bp;
+  const q = Math.floor(num / den);
+  const rounded = (num - q * den) * 2 >= den ? q + 1 : q;
+  return grossCents < 0 ? -rounded : rounded;
+}
+
+/** Net, VAT and gross of invoice lines whose amounts are gross (incl. VAT). */
 export function invoiceTotals(lines: ReadonlyArray<Pick<InvoiceLine, "amountCents">>, ratePercent: number): { netCents: number; vatCents: number; grossCents: number } {
-  const net = lines.reduce((s, l) => s + l.amountCents, 0);
-  const vat = vatCents(net, ratePercent);
-  return { netCents: net, vatCents: vat, grossCents: net + vat };
+  const gross = lines.reduce((s, l) => s + l.amountCents, 0);
+  const vat = vatFromGross(gross, ratePercent);
+  return { netCents: gross - vat, vatCents: vat, grossCents: gross };
+}
+
+/** Invoices issued before 30.10.2026 list net line amounts; later ones gross amounts. */
+export function linesAreGross(inv: Pick<InvoiceData, "lines" | "netCents" | "grossCents">): boolean {
+  return inv.lines.reduce((s, l) => s + l.amountCents, 0) === inv.grossCents;
 }
 
 /** "SW-2026-000001" */
@@ -194,6 +214,7 @@ export function createInvoicePdfBytes(args: InvoicePdfArgs): Uint8Array {
   const title = cancellation ? "Stornorechnung" : "Rechnung";
   const number = inv.number ?? "ENTWURF";
   const iss = inv.issuer;
+  const gross = linesAreGross(inv);
   const pages: string[][] = [];
   let page: string[] = [];
   const issuerLine = [iss.issuerName, iss.issuerStreet, [iss.issuerPostalCode, iss.issuerCity].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
@@ -239,8 +260,8 @@ export function createInvoicePdfBytes(args: InvoicePdfArgs): Uint8Array {
     page.push(txt(M + 8, y + 2, "Pos.", 9, true));
     page.push(txt(M + 44, y + 2, "Beschreibung", 9, true));
     page.push(right(W - M - 190, y + 2, "Menge", 9, true));
-    page.push(right(W - M - 95, y + 2, "Einzelpreis", 9, true));
-    page.push(right(W - M - 8, y + 2, "Betrag netto", 9, true));
+    page.push(right(W - M - 95, y + 2, gross ? "Einzelpreis brutto" : "Einzelpreis", 9, true));
+    page.push(right(W - M - 8, y + 2, gross ? "Betrag brutto" : "Betrag netto", 9, true));
     return y - 26;
   };
 
@@ -273,7 +294,7 @@ export function createInvoicePdfBytes(args: InvoicePdfArgs): Uint8Array {
   const tx = W - M - 230;
   const totals: Array<[string, string, boolean]> = [
     ["Summe netto", formatEuro(inv.netCents), false],
-    [`Umsatzsteuer ${percentDE(inv.vatRatePercent)}`, formatEuro(inv.vatCents), false],
+    [`${gross ? "enthaltene " : ""}Umsatzsteuer ${percentDE(inv.vatRatePercent)}`, formatEuro(inv.vatCents), false],
     ["Gesamtbetrag brutto", formatEuro(inv.grossCents), true],
   ];
   y -= 8;
@@ -292,7 +313,7 @@ export function createInvoicePdfBytes(args: InvoicePdfArgs): Uint8Array {
   } else {
     notes.push("Diese Stornorechnung hebt die genannte Rechnung vollständig auf.");
   }
-  notes.push("Abrechnung je abrechenbarer Person und Monat; die Rechnung enthält keine personenbezogenen Daten von Mitarbeitenden.");
+  notes.push(`Abrechnung je abrechenbarer Person und Monat${gross ? ", Preise inkl. gesetzlicher USt." : ""}; die Rechnung enthält keine personenbezogenen Daten von Mitarbeitenden.`);
   for (const n of notes) {
     for (const l of wrapWords(n, 100)) {
       if (y < 90) { pages.push(page); page = []; y = header(false); }

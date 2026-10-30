@@ -15,18 +15,18 @@ async function openBilling(page: Page, email: string): Promise<void> {
   await expect(page.getByRole("heading", { level: 1, name: "Abrechnung" })).toBeVisible();
 }
 
-test("chef: billing preview with billable persons, net amount and VAT note", async ({ page }) => {
+test("chef: billing preview with billable persons, gross amount and VAT note", async ({ page }) => {
   await openBilling(page, "leitung@muster-pflege.example");
   await expect(page.locator(".alert-title", { hasText: "Vorschau" })).toBeVisible();
   await expect(statValue(page, "Abrechenbare Personen")).toHaveText("3");
   await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
-  await expect(statValue(page, "Summe netto")).toHaveText("15,00 €");
-  await expect(page.locator(".stat", { hasText: "Summe netto" })).toContainText("zzgl. gesetzlicher USt.");
+  await expect(statValue(page, "Summe brutto")).toHaveText("15,00 €");
+  await expect(page.locator(".stat", { hasText: "Summe brutto" })).toContainText("inkl. gesetzlicher USt.");
   const table = page.getByRole("table", { name: "Abrechenbare Personen" });
   for (const name of ["Mia Musterfrau", "Noah Normal", "Olga Ohnename"]) await expect(table).toContainText(name);
   // The owner records no own times → free.
   await expect(table).not.toContainText("Petra Leitung");
-  await expect(page.getByText("3 × 5,00 € = 15,00 € netto")).toBeVisible();
+  await expect(page.getByText("3 × 5,00 € = 15,00 € inkl. gesetzlicher USt.")).toBeVisible();
 
   // Past month: preliminary until the operator closes it.
   await page.getByLabel("Monat").selectOption("2026-10");
@@ -49,7 +49,7 @@ test("chef: lock an employee – no sign-in, still billed this month", async ({ 
   // Pilot customer: free, but the count is shown; Anna is still billable in November.
   await go(page, "#/abrechnung");
   await expect(statValue(page, "Abrechenbare Personen")).toHaveText("4");
-  await expect(statValue(page, "Summe netto")).toHaveText("0,00 €");
+  await expect(statValue(page, "Summe brutto")).toHaveText("0,00 €");
   await expect(page.getByText("Kostenlos – Pilot").first()).toBeVisible();
   await expect(page.getByRole("table", { name: "Abrechenbare Personen" })).toContainText("Anna Beispiel");
 
@@ -75,7 +75,7 @@ test("super-admin: revenue numbers without names, close a month, change the defa
   await expect(pflege).toContainText("Vorschau");
   await expect(page.getByRole("row", { name: /Demo Krankentransporte/ })).toContainText("Kostenlos – Pilot");
   // Both demo tenants are not revenue.
-  await expect(statValue(page, "Umsatz netto")).toHaveText("0,00 €");
+  await expect(statValue(page, "Umsatz brutto")).toHaveText("0,00 €");
   await expect(statValue(page, "Demo-Mandanten")).toHaveText("15,00 €");
   for (const personal of ["Mia Musterfrau", "Anna Beispiel", "Petra Leitung"]) await expect(main).not.toContainText(personal);
   // The current month cannot be closed.
@@ -95,7 +95,7 @@ test("super-admin: revenue numbers without names, close a month, change the defa
   // New default price: the current month changes, the closed October stays.
   await go(page, "#/lizenzen");
   await expect(page.getByTestId("default-price")).toContainText("5,00 €");
-  await page.getByLabel("Neuer Standardpreis (€ netto)").fill("6,00");
+  await page.getByLabel("Neuer Standardpreis (€ brutto)").fill("6,00");
   await page.getByLabel("Grund (Protokoll)").fill("Preisanpassung Test");
   await page.getByRole("button", { name: "Standardpreis speichern" }).click();
   await expect(page.locator(".toast").filter({ hasText: "Standardpreis auf 6,00 € gesetzt." })).toBeVisible();
@@ -115,7 +115,7 @@ test("super-admin: revenue numbers without names, close a month, change the defa
   await openBilling(chef, "leitung@muster-pflege.example");
   await chef.getByLabel("Monat").selectOption("2026-10");
   await expect(chef.getByText("Abgeschlossen: Oktober 2026")).toBeVisible();
-  await expect(statValue(chef, "Summe netto")).toHaveText("15,00 €");
+  await expect(statValue(chef, "Summe brutto")).toHaveText("15,00 €");
 });
 
 test("super-admin: special condition for a tenant", async ({ page }) => {
@@ -123,7 +123,7 @@ test("super-admin: special condition for a tenant", async ({ page }) => {
   await page.getByRole("link", { name: "Muster Pflegedienst GmbH verwalten" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Muster Pflegedienst GmbH" })).toBeVisible();
   await expect(page.getByTestId("tenant-billable")).toHaveText("3");
-  await page.getByLabel("Sonderpreis je Mitarbeiter (€ netto)").fill("3,50");
+  await page.getByLabel("Sonderpreis je Mitarbeiter (€ brutto)").fill("3,50");
   await page.getByLabel("Notiz zur Kondition").fill("Einführungsrabatt");
   await page.getByLabel("Grund der Änderung (Protokoll)").fill("Vertrag 2026");
   await page.getByRole("button", { name: "Lizenz speichern" }).click();
@@ -131,7 +131,43 @@ test("super-admin: special condition for a tenant", async ({ page }) => {
   await expect(page.getByTestId("tenant-price")).toHaveText("3,50 € je Mitarbeiter/Monat (Sonderpreis)");
   await expect(page.getByRole("main")).toContainText("10,50 €");
 
-  await page.getByLabel("Kostenloses Konto").check();
-  await page.getByRole("button", { name: "Lizenz speichern" }).click();
-  await expect(page.getByTestId("tenant-price")).toHaveText("0,00 € – kostenloses Konto");
+  // No free accounts any more: the option is not offered for a paying customer.
+  await expect(page.getByLabel("Kostenloses Konto")).toHaveCount(0);
+});
+
+test("promo code: super-admin creates, owner redeems (0 €), super-admin ends the discount", async ({ page }) => {
+  await login(page, ADMIN, "admin@plattform.example");
+  await go(page, "#/aktionscodes");
+  await expect(page.getByRole("heading", { level: 1, name: "Aktionscodes" })).toBeVisible();
+  await page.getByLabel("Code").fill("start-100");
+  await expect(page.getByLabel("Nachlass (%)")).toHaveValue("100");
+  await page.getByRole("button", { name: "Aktionscode anlegen" }).click();
+  await expect(page.locator(".toast").filter({ hasText: "Aktionscode START-100 (−100 %) angelegt." })).toBeVisible();
+  await expect(page.getByTestId("promo-code")).toHaveText("START-100");
+
+  const chef = await page.context().newPage();
+  await chef.clock.setFixedTime(new Date("2026-11-20T10:00:00+01:00"));
+  await openBilling(chef, "leitung@muster-pflege.example");
+  await chef.getByLabel("Aktionscode").fill("FALSCH-123");
+  await chef.getByRole("button", { name: "Einlösen" }).click();
+  await expect(chef.getByText("Der Aktionscode ist ungültig oder nicht mehr einlösbar.")).toBeVisible();
+  await chef.getByLabel("Aktionscode").fill("start-100");
+  await chef.getByRole("button", { name: "Einlösen" }).click();
+  await expect(chef.locator(".toast").filter({ hasText: "Aktionscode START-100 eingelöst" })).toBeVisible();
+  await expect(chef.getByTestId("promo-running")).toBeVisible();
+  await expect(statValue(chef, "Preis je Person")).toHaveText("0,00 €");
+  await expect(statValue(chef, "Summe brutto")).toHaveText("0,00 €");
+
+  await page.reload();
+  await expect(page.getByRole("row", { name: /Muster Pflegedienst/ })).toContainText("läuft");
+  await page.getByRole("button", { name: "Rabatt für Muster Pflegedienst GmbH beenden" }).click();
+  const ask = page.getByRole("dialog", { name: "Rabatt für Muster Pflegedienst GmbH beenden?" });
+  await expect(ask).toContainText("ab dem Folgemonat gilt der normale Preis");
+  await ask.getByRole("textbox").fill("Aktion vorbei");
+  await ask.getByRole("button", { name: "Rabatt beenden" }).click();
+  await expect(page.locator(".toast").filter({ hasText: "Rabatt beendet." })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Muster Pflegedienst/ })).toContainText("Aktion vorbei");
+  await go(page, "#/protokoll");
+  await expect(page.getByRole("main")).toContainText("Aktionscode eingelöst");
+  await expect(page.getByRole("main")).toContainText("Aktionsrabatt beendet");
 });
