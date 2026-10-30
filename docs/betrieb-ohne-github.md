@@ -113,6 +113,9 @@ davon ab.
   Verfahren nichts (gleiche Skripte), wäre aber ein eigener Schritt.
 - Einrichtung und Probe-Paket am 30.10.2026 auf dem Testserver erfolgreich (Paket 6990943 geprüft und übernommen,
   nicht ausgerollt). `deploy/windows/paket-hochladen.ps1` selbst ist noch nicht auf Windows gelaufen.
-- Storage Box ist noch nicht eingebunden (`/root/.stunden-test-restic.env` fehlt): Sicherungen und Paket-Kopien liegen
-  bisher nur auf dem Server.
+- Storage Box: einmalig `sudo bash storagebox-einrichten.sh u704070-sub1 u704070.your-storagebox.de`
+  (`deploy/storagebox-einrichten.sh`; Sub-Account „AppZentrale24 Backup“, Repository `stundenwerk-test` in dessen
+  Verzeichnis). Danach gehen Sicherungen und Paket-Kopien per restic auf die Box. Die Passwortdateien
+  `/root/.stunden-test-restic-pass` und `/root/.stunden-test-backup-pass` gehören zusätzlich in KeePassXC.
+  Sicherungen entstehen bisher nur bei jeder Bereitstellung, nicht täglich.
 - `deploy/test-env-check.sh` konnte aus der Entwicklungsumgebung nicht gegen die echte Adresse laufen (Netzsperre).

@@ -13,6 +13,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Repository (`deploy/umstellen-ohne-github.sh`, installiert `stunden-test-paket`; `stunden-test-freigeben` gibt nur
   noch Commits aus geprüften Paketen frei), Tests ohne GitHub Actions (`deploy/pruefen.sh`) und Online-Prüfung der
   Testumgebung ohne GitHub (`deploy/test-env-check.sh`).
+- Storage Box für die Testsicherungen: `deploy/storagebox-einrichten.sh` (SSH-Schlüssel für den Sub-Account,
+  restic-Repository, Probe mit Hochladen und Zurückholen).
 
 ### Sicherheit
 - Testumgebung: Der Server stellt nur den mit `stunden-test-freigeben <commit>` freigegebenen Commit bereit;
