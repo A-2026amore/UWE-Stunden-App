@@ -63,6 +63,13 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   promo_codes_code_key: "Diesen Aktionscode gibt es bereits.",
   promo_redemptions_one_active: "Für Ihre Firma läuft bereits ein Aktionsrabatt.",
   promo_redemptions_once: "Diesen Aktionscode hat Ihre Firma bereits eingelöst.",
+  billing_settings_trial_window: "Für das Einführungsangebot bitte beide Daten angeben; das Ende darf nicht vor dem Beginn liegen.",
+  billing_settings_monthly_price_cents_check: "Der Monatspreis muss zwischen 0 und 1.000,00 € liegen (in Cent).",
+  billing_settings_trial_months_check: "Die Testphase muss 1 bis 24 Monate dauern.",
+  billing_settings_cancel_notice_days_check: "Die Kündigungsfrist muss zwischen 0 und 365 Tagen liegen.",
+  subscription_terms_no_overlap: "Die Laufzeiten des Tarifs würden sich überschneiden.",
+  subscription_terms_ends_on: "Eine Laufzeit endet immer am Monatsletzten.",
+  tenant_contracts_pkey: "Der Vertrag wurde bereits abgeschlossen.",
 };
 
 function constraintMessage(e: PgLikeError, fallback: string): string {

@@ -1,19 +1,52 @@
 # Preismodell
 
 Verbindliche Entscheidung des Auftraggebers vom 28.10.2026, geändert am 30.10.2026 (Bruttopreis,
-keine kostenlosen Konten, Aktionscodes). Umsetzung: Migrationen `db/migrations/0012_billing.sql` und
-`0022_promo_codes_gross_prices.sql`, Fachlogik `platform/src/core/billing.ts`, Chef-Portal „Abrechnung“,
-Super-Admin „Umsatz“, „Preismodell“ und „Aktionscodes“.
+keine kostenlosen Konten, Aktionscodes, 12-Monats-Abo und Monatstarif). Umsetzung: Migrationen
+`db/migrations/0012_billing.sql`, `0022_promo_codes_gross_prices.sql` und `0023_subscriptions.sql`,
+Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`, Chef-Portal „Abrechnung“
+(Karte „Tarif“), Super-Admin „Umsatz“, „Preismodell“ und „Aktionscodes“.
 
 ## Kurz gesagt
 
-- **5,00 € brutto je abrechenbarem Mitarbeiter und Monat**, inkl. gesetzlicher USt. (bei 19 %: 4,20 € netto
-  + 0,80 € USt.).
+- **12-Monats-Abo: 5,00 € brutto** je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.
+  (bei 19 %: 4,20 € netto + 0,80 € USt.).
+- **Monatstarif: 6,50 € brutto** je abrechenbarem Mitarbeiter und Monat. **Ohne Wahl gilt der Monatstarif.**
 - Keine Grundgebühr, keine Mindestanzahl, keine Staffeln.
-- Beispiele: 5 Mitarbeiter → 25,00 €, 20 → 100,00 €, 100 → 500,00 € (jeweils brutto).
+- Beispiel 20 Mitarbeitende: 100,00 € im 12-Monats-Abo, 130,00 € im Monatstarif (jeweils brutto).
 - **Keine kostenlosen Konten** für neue Kunden. Rabatte bis 100 % gibt es nur über **Aktionscodes**
   (siehe unten); der Rabatt läuft, bis der Super-Admin ihn beendet. Sonderpreise je Kunde bleiben möglich.
 - Es ist **kein Zahlungsdienstleister** angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.
+
+## Tarife, Testphase und Kündigung (seit 30.10.2026)
+
+| | 12-Monats-Abo | Monatstarif |
+|---|---|---|
+| Preis je Mitarbeiter/Monat (brutto) | 5,00 € (Standardpreis) | 6,50 € |
+| Laufzeit | 12 Monate fest, ab dem 1. eines Monats | monatlich |
+| Verlängerung | jeweils um 6 Monate, wenn nicht bis zum letzten Tag der Laufzeit gekündigt (Kündigungsfrist in Tagen einstellbar, Standard 0) | läuft weiter |
+| Kündigung | zum Ende der Laufzeit; wahlweise „danach im Monatstarif weiter“ | zum Ende des laufenden Monats |
+
+- **Vertragsschluss:** Bei der ersten Anmeldung sieht der Inhaber nur „Firma freischalten“: Bestätigung als
+  Unternehmer (§ 14 BGB), Zustimmung zu AGB (mit Anlage A) und AVV, Tarifwahl (Monatstarif vorausgewählt).
+  Zeitpunkt und Versionen werden gespeichert. Vorher können Vorgesetzte und Mitarbeitende das Konto nicht nutzen.
+- **Wechsel:** Monatstarif → 12-Monats-Abo jederzeit ab dem Folgemonat (in der Testphase ab dem ersten
+  bezahlten Monat). 12-Monats-Abo → Monatstarif nur zum Laufzeitende (kündigen mit „danach monatlich weiter“).
+- **Kündigung zurücknehmen** geht, solange der Vertrag noch nicht beendet ist.
+- **Nach dem Vertragsende** wird nichts berechnet („Kein laufender Vertrag“); der Inhaber kann einen neuen Tarif
+  wählen.
+- **Einführungsangebot:** Der Super-Admin legt einen Zeitraum fest (von/bis, Anlagedatum des Mandanten) und
+  die Länge der Testphase (Standard 3 Monate). Die Testphase reicht bis zum Ende des Kalendermonats, in dem
+  diese Monate enden (angelegt am 15.11. → kostenlos bis 28.02.). Abgerechnet wird ab dem Folgemonat.
+  Ohne Zeitraum gibt es keine Testphase.
+- **Willkommenscode:** Optional ein Aktionscode, der in der Einladung jedes neuen Mandanten steht, solange er
+  einlösbar ist.
+- **Bestehende Kunden** (vor 0023): keine Testphase, Monatstarif ab dem Anlagemonat. Der Demo-Mandant
+  „Muster Pflegedienst“ wird daher mit 6,50 € berechnet.
+- Reihenfolge der Preisregeln je Monat: Firma gesperrt → Pilot → kostenloses Konto → Testphase →
+  kein Vertrag (0 €) → Sonderpreis → 12-Monats-Abo bzw. Monatstarif → Aktionsrabatt darauf.
+- Abgeschlossene Monate und ausgestellte Rechnungen ändern sich nie.
+- Jede Tarifänderung steht im Änderungsprotokoll (Vertrag abgeschlossen, Tarif gewählt, gekündigt,
+  Kündigung zurückgenommen); Änderungen der Preiseinstellungen im Plattform-Protokoll.
 
 ## Wer wird berechnet?
 
@@ -48,8 +81,9 @@ Technisch: Jede Status- und Rollenänderung wird mit Zeitpunkt in einer Historie
 
 ## Preise und Sonderkonditionen (Super-Admin)
 
-- **Standardpreis** (Super-Admin → „Preismodell“): 5,00 € brutto, änderbar nur mit Begründung; jede
-  Änderung steht im Plattform-Protokoll.
+- **Preise und Tarifeinstellungen** (Super-Admin → „Preismodell“, ein Formular mit Begründung):
+  12-Monats-Abo (Standardpreis, 5,00 €), Monatstarif (6,50 €), Einführungsangebot von/bis, Testphase in
+  Monaten, Kündigungsfrist in Tagen, Willkommenscode. Jede Änderung steht im Plattform-Protokoll.
 - **Sonderkondition je Kunde** (Mandanten → Verwalten → Lizenz):
   - eigener Preis je Mitarbeiter, brutto (z. B. 3,50 €),
   - „Kostenloses Konto“ – nur noch für bestehende Konten sichtbar (Haken entfernen = kostenpflichtig),
@@ -62,8 +96,9 @@ Technisch: Jede Status- und Rollenänderung wird mit Zeitpunkt in einer Historie
   Mitarbeiter-Obergrenze, nicht im Preis.
 
 Reihenfolge der Preisfindung je Monat: Firma ganzen Monat gesperrt → 0 € · Pilot → kostenlos · sonst
-kostenloses Konto (wenn gültig) → 0 € · sonst Sonderpreis (wenn gültig) oder Standardpreis, davon ggf. der
-Aktionsrabatt (gerundet auf ganze Cent).
+kostenloses Konto (wenn gültig) → 0 € · Testphase → 0 € · kein laufender Vertrag → 0 € · sonst Sonderpreis
+(wenn gültig) oder Preis des Tarifs (12-Monats-Abo bzw. Monatstarif), davon ggf. der Aktionsrabatt
+(gerundet auf ganze Cent).
 
 ## Aktionscodes (Entscheidung 30.10.2026)
 
@@ -78,8 +113,10 @@ Aktionsrabatt (gerundet auf ganze Cent).
 - **Beenden** (Begründung Pflicht, protokolliert): je Kunde („Rabatt beenden“ in der Liste oder im Mandanten)
   oder für den ganzen Code („Code beenden“: keine neuen Einlösungen, alle laufenden Rabatte enden). Der
   **Monat des Beendens bleibt rabattiert**, ab dem Folgemonat gilt der normale Preis. Beispiel: eingelöst am
-  15.07., beendet am 20.09. → Juli bis September rabattiert, ab Oktober 5,00 € je Mitarbeiter.
-- Laut AGB (§ 4) teilt der Anbieter dem Kunden das Ende vorher in Textform mit.
+  15.07., beendet am 20.09. → Juli bis September rabattiert, ab Oktober der normale Preis des Tarifs.
+- Laut AGB (§ 4) teilt der Anbieter dem Kunden das Ende vorher in Textform mit. Überall, wo ein Code oder
+  ein laufender Rabatt angezeigt wird, steht der Hinweis „Rabatt bis auf Weiteres; der Anbieter kann ihn zum
+  Ende eines Kalendermonats beenden.“
 - Ein 100-%-Monat kostet 0 € – dafür gibt es keine Rechnung. Bei Teilrabatt steht auf der Rechnung
   „(Aktionscode CODE, −50 %)“.
 - Abrechnung: Kondition „Aktionscode“; Chef-Portal und Umsatz zeigen Code und Nachlass.

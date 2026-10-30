@@ -2,7 +2,7 @@
  * Promo codes and gross prices (migration 0022): the super admin creates codes
  * (1–100 % discount), the owner redeems one, the discount runs until the super
  * admin ends it – the month of ending stays discounted, the next month is regular.
- * Tenant B (standard price) is moved back to June 2026.
+ * Tenant B (no plan chosen → monthly plan 6,50 €, migration 0023) is moved back to June 2026.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IDS, pgError, setupTestDb, type TestDb } from "./support/harness";
@@ -32,7 +32,9 @@ const redeem = (user: string, tenant: string, code: string) =>
 describe("gross prices", () => {
   it("the default price is 5,00 € gross; the invoice draft contains the VAT", async () => {
     expect((await db.admin.query("select default_price_cents from public.billing_settings")).rows[0].default_price_cents).toBe(500);
-    expect(await cond("2026-07")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    // 0023: without a plan choice the monthly plan (6,50 €) applies; 5,00 € is the 12-month subscription.
+    expect((await db.admin.query("select monthly_price_cents from public.billing_settings")).rows[0].monthly_price_cents).toBe(650);
+    expect(await cond("2026-07")).toEqual({ unit_price_cents: 650, condition: "monthly" });
   });
 });
 
@@ -79,7 +81,7 @@ describe("promo codes", () => {
 
   it("100 %: the price is 0 € in every month of the redemption until the super admin ends it", async () => {
     await db.admin.query("update public.promo_redemptions set redeemed_at = '2026-07-15 10:00 Europe/Berlin' where tenant_id = $1", [B]);
-    expect(await cond("2026-06")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond("2026-06")).toEqual({ unit_price_cents: 650, condition: "monthly" });
     expect(await cond("2026-07")).toEqual({ unit_price_cents: 0, condition: "promo" });
     expect(await cond("2026-09")).toEqual({ unit_price_cents: 0, condition: "promo" });
     const b = await db.as(U.ownerB, async (q) => (await q.query("select public.tenant_billing($1, '2026-08') as b", [B])).rows[0].b);
@@ -104,7 +106,7 @@ describe("promo codes", () => {
     expect(r).toMatchObject({ code: "START-100", endReason: "Aktion vorbei" });
     await db.admin.query("update public.promo_redemptions set ended_at = '2026-09-20 12:00 Europe/Berlin' where tenant_id = $1", [B]);
     expect(await cond("2026-09")).toEqual({ unit_price_cents: 0, condition: "promo" });
-    expect(await cond("2026-10")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond("2026-10")).toEqual({ unit_price_cents: 650, condition: "monthly" });
     expect((await pgError(db.as(U.superAdmin, (q) => q.query("select public.platform_end_promo_redemption($1, 'nochmal')", [B])))).code).toBe("55000");
     // the same code cannot be redeemed twice by one tenant
     await db.admin.query("update public.promo_codes set max_redemptions = null where code = 'START-100'");

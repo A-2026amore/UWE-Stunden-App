@@ -369,4 +369,9 @@ export interface SubscriptionApi {
   cancelSubscription(tenantId: UUID, input: { thenMonthly?: boolean; reason?: string | null }): Promise<TenantSubscription>;
   /** Owner: withdraw a cancellation before it takes effect. */
   withdrawCancellation(tenantId: UUID): Promise<TenantSubscription>;
+  /**
+   * Owner, once: conclude the contract (entrepreneur, AGB + AVV accepted, plan chosen). Stores time and
+   * versions (TERMS_VERSION, DPA_VERSION); "annual" applies the plan choice like chooseSubscription.
+   */
+  acceptContract(tenantId: UUID, input: { entrepreneur: true; termsAccepted: true; interval: SubscriptionInterval }): Promise<TenantSubscription>;
 }

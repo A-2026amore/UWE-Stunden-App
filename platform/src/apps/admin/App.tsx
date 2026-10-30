@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import type { AuditEvent, BillingStatus, License, LicensePlan, PlatformRevenueRow, Tenant } from "../../core/types";
+import type { AuditEvent, BillingSettings, BillingStatus, License, LicensePlan, PlatformRevenueRow, Tenant } from "../../core/types";
 import {
   BILLING_CONDITION_LABEL, BILLING_STATUS_LABEL, DEFAULT_EMPLOYEE_PRICE_CENTS, VAT_NOTE, billingConditionFor, formatEuro, monthsBack, parseEuro,
 } from "../../core/billing";
@@ -17,6 +17,8 @@ import { errorText, useAsync } from "../shared/hooks";
 import { auditLabel } from "../shared/audit";
 import { InvoicesPage } from "./pages/Invoices";
 import { PromoCodesPage, TenantPromoCard } from "./pages/PromoCodes";
+import { DEFAULT_MONTHLY_PRICE_CENTS, INTERVAL_LABEL, PROMO_TERMS_NOTE } from "../../core/subscription";
+import { SubscriptionFacts, berlinToday } from "../shared/subscription";
 
 const repo = getRepository("admin");
 
@@ -64,14 +66,38 @@ function priceText(l: License | null, defaultPriceCents: number): string {
   return `${formatEuro(c.unitPriceCents)} je Mitarbeiter/Monat (${BILLING_CONDITION_LABEL[c.condition]})`;
 }
 
+/** Price of the current month from the revenue row (subscription 0023: trial, interval, end). */
+function rowPriceText(r: PlatformRevenueRow | undefined, l: License | null, defaultPriceCents: number): string {
+  if (!r) return priceText(l, defaultPriceCents);
+  if (r.condition === "promo") return promoText(r);
+  if (r.condition === "trial") return `0,00 € – Testphase${r.trialEndsOn ? ` bis ${formatDateDE(r.trialEndsOn)}` : ""}`;
+  if (r.condition === "ended") return "0,00 € – kein laufender Vertrag";
+  if (r.condition === "pilot_free" || r.condition === "free" || r.condition.startsWith("tenant_")) return priceText(l, defaultPriceCents);
+  const label = r.condition === "standard" && r.interval ? INTERVAL_LABEL[r.interval] : BILLING_CONDITION_LABEL[r.condition];
+  return `${formatEuro(r.unitPriceCents)} je Mitarbeiter/Monat (${label})`;
+}
+
+/** Condition of a revenue row incl. interval / trial end. */
+function conditionText(x: PlatformRevenueRow): string {
+  if (x.condition === "trial") return `${BILLING_CONDITION_LABEL.trial}${x.trialEndsOn ? ` bis ${formatDateDE(x.trialEndsOn)}` : ""}`;
+  if (x.condition === "standard" && x.interval) return INTERVAL_LABEL[x.interval];
+  const base = BILLING_CONDITION_LABEL[x.condition];
+  return x.interval && (x.condition === "special" || x.condition === "promo") ? `${base} · ${INTERVAL_LABEL[x.interval]}` : base;
+}
+
+/** Revenue filter "Tarif": interval of the month, trial or no contract. */
+type PlanFilter = "all" | "annual" | "monthly" | "trial" | "ended";
+const planMatches = (x: PlatformRevenueRow, f: PlanFilter) =>
+  f === "all" || (f === "trial" ? x.condition === "trial" : f === "ended" ? x.condition === "ended" : x.condition !== "trial" && x.interval === f);
+
 /** Price of a month with a promo discount (revenue row). */
 function promoText(r: PlatformRevenueRow): string {
   return `${formatEuro(r.unitPriceCents)} je Mitarbeiter/Monat (Aktionscode ${r.promoCode ?? ""}${r.promoDiscountPercent ? `, −${r.promoDiscountPercent} %` : ""})`;
 }
 
-function useDefaultPrice(): number {
+function useBillingSettings(): BillingSettings | null {
   const q = useAsync(() => repo.getBillingSettings(), []);
-  return q.data?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
+  return q.data ?? null;
 }
 
 export function AdminApp() {
@@ -178,7 +204,8 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
     const [tenants, revenue] = await Promise.all([repo.listTenants(), repo.getPlatformRevenue(now)]);
     return { tenants, revenue };
   }, [tick]);
-  const defaultPrice = useDefaultPrice();
+  const settings = useBillingSettings();
+  const defaultPrice = settings?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
   const [creating, setCreating] = useState(false);
   const [f, setF] = useState<NewTenantForm>(EMPTY_TENANT);
   const [error, setError] = useState<string | null>(null);
@@ -203,9 +230,10 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
     setBusy(true); setError(null);
     try {
       const o = await repo.createTenant({ name: f.name, slug: f.slug, plan: f.plan, isDemo: f.isDemo, ownerEmail: f.ownerEmail });
+      const welcome = settings?.welcomePromoCode ? ` Willkommenscode: ${settings.welcomePromoCode}.` : "";
       toast(IS_DEMO
-        ? `Mandant „${o.tenant.name}“ angelegt. Einladung an ${f.ownerEmail} (Demo: Passwort „demo“).`
-        : `Mandant „${o.tenant.name}“ angelegt. Die Einladung wurde per E-Mail an ${f.ownerEmail} gesendet.`);
+        ? `Mandant „${o.tenant.name}“ angelegt. Einladung an ${f.ownerEmail} (Demo: Passwort „demo“).${welcome}`
+        : `Mandant „${o.tenant.name}“ angelegt. Die Einladung wurde per E-Mail an ${f.ownerEmail} gesendet.${welcome}`);
       setCreating(false);
       setF(EMPTY_TENANT);
       setTick((t) => t + 1);
@@ -256,7 +284,7 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
             { key: "l", header: "Lizenz", render: (t) => <LicenseBadge license={t.license} /> },
             { key: "p", header: "Preis", render: (t) => {
               const r = revenueRow(t.tenant.id);
-              return <span class="small">{r?.condition === "promo" ? promoText(r) : priceText(t.license, defaultPrice)}</span>;
+              return <span class="small">{rowPriceText(r, t.license, defaultPrice)}</span>;
             } },
             { key: "e", header: "Mitarbeitende", align: "right", render: (t) => <span class="num">{t.activeEmployeeCount} / {t.employeeCount}{t.license?.maxEmployees ? ` (max. ${t.license.maxEmployees})` : ""}</span> },
             { key: "u", header: "Umsatz (Monat)", align: "right", render: (t) => {
@@ -275,7 +303,11 @@ function TenantsPage({ readOnly }: { readOnly: boolean }) {
           <InputField label="Kurzname (URL)" value={f.slug} onValue={(v) => setF({ ...f, slug: v })} hint="Kleinbuchstaben, Ziffern und Bindestriche." />
           <InputField label="E-Mail des Inhabers" type="email" value={f.ownerEmail} onValue={(v) => setF({ ...f, ownerEmail: v })} hint="Erhält die Einladung zum Chef-Portal (einmaliger Link, kein Passwort)." />
           <SelectField label="Lizenz" value={f.plan} onValue={(v) => setF({ ...f, plan: v as LicensePlan })} options={plansFor(null).map((p) => ({ value: p.plan, label: PLAN_LABEL[p.plan]! }))}
-            hint={`Standardpreis ${formatEuro(defaultPrice)} ${VAT_NOTE} je abrechenbarem Mitarbeiter und Monat. Rabatte gibt es nur über Aktionscodes, die der Kunde im Chef-Portal einlöst.`} />
+            hint={`${formatEuro(defaultPrice)} im 12-Monats-Abo, ${formatEuro(settings?.monthlyPriceCents ?? DEFAULT_MONTHLY_PRICE_CENTS)} im Monatstarif (${VAT_NOTE}) je abrechenbarem Mitarbeiter und Monat. Der Inhaber schließt den Vertrag bei der ersten Anmeldung ab; ohne Wahl gilt der Monatstarif. Rabatte nur über Aktionscodes.`} />
+          {settings?.trialWindowFrom && settings.trialWindowUntil && (
+            <Alert tone="info"><p>Einführungsangebot: Mandanten, die vom {formatDateDE(settings.trialWindowFrom)} bis {formatDateDE(settings.trialWindowUntil)} angelegt werden, erhalten {settings.trialMonths} Monate kostenlos (bis Ende des Kalendermonats).</p></Alert>
+          )}
+          {settings?.welcomePromoCode && <p class="xsmall muted">Die Einladung enthält den Willkommenscode {settings.welcomePromoCode}. {PROMO_TERMS_NOTE}</p>}
           <Checkbox label="Demo-/Testmandant" hint="Nur anonymisierte Testdaten. PDFs werden als Test gekennzeichnet; zählt nicht zum Umsatz." checked={f.isDemo} onChange={(v) => setF({ ...f, isDemo: v })} />
           {error && <Alert tone="danger" live>{error}</Alert>}
         </form>
@@ -292,8 +324,9 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
     const all = await repo.listTenants();
     const o = all.find((t) => t.tenant.id === id);
     if (!o) throw new Error("Mandant nicht gefunden.");
-    const [audit, grant, revenue] = await Promise.all([repo.listAudit(id, 50), repo.getSupportGrant(id), repo.getPlatformRevenue(currentMonth())]);
-    return { o, audit, grant, billing: revenue.rows.find((r) => r.tenantId === id) ?? null, defaultPrice: revenue.defaultPriceCents };
+    const [audit, grant, revenue, sub] = await Promise.all([repo.listAudit(id, 50), repo.getSupportGrant(id), repo.getPlatformRevenue(currentMonth()),
+      repo.getTenantSubscription(id).catch(() => null)]);
+    return { o, audit, grant, billing: revenue.rows.find((r) => r.tenantId === id) ?? null, defaultPrice: revenue.defaultPriceCents, sub };
   }, [id, tick]);
   const [lic, setLic] = useState({
     plan: "pilot_free" as LicensePlan, maxEmployees: "", validUntil: "", note: "",
@@ -314,7 +347,7 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
 
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
   if (!q.data) return <h1 class="page-title">Mandant</h1>;
-  const { o, audit, grant, billing, defaultPrice } = q.data;
+  const { o, audit, grant, billing, defaultPrice, sub } = q.data;
   const t: Tenant = o.tenant;
 
   type StatusAction = { status: Tenant["status"]; label: string; title: string; message: string; done: string; danger: boolean; icon: "lock" | "refresh" | "check" | "x" };
@@ -389,7 +422,7 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
         <Card title="Lizenz">
           <form class="stack" onSubmit={saveLicense} noValidate>
             <dl class="kv">
-              <dt>Preis</dt><dd data-testid="tenant-price">{billing?.condition === "promo" ? promoText(billing) : priceText(o.license, defaultPrice)}</dd>
+              <dt>Preis</dt><dd data-testid="tenant-price">{rowPriceText(billing ?? undefined, o.license, defaultPrice)}</dd>
               <dt>Abrechnung</dt><dd>{o.license?.plan === "pilot_free" ? "keine (keine Zahlungsdaten, keine Rechnungen)" : "manuell (Status je Monat unter „Umsatz“)"}</dd>
               <dt>Gültig ab</dt><dd>{o.license ? formatDateDE(o.license.validFrom) : "—"}</dd>
               <dt>Gültig bis</dt><dd>{o.license?.validUntil ? formatDateDE(o.license.validUntil) : "unbefristet"}</dd>
@@ -427,11 +460,15 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
         {billing
           ? <dl class="kv">
               <dt>Abrechenbare Mitarbeitende</dt><dd data-testid="tenant-billable">{billing.billableCount}</dd>
-              <dt>Preis je Mitarbeiter</dt><dd>{formatEuro(billing.unitPriceCents)} ({BILLING_CONDITION_LABEL[billing.condition]}{billing.promoCode ? ` ${billing.promoCode}` : ""})</dd>
+              <dt>Preis je Mitarbeiter</dt><dd>{formatEuro(billing.unitPriceCents)} ({conditionText(billing)}{billing.promoCode ? ` ${billing.promoCode}` : ""})</dd>
               <dt>Summe brutto</dt><dd>{formatEuro(billing.amountCents)} <span class="xsmall muted">{VAT_NOTE}</span></dd>
             </dl>
           : <p class="muted">Keine Daten.</p>}
         <p class="xsmall muted">Nur Zahlen – Namen sieht ausschließlich der Mandant selbst. <a href="#/umsatz">Alle Monate unter „Umsatz“</a></p>
+      </Card>
+      <Card title="Tarif und Vertrag">
+        {sub ? <SubscriptionFacts sub={sub} /> : <p class="muted">Keine Daten.</p>}
+        <p class="xsmall muted">Nur lesend: Tarif, Kündigung und Rücknahme ändert der Inhaber im Chef-Portal unter „Abrechnung“.</p>
       </Card>
       <TenantPromoCard tenantId={t.id} readOnly={readOnly} onChange={() => setTick((x) => x + 1)} />
       <Card title="Supportzugriff auf Personendaten">
@@ -480,47 +517,98 @@ function PlatformAudit() {
 
 // ------------------------------------------------------------------ static pages
 
+interface SettingsForm { annual: string; monthly: string; from: string; until: string; months: string; notice: string; welcome: string; reason: string }
+
+const euroInput = (cents: number) => formatEuro(cents).replace(" €", "").replace(/\./g, "");
+function settingsForm(st: BillingSettings): SettingsForm {
+  return { annual: euroInput(st.defaultPriceCents), monthly: euroInput(st.monthlyPriceCents), from: st.trialWindowFrom ?? "", until: st.trialWindowUntil ?? "",
+    months: String(st.trialMonths), notice: String(st.cancelNoticeDays), welcome: st.welcomePromoCodeId ?? "", reason: "" };
+}
+const wholeNumber = (raw: string, what: string): number => {
+  const n = Number(raw.trim());
+  if (raw.trim() === "" || !Number.isInteger(n)) throw new Error(`${what}: bitte eine ganze Zahl angeben.`);
+  return n;
+};
+
 function PlansPage({ readOnly }: { readOnly: boolean }) {
   const toast = useToast();
   const [tick, setTick] = useState(0);
-  const q = useAsync(() => repo.getBillingSettings(), [tick]);
-  const [price, setPrice] = useState("");
-  const [reason, setReason] = useState("");
+  const q = useAsync(async () => {
+    const [settings, codes] = await Promise.all([repo.getBillingSettings(), repo.listPromoCodes()]);
+    return { settings, codes };
+  }, [tick]);
+  const [f, setF] = useState<SettingsForm | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const current = q.data?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (q.data) setF(settingsForm(q.data.settings)); }, [q.data]);
+  const st = q.data?.settings;
+  const current = st?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
+  const monthly = st?.monthlyPriceCents ?? DEFAULT_MONTHLY_PRICE_CENTS;
+  const today = berlinToday();
+  // Codes that can still be redeemed (plus the current choice, so it stays visible).
+  const codes = (q.data?.codes ?? []).filter((c) => (!c.endedAt && (!c.redeemableUntil || c.redeemableUntil >= today)
+    && (c.maxRedemptions === null || c.redemptionCount < c.maxRedemptions)) || c.id === st?.welcomePromoCodeId);
 
   const save = async (e: Event) => {
     e.preventDefault();
+    if (!f) return;
     setError(null);
     try {
-      const cents = parseEuro(price);
-      await repo.setDefaultPrice(cents, reason);
-      toast(`Standardpreis auf ${formatEuro(cents)} gesetzt.`);
-      setPrice(""); setReason(""); setTick((x) => x + 1);
-    } catch (err) { setError(errorText(err)); }
+      const patch = {
+        defaultPriceCents: parseEuro(f.annual), monthlyPriceCents: parseEuro(f.monthly),
+        trialWindowFrom: f.from || null, trialWindowUntil: f.until || null,
+        trialMonths: wholeNumber(f.months, "Testphase"), cancelNoticeDays: wholeNumber(f.notice, "Kündigungsfrist"),
+        welcomePromoCodeId: f.welcome || null, reason: f.reason,
+      };
+      setBusy(true);
+      await repo.updateBillingSettings(patch);
+      toast("Preise und Tarifeinstellungen gespeichert.");
+      setTick((x) => x + 1);
+    } catch (err) { setError(errorText(err)); } finally { setBusy(false); }
   };
 
   return (
     <div class="stack">
       <h1 class="page-title">Preismodell</h1>
-      <Card title="Preis je Mitarbeiter" accent>
-        <p class="stat-value" data-testid="default-price">{formatEuro(current)} <span class="small muted text-wrap">je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE}</span></p>
+      <div class="grid-2">
+        <StatTile label="12-Monats-Abo" value={<span data-testid="default-price">{formatEuro(current)}</span>} tone="brand"
+          hint={`je Mitarbeiter/Monat, ${VAT_NOTE} · 12 Monate fest, verlängert sich um 6 Monate`} />
+        <StatTile label="Monatstarif" value={<span data-testid="monthly-price">{formatEuro(monthly)}</span>}
+          hint={`je Mitarbeiter/Monat, ${VAT_NOTE} · zum Monatsende kündbar · gilt ohne Wahl`} />
+      </div>
+      <Card title="Preise und Tarife" accent>
         <ul class="stack-sm small" style={{ margin: 0, paddingLeft: "1.3em" }}>
-          <li>Keine Grundgebühr, keine Mindestanzahl, keine Staffeln. Beispiele: 5 → {formatEuro(5 * current)}, 20 → {formatEuro(20 * current)}, 100 → {formatEuro(100 * current)}.</li>
-          <li>Abrechenbar: Mitarbeiter/innen, die im Monat mindestens zeitweise aktiv waren. Gesperrte/deaktivierte ab dem Folgemonat nicht mehr; nur eingeladene nie.</li>
-          <li>Inhaber und Vorgesetzte kostenlos, solange sie im Monat keine eigenen Arbeitszeiten erfassen.</li>
-          <li>Keine kostenlosen Konten. Rabatte (bis 100 %) nur über <a href="#/aktionscodes">Aktionscodes</a>: Der Rabatt läuft, bis Sie ihn beenden; ab dem Folgemonat gilt wieder der normale Preis.</li>
-          <li>Sonderpreis je Mandant (eigener Preis, Gültigkeit) unter „Mandanten“ → „Verwalten“.</li>
+          <li>Keine Grundgebühr, keine Mindestanzahl, keine Staffeln. Beispiel 20 Mitarbeitende: {formatEuro(20 * current)} im 12-Monats-Abo, {formatEuro(20 * monthly)} im Monatstarif.</li>
+          <li>Abrechenbar: Mitarbeiter/innen, die im Monat mindestens zeitweise aktiv waren. Inhaber und Vorgesetzte nur mit eigenen Arbeitszeiten im Monat.</li>
+          <li>Einführungsangebot: Mandanten, die im Zeitraum angelegt werden, sind bis zum Ende des Kalendermonats kostenlos, in dem die Testphase endet.</li>
+          <li>Keine kostenlosen Konten. Rabatte nur über <a href="#/aktionscodes">Aktionscodes</a>. Sonderpreise je Mandant unter „Mandanten“ → „Verwalten“.</li>
           <li>Kein Zahlungsdienstleister angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.</li>
         </ul>
-        {!readOnly && (
+        {st && (
+          <dl class="kv" style={{ marginTop: "var(--space-4)" }} data-testid="billing-settings">
+            <dt>Einführungsangebot</dt>
+            <dd>{st.trialWindowFrom && st.trialWindowUntil ? `${formatDateDE(st.trialWindowFrom)} bis ${formatDateDE(st.trialWindowUntil)}, ${st.trialMonths} Monate kostenlos` : "keines"}</dd>
+            <dt>Kündigungsfrist</dt><dd>{st.cancelNoticeDays ? `${st.cancelNoticeDays} Tage vor Laufzeitende` : "bis zum letzten Tag der Laufzeit"}</dd>
+            <dt>Willkommenscode</dt><dd>{st.welcomePromoCode ?? "keiner"}</dd>
+          </dl>
+        )}
+        {!readOnly && f && (
           <form class="stack" onSubmit={save} noValidate style={{ marginTop: "var(--space-4)" }}>
             <div class="grid-2">
-              <InputField label="Neuer Standardpreis (€ brutto)" inputMode="decimal" value={price} onValue={setPrice} hint="Inkl. USt. Gilt für alle nicht abgeschlossenen Monate ohne Sonderkondition." />
-              <InputField label="Grund (Protokoll)" value={reason} onValue={setReason} />
+              <InputField label="12-Monats-Abo (€ brutto)" inputMode="decimal" value={f.annual} onValue={(v) => setF({ ...f, annual: v })} hint="Je Mitarbeiter und Monat, inkl. USt." />
+              <InputField label="Monatstarif (€ brutto)" inputMode="decimal" value={f.monthly} onValue={(v) => setF({ ...f, monthly: v })} hint="Je Mitarbeiter und Monat, inkl. USt." />
+              <InputField label="Einführungsangebot von" optional type="date" value={f.from} onValue={(v) => setF({ ...f, from: v })} hint="Anlagedatum des Mandanten. Beide leer = kein Angebot." />
+              <InputField label="Einführungsangebot bis" optional type="date" value={f.until} onValue={(v) => setF({ ...f, until: v })} />
+              <InputField label="Testphase (Monate)" inputMode="numeric" value={f.months} onValue={(v) => setF({ ...f, months: v })} hint="Kostenlos bis zum Ende des Kalendermonats, in dem diese Monate enden." />
+              <InputField label="Kündigungsfrist (Tage)" inputMode="numeric" value={f.notice} onValue={(v) => setF({ ...f, notice: v })} hint="Tage vor Ende der Abo-Laufzeit. 0 = bis zum letzten Tag." />
             </div>
+            <SelectField label="Willkommenscode" value={f.welcome} onValue={(v) => setF({ ...f, welcome: v })}
+              options={[{ value: "", label: "Kein Willkommenscode" }, ...codes.map((c) => ({ value: c.id, label: `${c.code} (−${c.discountPercent} %)${c.endedAt ? " – beendet" : ""}` }))]}
+              hint={<>Steht in der Einladung jedes neu angelegten Mandanten, solange er einlösbar ist. Kundenhinweis: {PROMO_TERMS_NOTE}</>} />
+            <InputField label="Grund (Protokoll)" value={f.reason} onValue={(v) => setF({ ...f, reason: v })} maxLength={500} />
+            <p class="xsmall muted mb-0">Neue Preise gelten für alle nicht abgeschlossenen Monate. Abgeschlossene Monate und Rechnungen bleiben unverändert.</p>
             {error && <Alert tone="danger" live>{error}</Alert>}
-            <div><Button type="submit" icon="check">Standardpreis speichern</Button></div>
+            <div><Button type="submit" icon="check" busy={busy}>Einstellungen speichern</Button></div>
           </form>
         )}
       </Card>
@@ -530,7 +618,7 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
           <Card key={p.plan} title={PLAN_LABEL[p.plan]} accent={p.plan === "pilot_free"}>
             <p class="muted small">{p.text}</p>
             <dl class="kv">
-              <dt>Preis</dt><dd>{p.plan === "pilot_free" ? "0,00 € – Kostenlos – Pilot" : `${formatEuro(current)} je Mitarbeiter/Monat`}</dd>
+              <dt>Preis</dt><dd>{p.plan === "pilot_free" ? "0,00 € – Kostenlos – Pilot" : `${formatEuro(current)} (12-Monats-Abo) oder ${formatEuro(monthly)} (Monatstarif) je Mitarbeiter/Monat`}</dd>
               <dt>Mitarbeitende</dt><dd>{p.employees}</dd>
               <dt>Abrechnung</dt><dd>{p.plan === "pilot_free" ? "keine" : "manuell"}</dd>
             </dl>
@@ -554,7 +642,10 @@ function RevenuePage({ readOnly }: { readOnly: boolean }) {
   const [form, setForm] = useState<{ status: BillingStatus; note: string }>({ status: "invoiced", note: "" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [plan, setPlan] = useState<PlanFilter>("all");
   const r = q.data;
+  const rows = r ? r.rows.filter((x) => planMatches(x, plan)) : [];
+  const countOf = (f: PlanFilter) => (r ? r.rows.filter((x) => planMatches(x, f)).length : 0);
   const closable = month < now;
 
   const open = (row: PlatformRevenueRow) => {
@@ -582,7 +673,11 @@ function RevenuePage({ readOnly }: { readOnly: boolean }) {
         <div class="toolbar">
           <SelectField label="Monat" value={month} onValue={setMonth}
             options={months.map((m) => ({ value: m, label: m === now ? `${monthLabelDE(m)} (laufend, Vorschau)` : monthLabelDE(m) }))} />
-          {r && <p class="small muted mb-0">Standardpreis {formatEuro(r.defaultPriceCents)} · Zahlungsdienstleister: {r.paymentProvider === "none" ? "keiner (manuelle Abrechnung)" : r.paymentProvider}</p>}
+          <SelectField label="Tarif" value={plan} onValue={(v) => setPlan(v as PlanFilter)} options={[
+            { value: "all", label: "Alle" }, { value: "annual", label: "12-Monats-Abo" }, { value: "monthly", label: "Monatstarif" },
+            { value: "trial", label: "Testphase" }, { value: "ended", label: "Kein laufender Vertrag" },
+          ]} />
+          {r && <p class="small muted mb-0">12-Monats-Abo {formatEuro(r.defaultPriceCents)} · Zahlungsdienstleister: {r.paymentProvider === "none" ? "keiner (manuelle Abrechnung)" : r.paymentProvider}</p>}
         </div>
       </Card>
       {q.error && <Alert tone="danger" live>{q.error}</Alert>}
@@ -594,18 +689,19 @@ function RevenuePage({ readOnly }: { readOnly: boolean }) {
             <StatTile label="Erlassen" value={formatEuro(r.totals.waivedCents)} />
             <StatTile label="Demo-Mandanten" value={formatEuro(r.totals.demoAmountCents)} hint="kein Umsatz" />
           </div>
+          <p class="small muted" data-testid="revenue-plans">{countOf("annual")} im 12-Monats-Abo · {countOf("monthly")} im Monatstarif · {countOf("trial")} in der Testphase · {countOf("ended")} ohne laufenden Vertrag</p>
           {!closable && <Alert tone="info" title="Laufender Monat"><p>Vorschau. Der Abrechnungsstatus kann erst nach Monatsende gesetzt werden; dabei werden Anzahl und Betrag festgeschrieben.</p></Alert>}
           <Card>
             <Table<PlatformRevenueRow>
               caption="Umsatz je Mandant"
-              rows={r.rows}
+              rows={rows}
               rowKey={(x) => x.tenantId}
-              empty={<p class="muted">Keine Mandanten in diesem Monat.</p>}
+              empty={<p class="muted">Keine Mandanten in diesem Monat{plan !== "all" ? " mit diesem Tarif" : ""}.</p>}
               columns={[
                 { key: "n", header: "Mandant", render: (x) => <><a href={`#/mandant/${x.tenantId}`}><strong>{x.tenantName}</strong></a>{x.isDemo && <div class="xsmall muted">Demo-Mandant</div>}</> },
                 { key: "k", header: "Kondition", render: (x) => (
                   <span class="small">
-                    {BILLING_CONDITION_LABEL[x.condition]}
+                    {conditionText(x)}
                     {x.promoCode && <> {x.promoCode}{x.promoDiscountPercent ? ` (−${x.promoDiscountPercent} %)` : ""}</>}
                     {x.blockSince && <><br />gesperrt seit {dateTimeDE(x.blockSince)}{x.blockReason ? ` – ${x.blockReason}` : ""}</>}
                   </span>

@@ -102,6 +102,10 @@ export async function seedTestEnvironment(opts: SeedTestEnvOptions): Promise<Tes
          values ($1, $2, 'active', 0, $3, $4)`,
         [tenantId, c.plan, c.plan === "pilot_free" ? "none" : "manual",
           c.plan === "pilot_free" ? "Testumgebung: kostenlose Testfirma." : "Testumgebung: zahlende Testfirma (Standardpreis je abrechenbarem Mitarbeiter)."]);
+      // Test companies count as concluded (0023), so that they can be used right away.
+      await client.query(
+        "insert into public.tenant_contracts (tenant_id, terms_version, dpa_version, billing_interval) values ($1, 'testumgebung', 'testumgebung', 'monthly')",
+        [tenantId]);
       for (const p of PEOPLE) {
         const email = `${p.local}.${c.key}@${domain}`;
         const user = await createUser(email);

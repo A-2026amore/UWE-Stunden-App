@@ -5,6 +5,26 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Tarife, Einführungsangebot, Vertragsschluss und automatische Rechnungen (Entscheidung 30.10.2026, Migration
+  `0023_subscriptions.sql`, Regeln in `platform/src/core/subscription.ts`, Doku `docs/preismodell.md`):
+  - Zwei Tarife je abrechenbarem Mitarbeiter und Monat, brutto: **12-Monats-Abo 5,00 €** (verlängert sich um
+    6 Monate, wenn nicht bis zum letzten Tag der Laufzeit gekündigt wird) und **Monatstarif 6,50 €** (kündbar zum
+    Monatsende). Ohne Wahl gilt der Monatstarif. Wechsel Monat → Abo ab dem Folgemonat, Abo → Monat nur zum
+    Laufzeitende. Kündigung und Rücknahme der Kündigung durch den Inhaber, mit Bestätigungsmail.
+  - Einführungsangebot: Nur Firmen, die in einem im Super-Admin eingestellten Zeitraum angelegt werden, sind bis
+    zum Ende des Monats kostenlos, in dem 3 Monate enden. Danach ab dem Folgemonat kostenpflichtig.
+  - Willkommenscode: Ein Aktionscode kann automatisch in die Einladungsmail neuer Firmen gesetzt werden.
+    Jede Anzeige und Mail eines Aktionscodes nennt „Rabatt bis auf Weiteres; der Anbieter kann ihn zum Ende eines
+    Kalendermonats beenden.“
+  - Vertragsschluss bei der ersten Anmeldung des Inhabers („Firma freischalten“: Unternehmer, AGB und AVV, Tarif);
+    gespeichert mit Zeitpunkt, Person und Fassung. Vorher keine Zeiterfassung und keine Einladungen.
+  - Erinnerungsmails 14 Tage vor Ende der Testphase und einen Monat vor Laufzeitende des Abos.
+  - Automatische Monatsrechnungen ab dem 2. für den Vormonat (Monate mit 0 € ohne Rechnung, keine automatische
+    Neuausstellung nach Storno), Mail an den Inhaber. CLI `billing-jobs` führt die Aufgaben einmal aus.
+  - Seiten `/rechtliches/agb/`, `/avv/`, `/datenschutz/`, `/impressum/` mit den Entwürfen aus dem Rechts-Thread,
+    deutlich als „Entwurf – nicht freigegeben“ gekennzeichnet.
+  - Super-Admin: Preise beider Tarife, Einführungszeitraum, Kündigungsfrist und Willkommenscode in einem Formular;
+    Tarif und Vertragsstand je Firma; Umsatzliste mit Filter nach Tarif.
 - Preis und Aktionscodes (Entscheidung 30.10.2026, Migration `0022_promo_codes_gross_prices.sql`, Doku
   `docs/preismodell.md`):
   - Preise sind jetzt **brutto**: 5,00 € inkl. USt. je abrechenbarem Mitarbeiter und Monat. Rechnungen weisen die

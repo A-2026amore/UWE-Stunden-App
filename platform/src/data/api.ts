@@ -25,7 +25,7 @@
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, ISOMonth, License,
   LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, PromoCode, PromoRedemption, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
-  TimeEntryRevision, UUID,
+  TenantSubscription, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
@@ -445,6 +445,9 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     setDefaultPrice(cents, reason) {
       return request<BillingSettings>("PUT", "/api/platform/billing/settings", { defaultPriceCents: cents, reason });
     },
+    updateBillingSettings(patch) {
+      return request<BillingSettings>("PUT", "/api/platform/billing/settings", patch);
+    },
     setBillingStatus(tenantId, month, status, note) {
       return request<BillingMonthSummary>("PUT", `/api/platform/tenants/${enc(tenantId)}/billing/${enc(month)}`, note === undefined ? { status } : { status, note });
     },
@@ -467,6 +470,25 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     },
     redeemPromoCode(tenantId, code) {
       return request<PromoRedemption>("POST", `/api/tenants/${enc(tenantId)}/promo`, { code });
+    },
+
+    // ---------------------------------------------------------------- subscription (0023)
+    getTenantSubscription(tenantId) {
+      return request<TenantSubscription>("GET", `/api/tenants/${enc(tenantId)}/subscription`);
+    },
+    chooseSubscription(tenantId, interval) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/choose`, { interval });
+    },
+    cancelSubscription(tenantId, input) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/cancel`,
+        { thenMonthly: input.thenMonthly ?? false, reason: input.reason ?? null });
+    },
+    withdrawCancellation(tenantId) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/withdraw`, {});
+    },
+    acceptContract(tenantId, input) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/accept`,
+        { entrepreneur: input.entrepreneur, termsAccepted: input.termsAccepted, interval: input.interval });
     },
   };
 }

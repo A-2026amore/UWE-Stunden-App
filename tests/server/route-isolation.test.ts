@@ -160,6 +160,13 @@ const ROUTE_RULES: Record<string, Rule> = {
   "GET /api/tenants/:tenantId/promo": { scope: "tenant", allowed: ["managerA", "support"] },
   "POST /api/tenants/:tenantId/promo": { scope: "tenant", body: { code: "FREMD-100" } },
 
+  // ---------------------------------------------------------------- subscription (0023): leadership + platform staff read; owner changes
+  "GET /api/tenants/:tenantId/subscription": { scope: "tenant", allowed: ["managerA", "support"] },
+  "POST /api/tenants/:tenantId/subscription/accept": { scope: "tenant", body: { entrepreneur: true, termsAccepted: true, interval: "annual" } },
+  "POST /api/tenants/:tenantId/subscription/choose": { scope: "tenant", body: { interval: "annual" } },
+  "POST /api/tenants/:tenantId/subscription/cancel": { scope: "tenant", body: { thenMonthly: false, reason: "Fremdzugriff" } },
+  "POST /api/tenants/:tenantId/subscription/withdraw": { scope: "tenant", body: {} },
+
   // ---------------------------------------------------------------- privacy (0016): only the person or the owner
   "GET /api/employees/:employeeId/data-export": { scope: "tenant" },
   "POST /api/employees/:employeeId/anonymize": { scope: "tenant", body: { confirmPersonnelNumber: "A-101" } },

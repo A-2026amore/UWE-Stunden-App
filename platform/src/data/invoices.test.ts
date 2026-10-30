@@ -34,7 +34,7 @@ describe("invoices (demo)", () => {
     await expect(w.support.issueInvoice(PFLEGE, previous)).rejects.toBeInstanceOf(AccessDeniedError);
     const inv = await w.admin.issueInvoice(PFLEGE, previous);
     expect(inv.number).toBe("SW-2026-000001");
-    expect(inv.lines[0]).toMatchObject({ quantity: draft.lines[0]!.quantity, unitPriceCents: 500 });
+    expect(inv.lines[0]).toMatchObject({ quantity: draft.lines[0]!.quantity, unitPriceCents: 650 }); // monthly plan (0023)
     expect((await w.admin.getPlatformRevenue(previous)).rows.find((r) => r.tenantId === PFLEGE)!.status).toBe("invoiced");
     await expect(w.admin.issueInvoice(PFLEGE, previous)).rejects.toThrow("bereits die Rechnung");
     // like 0021: no re-opening or waiving while a valid invoice exists

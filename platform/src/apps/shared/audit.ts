@@ -56,6 +56,11 @@ export const ACTION_LABEL: Record<string, string> = {
   "support_grant.revoked": "Supportzugriff beendet",
   "billing_period.status": "Abrechnungsstatus geändert",
   "billing_settings.default_price": "Standardpreis geändert",
+  "billing_settings.update": "Preise und Tarifeinstellungen geändert",
+  "subscription.accept": "Vertrag abgeschlossen (AGB/AVV)",
+  "subscription.choose": "Tarif gewählt",
+  "subscription.cancel": "Vertrag gekündigt",
+  "subscription.withdraw": "Kündigung zurückgenommen",
 };
 
 type Obj = Record<string, unknown>;

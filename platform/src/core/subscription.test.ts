@@ -19,14 +19,14 @@ describe("calendar", () => {
 });
 
 describe("trial (introductory offer)", () => {
-  it("only inside the window; to the day; the month of the trial end is free", () => {
-    expect(trialEndsOnFor("2026-11-15", window)).toBe("2027-02-14");
+  it("only inside the window; until the end of the month in which the 3 months end", () => {
+    expect(trialEndsOnFor("2026-11-15", window)).toBe("2027-02-28");
     expect(trialEndsOnFor("2026-11-01", window)).toBe("2027-01-31");
-    expect(trialEndsOnFor("2027-04-30", window)).toBe("2027-07-29");
+    expect(trialEndsOnFor("2027-04-30", window)).toBe("2027-07-31");
     expect(trialEndsOnFor("2026-10-31", window)).toBeNull();
     expect(trialEndsOnFor("2027-05-01", window)).toBeNull();
     expect(trialEndsOnFor("2026-11-15", { ...window, trialWindowFrom: null })).toBeNull();
-    expect(firstPaidMonthFor("2026-11-15", "2027-02-14")).toBe("2027-03");
+    expect(firstPaidMonthFor("2026-11-15", "2027-02-28")).toBe("2027-03");
     expect(firstPaidMonthFor("2026-11-01", "2027-01-31")).toBe("2027-02");
     expect(firstPaidMonthFor("2027-06-10", null)).toBe("2027-06");
     expect(isTrialMonth("2027-02-14", "2027-02")).toBe(true);
@@ -82,6 +82,14 @@ describe("plans", () => {
     expect(c.add).toEqual({ interval: "monthly", startsOn: "2028-03-01" });
   });
 
+  it("annual again while a cancelled annual still runs: starts when the planned monthly follow-up would", () => {
+    const annual = term({ id: "a", interval: "annual", startsOn: "2027-03-01", endsOn: "2028-02-29", cancelledAt: "2027-05-01T00:00:00Z", thenMonthly: true });
+    const follow = term({ id: "f", interval: "monthly", startsOn: "2028-03-01" });
+    expect(planChoice([annual, follow], "annual", "2027-06-10", "2027-03")).toEqual({
+      remove: ["f"], reopen: [], end: [], add: { interval: "annual", startsOn: "2028-03-01" },
+    });
+  });
+
   it("after the end a new term starts in the current month, after a term that still runs", () => {
     const ended = term({ id: "m", interval: "monthly", startsOn: "2027-03-01", endsOn: "2027-04-30", cancelledAt: "2027-04-02T10:00:00Z" });
     expect(planChoice([ended], "monthly", "2027-07-10", "2027-03").add).toEqual({ interval: "monthly", startsOn: "2027-07-01" });
@@ -108,6 +116,13 @@ describe("plans", () => {
     expect(v.current?.id).toBe("a");
     expect(v.next?.id).toBe("f");
     expect(v.contractEndsOn).toBeNull();
+  });
+
+  it("withdraw of a cancelled annual term that never started removes its monthly follow-up (same first day)", () => {
+    const monthly = term({ id: "m", interval: "monthly", startsOn: "2026-09-01", endsOn: "2026-11-30" });
+    const annual = term({ id: "a", interval: "annual", startsOn: "2026-12-01", endsOn: "2026-11-30", cancelledAt: "2026-11-20T09:00:00Z", thenMonthly: true });
+    const follow = term({ id: "f", interval: "monthly", startsOn: "2026-12-01" });
+    expect(planWithdraw([monthly, annual, follow], "2026-11-20")).toEqual({ remove: ["f"], end: [], reopen: ["a"], add: null });
   });
 
   it("view: running annual shows the current term end; contract end without follow-up", () => {

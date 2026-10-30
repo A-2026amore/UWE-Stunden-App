@@ -207,6 +207,19 @@ export interface SubscriptionTerm {
   thenMonthly: boolean;
 }
 
+/**
+ * Contract conclusion (AGB § 2 Abs. 1, draft 0.9.3): the owner confirms at the first login that the
+ * company acts as entrepreneur (§ 14 BGB), accepts AGB and AVV and chooses a plan (or confirms the
+ * monthly plan). Until then the tenant cannot be used. Time and versions are stored.
+ */
+export interface ContractAcceptance {
+  acceptedAt: string;
+  acceptedByName: string | null;
+  termsVersion: string;
+  dpaVersion: string;
+  interval: SubscriptionInterval;
+}
+
 /** Subscription state of a tenant (leadership of the tenant and platform staff). */
 export interface TenantSubscription {
   tenantId: UUID;
@@ -223,6 +236,8 @@ export interface TenantSubscription {
   contractEndsOn: ISODate | null;
   /** No term covers today or later: the contract has ended. */
   ended: boolean;
+  /** Null until the owner has concluded the contract; the tenant cannot be used before. */
+  contract: ContractAcceptance | null;
   annualPriceCents: number;
   monthlyPriceCents: number;
   termMonths: number;

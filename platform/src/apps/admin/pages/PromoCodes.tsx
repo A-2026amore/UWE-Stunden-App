@@ -8,6 +8,7 @@
 import { useState } from "preact/hooks";
 import type { PromoCode, PromoRedemption } from "../../../core/types";
 import { formatDateDE } from "../../../core/time";
+import { PROMO_TERMS_NOTE } from "../../../core/subscription";
 import { Alert, Badge, Button, Card, InputField, Table, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dateTimeDE } from "../../shared/format";
@@ -80,7 +81,7 @@ export function PromoCodesPage({ readOnly }: { readOnly: boolean }) {
         <div>
           <p class="page-eyebrow">Preismodell</p>
           <h1 class="page-title">Aktionscodes</h1>
-          <p class="muted page-sub">Rabatte bis 100 % statt kostenloser Konten. Der Rabatt läuft, bis Sie ihn beenden.</p>
+          <p class="muted page-sub">Rabatte bis 100 % statt kostenloser Konten. Der Rabatt läuft, bis Sie ihn beenden. Hinweis für Kunden: „{PROMO_TERMS_NOTE}“</p>
         </div>
       </div>
       {!readOnly && (

@@ -18,6 +18,7 @@ import { withTx, type Queryable } from "./db.ts";
 import { HttpError, badRequest, forbidden } from "./errors.ts";
 import type { Router } from "./http.ts";
 import type { Mail } from "./mailer.ts";
+import { welcomeCodeText } from "./subscription.ts";
 import { systemOverview } from "./system.ts";
 import {
   STATEMENT_SELECT, TIME_ENTRY_COLUMNS, toAllocation, toAudit, toBillingSummary, toCorrectionRequest, toEmployee, toLicense,
@@ -790,7 +791,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
       const rows = await all(q,
         `select * from public.audit_log
-          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant', 'billing_period', 'billing_settings', 'invoice', 'invoice_settings', 'promo_code', 'promo_redemption')
+          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant', 'billing_period', 'billing_settings', 'invoice', 'invoice_settings', 'promo_code', 'promo_redemption', 'subscription')
           order by created_at desc, id limit $1`, [limit]);
       return json(200, rows.map(toAudit));
     });
@@ -848,7 +849,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
         await q.query("select set_config('app.change_reason', $1, true)", ["Kostenloser Testkunde bei Anlage"]);
         await q.query(`update public.licenses set ${sets.join(", ")} where tenant_id = $1 and status = 'active'`, [res.tenantId, ...trial.map(([, val]) => val)]);
       }
-      mails.push(invitationMail(ownerEmail, res.invitationToken, name));
+      // Welcome code (0023): only if set, not ended and still redeemable.
+      const welcome = await one(q, "select code, discount_percent from public.platform_welcome_promo_code()");
+      const mail = invitationMail(ownerEmail, res.invitationToken, name);
+      if (welcome?.code) mail.text += `\n${welcomeCodeText(String(welcome.code), Number(welcome.discount_percent))}\n`;
+      mails.push(mail);
       const [ov] = await overviews(q, res.tenantId);
       return json(201, ov);
     });
@@ -941,21 +946,31 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
   });
 
   async function billingSettings(q: Queryable): Promise<BillingSettings> {
-    await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
-    const r = await one(q, "select default_price_cents from public.billing_settings");
-    return { defaultPriceCents: Number(r!.default_price_cents), currency: "EUR" };
+    const r = await one(q, "select public.platform_billing_settings() as s");
+    return r!.s as BillingSettings;
   }
 
   router.add("GET", "/api/platform/billing/settings", async (ctx) =>
     app.asUser(ctx, async (q) => json(200, await billingSettings(q))));
 
+  // BillingSettingsPatch (0023): only the fields sent change; {defaultPriceCents, reason} still works.
   router.add("PUT", "/api/platform/billing/settings", async (ctx) => {
-    const b = v.object(ctx.body, ["defaultPriceCents", "reason"]);
-    const cents = v.int(b.defaultPriceCents, "Standardpreis (Cent)", 0, 100000);
-    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Preisänderung angeben.");
+    const b = v.object(ctx.body, ["defaultPriceCents", "monthlyPriceCents", "trialWindowFrom", "trialWindowUntil", "trialMonths",
+      "cancelNoticeDays", "welcomePromoCodeId", "reason"]);
+    const patch: Record<string, unknown> = {};
+    if (b.defaultPriceCents !== undefined) patch.defaultPriceCents = v.int(b.defaultPriceCents, "Preis im 12-Monats-Abo (Cent)", 0, 100000);
+    if (b.monthlyPriceCents !== undefined) patch.monthlyPriceCents = v.int(b.monthlyPriceCents, "Monatspreis (Cent)", 0, 100000);
+    if (b.trialMonths !== undefined) patch.trialMonths = v.int(b.trialMonths, "Testphase (Monate)", 1, 24);
+    if (b.cancelNoticeDays !== undefined) patch.cancelNoticeDays = v.int(b.cancelNoticeDays, "Kündigungsfrist (Tage)", 0, 365);
+    for (const k of ["trialWindowFrom", "trialWindowUntil"] as const) {
+      if (b[k] !== undefined) patch[k] = b[k] === null || b[k] === "" ? null : v.date(b[k], k === "trialWindowFrom" ? "Einführungsangebot ab" : "Einführungsangebot bis");
+    }
+    if (b.welcomePromoCodeId !== undefined) patch.welcomePromoCodeId = b.welcomePromoCodeId === null || b.welcomePromoCodeId === "" ? null : v.uuid(b.welcomePromoCodeId, "Willkommenscode");
+    if (!Object.keys(patch).length) throw badRequest("Bitte mindestens eine Einstellung ändern.");
+    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Änderung angeben.");
     return app.asUser(ctx, async (q) => {
-      await q.query("select public.platform_set_default_price($1, $2)", [cents, reason]);
-      return json(200, await billingSettings(q));
+      const r = await one(q, "select public.platform_update_billing_settings($1::jsonb, $2) as s", [JSON.stringify(patch), reason]);
+      return json(200, r!.s as BillingSettings);
     });
   });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMidnight, berlinMonthOf, discountedPrice, promoFor,
+  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinDateOf, berlinMidnight, berlinMonthOf, discountedPrice, promoFor,
   formatEuro, monthBounds, monthsBack, parseEuro, revenueTotals, tenantBlockFor, type LicenseCondition, type PromoPeriod, type StatusPeriod, type TenantStatusPeriod,
 } from "./billing";
 
@@ -39,6 +39,9 @@ describe("month boundaries in Europe/Berlin", () => {
   it("month of an instant", () => {
     expect(berlinMonthOf("2026-09-30T21:30:00Z")).toBe("2026-09"); // 23:30 Berlin
     expect(berlinMonthOf("2026-09-30T22:30:00Z")).toBe("2026-10"); // 00:30 Berlin
+    expect(berlinDateOf("2026-09-30T21:30:00Z")).toBe("2026-09-30");
+    expect(berlinDateOf("2026-09-30T22:30:00Z")).toBe("2026-10-01");
+    expect(berlinDateOf("2026-12-31T23:30:00Z")).toBe("2027-01-01"); // winter time, +1 h
     expect(berlinMonthOf("2026-12-31T23:30:00Z")).toBe("2027-01");
   });
   it("months back to the first month", () => {

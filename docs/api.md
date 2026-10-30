@@ -77,6 +77,10 @@ Unbekannte Schlüssel werden abgelehnt (`22023`). Zeiteinträge werden immer üb
 | `platform_billing_overview(month)` – je Mandant nur Zahlen (keine Namen) | definer (0012) | `getPlatformRevenue` |
 | `platform_set_billing_status(tenant_id, month, 'open'/'invoiced'/'paid'/'waived', note?)` – nur vergangene Monate (`55000`), Verlassen von `open` schreibt fest, `waived` und Wiederöffnen brauchen eine Begründung, Audit | definer (0012) | `setBillingStatus` |
 | `platform_set_default_price(cents, reason)` – nur Super-Admin, Audit | definer (0012) | `setDefaultPrice` |
+| `platform_billing_settings()` / `platform_update_billing_settings(patch, reason)` – lesen Plattform, ändern Super-Admin, Audit vorher/nachher | definer (0023) | `getBillingSettings` / `updateBillingSettings` |
+| `tenant_subscription(tenant)` – Leitung, Plattform | definer (0023) | `getTenantSubscription` |
+| `tenant_accept_contract(tenant, entrepreneur, terms, interval, termsVersion, dpaVersion)` / `tenant_choose_subscription(tenant, interval)` / `tenant_cancel_subscription(tenant, thenMonthly, reason)` / `tenant_withdraw_cancellation(tenant)` – nur Inhaber, Audit `subscription.*` | definer (0023) | `acceptContract` / `chooseSubscription` / `cancelSubscription` / `withdrawCancellation` |
+| `platform_welcome_promo_code()` – Plattform | definer (0023) | (Einladungsmail bei Firmenanlage) |
 
 Direkter Tabellenzugriff (unter RLS) für die übrigen Methoden, z. B.
 `getTenant` → `select … from tenants where id = $1`; `updateBranding/Contact/Settings` →
@@ -222,7 +226,7 @@ Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …
 | `getTenantBilling` | `GET /api/tenants/:tenantId/billing?month=YYYY-MM` → `TenantBillingMonth` (mit Namen) · 400 künftiger Monat | Inhaber, Leitung |
 | `listTenantBillingHistory` | `GET /api/tenants/:tenantId/billing/history?limit=1–36` → `BillingMonthSummary[]` | Inhaber, Leitung |
 | `getPlatformRevenue` | `GET /api/platform/billing?month=` → `{month, defaultPriceCents, rows: PlatformRevenueRow[], totals: {billableCount, amountCents, waivedCents, demoAmountCents}, paymentProvider: "none"}` – nur Zahlen | Super-Admin, Support |
-| `getBillingSettings` / `setDefaultPrice` | `GET` / `PUT /api/platform/billing/settings` `{defaultPriceCents, reason}` | lesen: Plattform; ändern: Super-Admin |
+| `getBillingSettings` / `setDefaultPrice` / `updateBillingSettings` | `GET` / `PUT /api/platform/billing/settings` – `PUT` nimmt `BillingSettingsPatch` (`defaultPriceCents`, `monthlyPriceCents`, `trialWindowFrom`, `trialWindowUntil`, `trialMonths`, `cancelNoticeDays`, `welcomePromoCodeId`, nur gesendete Felder ändern sich; `reason` Pflicht), `{defaultPriceCents, reason}` funktioniert weiter → `BillingSettings` · 400 ungültig/leer | lesen: Plattform; ändern: Super-Admin |
 | `setBillingStatus` | `PUT /api/platform/tenants/:tenantId/billing/:month` `{status, note?}` → `BillingMonthSummary` · 409 laufender/künftiger Monat · 400 ohne Grund bei `waived`/Wiederöffnen | Super-Admin |
 
 **Rechnungen (0019, `docs/preismodell.md`)**
@@ -248,10 +252,42 @@ Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …
 | `listTenantPromo` | `GET /api/tenants/:tenantId/promo` → `PromoRedemption[]` | Inhaber, Leitung, Plattform |
 | `redeemPromoCode` | `POST /api/tenants/:tenantId/promo` `{code}` → 201 `PromoRedemption` · 400 ungültig (einheitlicher Text) · 409 schon ein Rabatt/schon eingelöst · 429 nach 10 Versuchen je IP bzw. Firma im Rate-Limit-Fenster | Inhaber |
 
+**Tarif und Vertragsschluss (0023, `platform/src/core/subscription.ts`, `server/src/subscription.ts`)**
+
+| Repository | HTTP | Wer |
+|---|---|---|
+| `getTenantSubscription` | `GET /api/tenants/:tenantId/subscription` → `TenantSubscription` (Testphase, aktuelle/nächste Laufzeit, Vertragsende, `contract`) | Inhaber, Leitung, Plattform |
+| `acceptContract` | `POST /api/tenants/:tenantId/subscription/accept` `{entrepreneur: true, termsAccepted: true, interval}` → `TenantSubscription` · 400 Bestätigung fehlt · 409 bereits abgeschlossen. Speichert Zeitpunkt, Person und die Versionen `TERMS_VERSION`/`DPA_VERSION`; `annual` wählt das 12-Monats-Abo wie `choose` | Inhaber, einmalig |
+| `chooseSubscription` | `POST /api/tenants/:tenantId/subscription/choose` `{interval}` → `TenantSubscription` · 409 läuft bereits / Wechsel zum Monatstarif nur zum Laufzeitende / Firma nicht freigeschaltet | Inhaber |
+| `cancelSubscription` | `POST /api/tenants/:tenantId/subscription/cancel` `{thenMonthly?, reason?}` → `TenantSubscription`; Kündigungsbestätigung per E-Mail an alle aktiven Inhaber · 409 kein laufender Vertrag · 400 „danach monatlich“ nur beim 12-Monats-Abo | Inhaber |
+| `withdrawCancellation` | `POST /api/tenants/:tenantId/subscription/withdraw` `{}` → `TenantSubscription` · 409 keine Kündigung mehr zurücknehmbar | Inhaber |
+
+Bis zum Vertragsschluss lehnt die Datenbank Schreibzugriffe von Personen der Firma ab (Zeiteinträge, neue
+Mitarbeitende, Einladungen, Tarifwechsel/Kündigung): 409 „Die Firma ist noch nicht freigeschaltet: Der Inhaber muss
+zuerst den Nutzungsbedingungen zustimmen.“ Bestehende Firmen (vor 0023) gelten als abgeschlossen (`termsVersion: "bestand"`).
+
+Wird eine Firma durch den Super-Admin angelegt und ist ein Willkommenscode gesetzt (nicht beendet, noch
+einlösbar), enthält die Einladung des Inhabers den Code, den Weg zum Einlösen (Chef-Portal → Abrechnung) und
+den Hinweis `PROMO_TERMS_NOTE`.
+
+**Abrechnungs-Job (stündlich, `startBillingJobs` in `server/src/main.ts`; einmalig: `cli.ts billing-jobs`, Tests: `runBillingJobs`)**
+- Erinnerungen (`auth.claim_subscription_reminders`, Rolle `app_auth`): 14 Tage vor Ende der Testphase und einen
+  Monat vor Ende der laufenden Laufzeit eines nicht gekündigten 12-Monats-Abos („verlängert sich um 6 Monate, wenn
+  Sie nicht bis … kündigen“), je Firma, Art und Stichtag genau einmal, an alle aktiven Inhaber; keine Demo-/gesperrten Firmen.
+- Monatsrechnungen (`auth.issue_monthly_invoices`): ab dem 2. eines Monats (Berlin) die Rechnungen des Vormonats für
+  jede Nicht-Demo-Firma mit Betrag > 0 € und ohne Rechnung für diesen Monat – derselbe Weg wie „Rechnung erzeugen“
+  (lückenlose Nummer, Monat eingefroren, Audit mit `issuedBy: "system"`). 0-€-Monate (Testphase, Vertragsende,
+  kostenlos, gesperrt, 100 %-Rabatt) und erlassene Monate bekommen keine Rechnung. Ein stornierter Monat wird nicht
+  automatisch neu berechnet (der Super-Admin entscheidet). Fehlen Pflichtangaben, wird nichts erzeugt und das
+  Problem protokolliert. Danach Mail „Neue Rechnung <Nummer> für <Monat>“ mit Bruttobetrag an alle Inhaber (ohne Anhang).
+  Läuft der Server am 2. nicht, holt der nächste Lauf den Vormonat nach.
+
 Alle Beträge sind seit 0022 brutto (inkl. USt.).
 `getTenantBilling` liefert zusätzlich `tenantBlock: {status, since} | null` (gesperrte Firma, ohne Grund) und
 `promo: {code, discountPercent} | null`; `getPlatformRevenue` je Zeile `blockSince`/`blockReason` (0018) und
-`promoCode`/`promoDiscountPercent` (0022).
+`promoCode`/`promoDiscountPercent` (0022); seit 0023 beide zusätzlich `interval` (Laufzeit des Monats) und
+`trialEndsOn`. Neue Konditionen: `monthly` (Monatstarif), `trial` (Testphase, 0 €), `ended` (kein Vertrag, 0 €);
+`standard` ist der Preis im 12-Monats-Abo.
 
 `setEmployeeStatus` (`POST /api/employees/:id/status`) akzeptiert seit 0012 `{status: "active" | "locked" | "deactivated", reason}`.
 Gesperrte Personen haben sofort keinen Zugriff mehr (bestehende Sitzungen: 403), die Anmeldung antwortet wie bei

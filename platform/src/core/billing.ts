@@ -119,6 +119,13 @@ export function berlinMonthOf(instant: Date | number | string): ISOMonth {
   return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Calendar day (Berlin) of an instant, e.g. "today" for the subscription rules. */
+export function berlinDateOf(instant: Date | number | string): ISODate {
+  const ms = instant instanceof Date ? instant.getTime() : typeof instant === "number" ? instant : Date.parse(instant);
+  const local = new Date(ms + berlinOffsetMinutes(ms) * 60000);
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, "0")}-${String(local.getUTCDate()).padStart(2, "0")}`;
+}
+
 // ------------------------------------------------------------------ rules
 
 function overlaps(p: StatusPeriod, b: MonthBounds): boolean {

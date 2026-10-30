@@ -165,7 +165,8 @@ test("super-admin: overview, new paying customer, deactivate and reactivate, sys
   await dialog.getByRole("button", { name: "Anlegen" }).click();
   await expect(page.locator(".toast").filter({ hasText: "Mandant „Test Fahrdienst Aachen“ angelegt." })).toBeVisible();
   const row = page.getByRole("row", { name: /Test Fahrdienst Aachen/ });
-  await expect(row).toContainText("5,00 € je Mitarbeiter/Monat (Standardpreis)");
+  // Without a plan choice the monthly plan applies (0023).
+  await expect(row).toContainText("6,50 € je Mitarbeiter/Monat (Monatstarif)");
 
   // Deactivate (contract ended) – data stays, reactivation possible.
   await page.getByRole("link", { name: "Muster Pflegedienst GmbH verwalten" }).click();

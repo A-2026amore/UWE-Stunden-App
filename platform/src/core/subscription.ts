@@ -6,8 +6,8 @@
  *  - Two plans: "annual" = 12-month subscription at the platform default price (5,00 € gross),
  *    "monthly" = monthly plan (6,50 € gross). Without a choice the monthly plan applies.
  *  - Introductory offer: a tenant created on a day inside the trial window set by the super admin
- *    gets a free trial of `trialMonths` months (to the day, PostgreSQL date arithmetic). Only whole
- *    calendar months after the trial are billed: the month in which the trial ends is still free.
+ *    gets a free trial until the end of the calendar month in which `trialMonths` months end
+ *    (PostgreSQL date arithmetic). Billing starts with the following month.
  *    Without trial, billing starts with the month of creation.
  *  - Terms start on the first and end on the last day of a month. An annual term runs 12 months
  *    and renews by 6 months (repeatedly) unless cancelled by the last day of the term
@@ -23,6 +23,17 @@ export const TERM_MONTHS = 12;
 export const RENEWAL_MONTHS = 6;
 export const DEFAULT_MONTHLY_PRICE_CENTS = 650;
 export const DEFAULT_TRIAL_MONTHS = 3;
+
+/** Shown with every promo code (mail and UI), legal draft 0.9.3. */
+export const PROMO_TERMS_NOTE = "Rabatt bis auf Weiteres; der Anbieter kann ihn zum Ende eines Kalendermonats beenden.";
+
+/**
+ * Versions the owner accepts at contract conclusion: the "Stand" notes of the documents shown under
+ * /rechtliches/agb (AGB + Anlage A + Anlage B) and /rechtliches/avv (AVV + Anlage 1 TOM), texts in
+ * platform/public/rechtliches-texte (drafts, not approved). Change together with the texts.
+ */
+export const TERMS_VERSION = "AGB 0.9.3, Anlage A 0.9.3, Anlage B 0.9.1";
+export const DPA_VERSION = "AVV 0.9.2, Anlage 1 (TOM) 0.9.1";
 
 export const INTERVAL_LABEL: Record<SubscriptionInterval, string> = {
   annual: "12-Monats-Abo",
@@ -76,14 +87,18 @@ export interface TrialSettings {
   trialMonths: number;
 }
 
-/** Last day of the free trial for a tenant created on `createdOn` (Berlin day), or null without trial. */
+/**
+ * Last day of the free trial for a tenant created on `createdOn` (Berlin day), or null without
+ * trial: the end of the calendar month in which the `trialMonths` months end (Anlage A § 1a Abs. 2,
+ * draft 0.9.3). Example: created 15.11. → 3 months end 14.02. → trial until 28.02.
+ */
 export function trialEndsOnFor(createdOn: ISODate, s: TrialSettings): ISODate | null {
   if (!s.trialWindowFrom || !s.trialWindowUntil || s.trialMonths <= 0) return null;
   if (createdOn < s.trialWindowFrom || createdOn > s.trialWindowUntil) return null;
-  return addDays(addMonthsToDate(createdOn, s.trialMonths), -1);
+  return lastDayOf(monthOfDate(addDays(addMonthsToDate(createdOn, s.trialMonths), -1)));
 }
 
-/** First billed month: the month after the month in which the trial ends; without trial the month of creation. */
+/** First billed month: the month after the trial; without trial the month of creation. */
 export function firstPaidMonthFor(createdOn: ISODate, trialEndsOn: ISODate | null): ISOMonth {
   return trialEndsOn ? monthOfDate(nextMonthFirst(trialEndsOn)) : monthOfDate(createdOn);
 }
@@ -207,7 +222,8 @@ export function planChoice(terms: readonly TermRow[], interval: SubscriptionInte
   }
   if (open?.interval === "monthly") {
     if (interval === "monthly") throw new Error("Der Monatstarif läuft bereits.");
-    const start = maxDate(paidFrom, nextMonthFirst(today));
+    // Not before the monthly term itself starts (e.g. it follows a cancelled annual term that still runs).
+    const start = maxDate(maxDate(paidFrom, nextMonthFirst(today)), open.startsOn);
     const change: TermChange = { remove: [], end: [], reopen: [], add: { interval: "annual", startsOn: start } };
     if (open.startsOn >= start) change.remove.push(open.id);
     else change.end.push({ id: open.id, endsOn: addDays(start, -1), cancelled: false });
@@ -240,6 +256,7 @@ export function planWithdraw(terms: readonly TermRow[], today: ISODate): TermCha
     .filter((t) => t.cancelledAt !== null && t.endsOn !== null && t.endsOn >= today)
     .sort((a, b) => b.startsOn.localeCompare(a.startsOn))[0];
   if (!cancelled) throw new Error("Es gibt keine Kündigung, die noch zurückgenommen werden kann.");
-  const follower = terms.filter((t) => t.startsOn > cancelled.startsOn).map((t) => t.id);
+  // Terms after its end (also the follow-up of a term that never started: same first day).
+  const follower = terms.filter((t) => t.id !== cancelled.id && t.startsOn > cancelled.endsOn!).map((t) => t.id);
   return { remove: follower, end: [], reopen: [cancelled.id], add: null };
 }

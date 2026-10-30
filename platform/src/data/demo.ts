@@ -22,15 +22,19 @@
  * shows the current code without an app (docs/security.md, "Demo").
  */
 import type {
-  AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingStatus, Branding, CompanyContact, CorrectionRequest,
+  AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, Branding, CompanyContact, CorrectionRequest,
   Employee, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, PromoCode, PromoRedemption, Tenant,
-  StatementEvent, TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
+  ContractAcceptance, StatementEvent, SubscriptionInterval, SubscriptionTerm, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import {
-  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
+  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinDateOf, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
   promoFor, tenantBlockFor, type PromoPeriod, type TenantStatusPeriod,
   type StatusPeriod,
 } from "../core/billing";
+import {
+  DEFAULT_MONTHLY_PRICE_CENTS, DEFAULT_TRIAL_MONTHS, DPA_VERSION, RENEWAL_MONTHS, TERMS_VERSION, TERM_MONTHS, currentAnnualEnd, firstDayOf, firstPaidMonthFor,
+  monthOfDate, planCancel, planChoice, planWithdraw, subscriptionView, termForMonth, trialEndsOnFor, type TermChange, type TermRow,
+} from "../core/subscription";
 import { activeShifts, addDays, findOverlapAcrossDays, grossMinutes, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
 import {
   DEFAULT_INVOICE_PREFIX, DEFAULT_PAYMENT_TERMS_DAYS, DEFAULT_VAT_RATE_PERCENT, addDaysISO, formatInvoiceNumber, invoiceTotals, missingIssuerData,
@@ -151,8 +155,27 @@ interface DemoBillingPeriod {
   note: string | null;
   closedAt: string | null;
   snapshot: { condition: BillingCondition; plan: LicensePlan | null; unitPriceCents: number; billableCount: number; amountCents: number;
-    lines: Array<{ employeeId: UUID; reason: BillableReason }> } | null;
+    lines: Array<{ employeeId: UUID; reason: BillableReason }>; interval?: SubscriptionInterval | null } | null;
 }
+
+/** Subscription of a tenant (like tenants.trial_ends_on + subscription_terms, migration 0023). */
+interface DemoSubscription {
+  tenantId: UUID;
+  /** Berlin day of the creation of the tenant. */
+  createdOn: ISODate;
+  trialEndsOn: ISODate | null;
+  terms: TermRow[];
+  /** Contract conclusion by the owner; null = not yet (new tenants). Missing in older stored demo databases = accepted. */
+  contract?: ContractAcceptance | null;
+}
+
+/** Billing settings added with migration 0023 (the default price stays in DemoDb.defaultPriceCents). */
+type DemoBillingSettings = Omit<BillingSettings, "defaultPriceCents" | "welcomePromoCode" | "currency">;
+
+const DEFAULT_BILLING_SETTINGS: DemoBillingSettings = {
+  monthlyPriceCents: DEFAULT_MONTHLY_PRICE_CENTS, trialWindowFrom: null, trialWindowUntil: null, trialMonths: DEFAULT_TRIAL_MONTHS,
+  cancelNoticeDays: 0, welcomePromoCodeId: null,
+};
 
 interface DemoDb {
   schema: 1;
@@ -187,6 +210,9 @@ interface DemoDb {
   /** Added with promo codes (0022). */
   promoCodes?: Array<Omit<PromoCode, "redemptionCount" | "activeCount" | "redemptions">>;
   promoRedemptions?: Array<Omit<PromoRedemption, "code" | "tenantName">>;
+  /** Added with subscriptions (0023). */
+  billingSettings?: DemoBillingSettings;
+  subscriptions?: DemoSubscription[];
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
@@ -217,6 +243,12 @@ export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, Pr
 function tenantBlockedText(tenant: Tenant | undefined): string {
   return tenant?.status === "deactivated" ? "Der Firmenzugang ist deaktiviert." : "Der Firmenzugang ist derzeit gesperrt.";
 }
+
+/** Version marker of contracts concluded before migration 0023 (outside the app). */
+const EXISTING_CONTRACT = "bestand";
+
+/** Sign-in of an employee before the owner has concluded the contract (0023). */
+export const CONTRACT_PENDING_EMPLOYEE = "Deine Firma ist noch nicht freigeschaltet. Die Inhaberin oder der Inhaber muss sie zuerst im Chef-Portal freischalten.";
 
 /** Demo invitations: valid 7 days, like the API (create_invitation). */
 const INVITATION_DAYS = 7;
@@ -566,6 +598,20 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     };
     db.invoiceCounters ??= {};
     db.invoices ??= [];
+    // Subscriptions (0023), like the migration: no trial for existing tenants (window empty), monthly term from the month of creation.
+    db.billingSettings = { ...DEFAULT_BILLING_SETTINGS, ...db.billingSettings };
+    const subs = (db.subscriptions ??= []);
+    for (const t of db.tenants) {
+      if (subs.some((x) => x.tenantId === t.id)) continue;
+      const froms = [...(db.tenantStatusHistory ?? []).filter((h) => h.tenantId === t.id).map((h) => h.from),
+        ...(db.statusHistory ?? []).filter((h) => h.tenantId === t.id).map((h) => h.from)].sort();
+      const createdOn = berlinDateOf(froms[0] ?? db.seededAt);
+      subs.push({ tenantId: t.id, createdOn, trialEndsOn: null, terms: [newTerm("monthly", firstDayOf(monthOfDate(createdOn)))] });
+    }
+    // Existing demo tenants: contract concluded outside the app ("bestand", like migration 0023).
+    for (const x of subs) {
+      if (x.contract === undefined) x.contract = { acceptedAt: db.seededAt, acceptedByName: null, termsVersion: EXISTING_CONTRACT, dpaVersion: EXISTING_CONTRACT, interval: "monthly" };
+    }
     for (const l of db.licenses) {
       l.employeePriceCents ??= null;
       l.freeOfCharge ??= l.plan === "pilot_free";
@@ -844,19 +890,23 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     return froms[0] ? berlinMonthOf(froms[0]) : currentBillingMonth();
   }
   /** Numbers of one month (snapshot when frozen, otherwise live) plus the lines. */
-  function billingMonth(db: DemoDb, tenantId: UUID, month: ISOMonth): BillingMonthSummary & { plan: LicensePlan | null; note: string | null; closedAt: string | null; lines: Array<{ employeeId: UUID; reason: BillableReason }> } {
+  function billingMonth(db: DemoDb, tenantId: UUID, month: ISOMonth): BillingMonthSummary & { plan: LicensePlan | null; note: string | null; closedAt: string | null;
+    lines: Array<{ employeeId: UUID; reason: BillableReason }>; interval: SubscriptionInterval | null; trialEndsOn: ISODate | null } {
     const p = billingPeriod(db, tenantId, month);
+    const subscription = subscriptionForMonth(db, tenantId, month);
+    const trialEndsOn = subscription?.trialEndsOn ?? null;
     if (p?.snapshot && p.status !== "open") {
-      const { lines, ...numbers } = p.snapshot;
-      return { month, status: p.status, final: true, ...numbers, note: p.note, closedAt: p.closedAt, lines };
+      const { lines, interval = null, ...numbers } = p.snapshot;
+      return { month, status: p.status, final: true, ...numbers, note: p.note, closedAt: p.closedAt, lines, interval, trialEndsOn };
     }
     const lic = db.licenses.find((l) => l.tenantId === tenantId) ?? null;
     const block = tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === tenantId), month);
-    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block, promoOf(db, tenantId, month));
+    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block, promoOf(db, tenantId, month), subscription);
     const lines = billingLines(db, tenantId, month);
     return {
       month, status: "open", final: false, condition, plan: lic?.plan ?? null, unitPriceCents,
       billableCount: lines.length, amountCents: billingAmount(lines.length, unitPriceCents), note: p?.note ?? null, closedAt: null, lines,
+      interval: subscription?.interval ?? null, trialEndsOn,
     };
   }
   // ---- promo codes (like migration 0022)
@@ -875,6 +925,61 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     return { ...c, redemptionCount: rs.length, activeCount: rs.filter((r) => !r.endedAt).length,
       redemptions: rs.slice().sort((a, b) => b.redeemedAt.localeCompare(a.redeemedAt)).map((r) => redemptionOut(db, r, true)) };
   }
+  // ---- subscription (like migration 0023, rules in core/subscription.ts)
+  const berlinToday = (): ISODate => berlinDateOf(Date.now());
+  function billingSettingsOf(db: DemoDb): BillingSettings {
+    const st = { ...DEFAULT_BILLING_SETTINGS, ...db.billingSettings };
+    return { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, ...st,
+      welcomePromoCode: st.welcomePromoCodeId ? db.promoCodes?.find((c) => c.id === st.welcomePromoCodeId)?.code ?? null : null, currency: "EUR" };
+  }
+  function subscriptionOf(db: DemoDb, tenantId: UUID): DemoSubscription {
+    const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
+    if (!sub) throw new AccessDeniedError();
+    return sub;
+  }
+  /** Interval and trial of a month for billingConditionFor. */
+  function subscriptionForMonth(db: DemoDb, tenantId: UUID, month: ISOMonth) {
+    const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
+    if (!sub) return null;
+    return { trialEndsOn: sub.trialEndsOn, interval: termForMonth(sub.terms, month)?.interval ?? null, monthlyPriceCents: billingSettingsOf(db).monthlyPriceCents };
+  }
+  function termOut(t: TermRow | null, today: ISODate): SubscriptionTerm | null {
+    if (!t) return null;
+    return { ...t, currentTermEndsOn: t.interval === "annual" && t.endsOn === null ? currentAnnualEnd(t.startsOn, today) : null };
+  }
+  function subscriptionOut(db: DemoDb, tenantId: UUID): TenantSubscription {
+    const sub = subscriptionOf(db, tenantId);
+    const today = berlinToday();
+    const view = subscriptionView(sub.terms, today);
+    const st = billingSettingsOf(db);
+    return {
+      tenantId, trialEndsOn: sub.trialEndsOn, inTrial: !!sub.trialEndsOn && today <= sub.trialEndsOn,
+      firstPaidMonth: firstPaidMonthFor(sub.createdOn, sub.trialEndsOn),
+      current: termOut(view.current, today), next: termOut(view.next, today), contractEndsOn: view.contractEndsOn, ended: view.ended,
+      contract: sub.contract ?? null,
+      annualPriceCents: st.defaultPriceCents, monthlyPriceCents: st.monthlyPriceCents, termMonths: TERM_MONTHS, renewalMonths: RENEWAL_MONTHS,
+      cancelNoticeDays: st.cancelNoticeDays,
+    };
+  }
+  function applyTermChange(sub: DemoSubscription, change: TermChange, reason: string | null) {
+    const now = new Date().toISOString();
+    sub.terms = sub.terms.filter((t) => !change.remove.includes(t.id));
+    for (const e of change.end) {
+      const t = sub.terms.find((x) => x.id === e.id)!;
+      t.endsOn = e.endsOn;
+      if (e.cancelled) Object.assign(t, { cancelledAt: now, cancelReason: reason, thenMonthly: !!e.thenMonthly });
+    }
+    for (const id of change.reopen) {
+      const t = sub.terms.find((x) => x.id === id)!;
+      Object.assign(t, { endsOn: null, cancelledAt: null, cancelReason: null, thenMonthly: false });
+    }
+    if (change.add) sub.terms.push(newTerm(change.add.interval, change.add.startsOn));
+  }
+  /** Audit value of a subscription (no personal data). */
+  const subscriptionAudit = (sub: DemoSubscription) => ({
+    trialEndsOn: sub.trialEndsOn,
+    terms: sub.terms.map((t) => ({ interval: t.interval, startsOn: t.startsOn, endsOn: t.endsOn, cancelled: !!t.cancelledAt, thenMonthly: t.thenMonthly })),
+  });
   function invoiceSettingsOf(db: DemoDb): InvoiceSettings {
     const st = db.invoiceSettings!;
     return { ...st, missing: missingIssuerData(st) };
@@ -970,6 +1075,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (!tenant || tenant.status !== "active") throw new AccessDeniedError(`${tenantBlockedText(tenant)} Bitte wende dich an deinen Arbeitgeber.`);
         if (!emp || emp.status === "deactivated") throw new AccessDeniedError("Dein Zugang wurde deaktiviert. Bitte wende dich an deinen Arbeitgeber.");
         if (emp.status === "locked") throw new AccessDeniedError("Dein Zugang ist vorübergehend gesperrt. Bitte wende dich an deinen Arbeitgeber.");
+        if (emp.role === "employee" && (db.subscriptions ?? []).find((x) => x.tenantId === emp.tenantId)?.contract === null) {
+          throw new AccessDeniedError(CONTRACT_PENDING_EMPLOYEE);
+        }
         if (emp.status === "invited") {
           emp.status = "active";
           recordStatus(db, emp);
@@ -1799,7 +1907,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         return db.audit
           .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant"
             || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings"
-            || e.entity === "promo_code" || e.entity === "promo_redemption")
+            || e.entity === "promo_code" || e.entity === "promo_redemption" || e.entity === "subscription")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
           .slice(0, limit);
       });
@@ -1840,6 +1948,11 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           license.conditionValidUntil = input.conditionValidUntil || null;
         }
         db.licenses.push(license);
+        // Subscription (0023): trial only inside the window; monthly term from the first paid month (like the tenants insert trigger).
+        const createdOn = berlinToday();
+        const trialEndsOn = trialEndsOnFor(createdOn, billingSettingsOf(db));
+        (db.subscriptions ??= []).push({ tenantId: tenant.id, createdOn, trialEndsOn,
+          terms: [newTerm("monthly", firstDayOf(firstPaidMonthFor(createdOn, trialEndsOn)))], contract: null });
         const owner: Employee = { id: uuid(), tenantId: tenant.id, personnelNumber: "1", displayName: "Inhaber/in", email: ownerEmail, role: "owner", status: "invited", createdAt: new Date().toISOString() };
         db.employees.push(owner);
         recordStatus(db, owner);
@@ -1982,6 +2095,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         result.tenantBlock = m.condition.startsWith("tenant_") && block ? { status: block.status, since: block.since } : null;
         const promo = m.condition === "promo" ? promoOf(db, tenantId, month) : null;
         result.promo = promo ? { code: promo.code, discountPercent: promo.discountPercent } : null;
+        result.interval = m.interval;
+        result.trialEndsOn = m.trialEndsOn;
         return result;
       });
     },
@@ -2005,7 +2120,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
             const block = m.condition.startsWith("tenant_") ? tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === t.id), month) : null;
             const promo = m.condition === "promo" ? promoOf(db, t.id, month) : null;
             return { ...summaryOf(m), tenantId: t.id, tenantName: t.name, slug: t.slug, isDemo: t.isDemo, tenantStatus: t.status, plan: m.plan, note: m.note, closedAt: m.closedAt,
-              blockSince: block?.since ?? null, blockReason: block?.reason ?? null, promoCode: promo?.code ?? null, promoDiscountPercent: promo?.discountPercent ?? null };
+              blockSince: block?.since ?? null, blockReason: block?.reason ?? null, promoCode: promo?.code ?? null, promoDiscountPercent: promo?.discountPercent ?? null,
+              interval: m.interval, trialEndsOn: m.trialEndsOn };
           });
         return { month, defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, rows, totals: revenueTotals(rows), paymentProvider: "none" as const };
       });
@@ -2013,7 +2129,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async getBillingSettings() {
       return read((db, s) => {
         assertPlatform(s);
-        return { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, currency: "EUR" as const };
+        return billingSettingsOf(db);
       });
     },
     async setDefaultPrice(cents, reason) {
@@ -2024,7 +2140,99 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const before = { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS };
         db.defaultPriceCents = cents;
         addAudit(db, s, { tenantId: null, action: "billing_settings.default_price", entity: "billing_settings", entityId: "default", before, after: { defaultPriceCents: cents }, reason: r });
-        return { defaultPriceCents: cents, currency: "EUR" as const };
+        return billingSettingsOf(db);
+      });
+    },
+    async updateBillingSettings(patch: BillingSettingsPatch) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(patch.reason, "Bitte einen Grund für die Änderung angeben.");
+        const before = billingSettingsOf(db);
+        const pick = <K extends keyof BillingSettingsPatch>(k: K, cur: NonNullable<BillingSettingsPatch[K]> | null) => (k in patch && patch[k] !== undefined ? patch[k] : cur);
+        const price = pick("defaultPriceCents", before.defaultPriceCents) as number;
+        const monthly = pick("monthlyPriceCents", before.monthlyPriceCents) as number;
+        const from = (pick("trialWindowFrom", before.trialWindowFrom) as ISODate | null) || null;
+        const until = (pick("trialWindowUntil", before.trialWindowUntil) as ISODate | null) || null;
+        const months = pick("trialMonths", before.trialMonths) as number;
+        const notice = pick("cancelNoticeDays", before.cancelNoticeDays) as number;
+        const welcome = (pick("welcomePromoCodeId", before.welcomePromoCodeId) as UUID | null) || null;
+        for (const [v, what] of [[price, "Der Preis für das 12-Monats-Abo"], [monthly, "Der Preis für den Monatstarif"]] as const) {
+          if (!Number.isInteger(v) || v < 0 || v > 100000) throw new Error(`${what} muss zwischen 0 und 1.000,00 € liegen.`);
+        }
+        if ((from === null) !== (until === null)) throw new Error("Einführungsangebot: bitte Beginn und Ende angeben (oder beide leer lassen).");
+        if (from && until && (!isRealDate(from) || !isRealDate(until))) throw new Error("Bitte gültige Daten für das Einführungsangebot angeben.");
+        if (from && until && from > until) throw new Error("Einführungsangebot: Das Ende darf nicht vor dem Beginn liegen.");
+        if (!Number.isInteger(months) || months < 1 || months > 24) throw new Error("Testphase: 1 bis 24 Monate.");
+        if (!Number.isInteger(notice) || notice < 0 || notice > 365) throw new Error("Kündigungsfrist: 0 bis 365 Tage.");
+        if (welcome) {
+          const c = (db.promoCodes ?? []).find((x) => x.id === welcome);
+          if (!c) throw new Error("Der Willkommenscode wurde nicht gefunden.");
+          if (c.endedAt && welcome !== before.welcomePromoCodeId) throw new Error("Ein beendeter Aktionscode kann nicht als Willkommenscode gewählt werden.");
+        }
+        db.defaultPriceCents = price;
+        db.billingSettings = { monthlyPriceCents: monthly, trialWindowFrom: from, trialWindowUntil: until, trialMonths: months, cancelNoticeDays: notice, welcomePromoCodeId: welcome };
+        const after = billingSettingsOf(db);
+        addAudit(db, s, { tenantId: null, action: "billing_settings.update", entity: "billing_settings", entityId: "default", before, after, reason: r });
+        return after;
+      });
+    },
+
+    // ------------------------------------------------ subscription (like migration 0023)
+    async getTenantSubscription(tenantId) {
+      return read((db, s) => {
+        if (s.platformRole && !s.tenantId) assertPlatform(s);
+        else assertManager(s, tenantId);
+        return subscriptionOut(db, tenantId);
+      });
+    },
+    async chooseSubscription(tenantId, interval) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Den Tarif kann nur der Inhaber ändern.");
+        if (interval !== "annual" && interval !== "monthly") throw new Error("Ungültiger Tarif.");
+        const sub = subscriptionOf(db, tenantId);
+        const before = subscriptionAudit(sub);
+        applyTermChange(sub, planChoice(sub.terms, interval, berlinToday(), firstPaidMonthFor(sub.createdOn, sub.trialEndsOn)), null);
+        addAudit(db, s, { tenantId, action: "subscription.choose", entity: "subscription", entityId: tenantId, before, after: { ...subscriptionAudit(sub), interval }, reason: null });
+        return subscriptionOut(db, tenantId);
+      });
+    },
+    async cancelSubscription(tenantId, input) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Kündigen kann nur der Inhaber.");
+        const reason = input.reason?.trim() || null;
+        if (reason && reason.length > 500) throw new Error("Die Begründung darf höchstens 500 Zeichen lang sein.");
+        const sub = subscriptionOf(db, tenantId);
+        const before = subscriptionAudit(sub);
+        applyTermChange(sub, planCancel(sub.terms, berlinToday(), billingSettingsOf(db).cancelNoticeDays, !!input.thenMonthly), reason);
+        addAudit(db, s, { tenantId, action: "subscription.cancel", entity: "subscription", entityId: tenantId, before, after: subscriptionAudit(sub), reason });
+        return subscriptionOut(db, tenantId);
+      });
+    },
+    async acceptContract(tenantId, input) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Die Firma kann nur der Inhaber freischalten.");
+        const sub = subscriptionOf(db, tenantId);
+        if (sub.contract) throw new Error("Der Vertrag ist bereits abgeschlossen.");
+        if (input?.entrepreneur !== true) throw new Error("Bitte bestätigen Sie, dass Ihre Firma als Unternehmer handelt.");
+        if (input.termsAccepted !== true) throw new Error("Bitte stimmen Sie den AGB und dem Auftragsverarbeitungsvertrag zu.");
+        if (input.interval !== "annual" && input.interval !== "monthly") throw new Error("Bitte einen Tarif wählen.");
+        const before = subscriptionAudit(sub);
+        if (input.interval === "annual") applyTermChange(sub, planChoice(sub.terms, "annual", berlinToday(), firstPaidMonthFor(sub.createdOn, sub.trialEndsOn)), null);
+        const me = db.employees.find((e) => e.id === s.employeeId);
+        sub.contract = { acceptedAt: new Date().toISOString(), acceptedByName: me?.displayName ?? null, termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: input.interval };
+        addAudit(db, s, { tenantId, action: "subscription.accept", entity: "subscription", entityId: tenantId, before,
+          after: { ...subscriptionAudit(sub), termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: input.interval, entrepreneur: true }, reason: null });
+        return subscriptionOut(db, tenantId);
+      });
+    },
+    async withdrawCancellation(tenantId) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Eine Kündigung kann nur der Inhaber zurücknehmen.");
+        const sub = subscriptionOf(db, tenantId);
+        const before = subscriptionAudit(sub);
+        applyTermChange(sub, planWithdraw(sub.terms, berlinToday()), null);
+        addAudit(db, s, { tenantId, action: "subscription.withdraw", entity: "subscription", entityId: tenantId, before, after: subscriptionAudit(sub), reason: null });
+        return subscriptionOut(db, tenantId);
       });
     },
     async setBillingStatus(tenantId, month, status, note) {
@@ -2060,7 +2268,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           const m = billingMonth(db, tenantId, month);
           Object.assign(p, {
             status, note: n ?? p.note, closedAt: new Date().toISOString(),
-            snapshot: { condition: m.condition, plan: m.plan, unitPriceCents: m.unitPriceCents, billableCount: m.billableCount, amountCents: m.amountCents, lines: m.lines },
+            snapshot: { condition: m.condition, plan: m.plan, unitPriceCents: m.unitPriceCents, billableCount: m.billableCount, amountCents: m.amountCents, lines: m.lines, interval: m.interval },
           });
         }
         const numbers = (x: DemoBillingPeriod | null) => x && { status: x.status, note: x.note, billableCount: x.snapshot?.billableCount ?? null, amountCents: x.snapshot?.amountCents ?? null };
@@ -2216,7 +2424,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           const period = p ?? { tenantId, month, status: "open" as BillingStatus, note: null, closedAt: null, snapshot: null };
           if (!p) (db.billingPeriods ??= []).push(period);
           Object.assign(period, { status: "invoiced", note: `Rechnung ${number}`, closedAt: new Date().toISOString(),
-            snapshot: { condition: m.condition, plan: m.plan, unitPriceCents: m.unitPriceCents, billableCount: m.billableCount, amountCents: m.amountCents, lines: m.lines } });
+            snapshot: { condition: m.condition, plan: m.plan, unitPriceCents: m.unitPriceCents, billableCount: m.billableCount, amountCents: m.amountCents, lines: m.lines, interval: m.interval } });
           d = invoiceDraft(db, tenantId, month);
         }
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -2259,6 +2467,10 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     },
   };
   return repo;
+}
+
+function newTerm(interval: SubscriptionInterval, startsOn: ISODate): TermRow {
+  return { id: uuid(), interval, startsOn, endsOn: null, cancelledAt: null, cancelReason: null, thenMonthly: false };
 }
 
 function licenseFor(tenantId: UUID, plan: LicensePlan): License {
