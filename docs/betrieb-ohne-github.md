@@ -38,10 +38,16 @@ Stand: 30.10.2026 · gilt für die Testumgebung `stunden-test.appzentrale24.de` 
    baut, migriert, startet neu, prüft Gesundheit, sichert und macht die Wiederherstellungsprobe (wie bisher).
 4. Optional danach: `deploy/test-env-check.sh <commit>` (HTTPS, Header, Schnittstellen, Anmeldeseiten).
 
-Ohne PowerShell geht Schritt 2 auch von Hand:
-`ssh-keygen -Y sign -f %USERPROFILE%\.ssh\stundenwerk_paket -n stundenwerk-paket <datei>`, dann
-`scp <datei> <datei>.sig <datei>.sha256 root@159.195.199.222:/var/lib/stunden-test/eingang/` und auf dem Server
-`stunden-test-paket /var/lib/stunden-test/eingang/<datei> --freigeben`.
+Server-Zugang: Benutzer `appadmin` mit dem vorhandenen Schlüssel `appzentrale24_ed25519` (kein root-Login per SSH),
+Server-Befehle über `sudo` (fragt das appadmin-Passwort). Ohne das Skript geht Schritt 2 auch von Hand (PowerShell,
+im Ordner des Pakets; Passphrasen von Hand tippen – Einfügen per Rechtsklick war bei der Einrichtung unzuverlässig):
+
+```powershell
+$K = "$env:USERPROFILE\.ssh\appzentrale24_ed25519"
+ssh-keygen -Y sign -f "$env:USERPROFILE\.ssh\stundenwerk_paket" -n stundenwerk-paket <datei>
+scp -i $K <datei> <datei>.sig <datei>.sha256 appadmin@159.195.199.222:
+ssh -t -i $K appadmin@159.195.199.222 "sudo stunden-test-paket ~/<datei> --freigeben"
+```
 
 **Warum signieren, wenn doch per SSH hochgeladen wird?** Die SSH-Anmeldung schützt den Weg. Die Signatur legt
 zusätzlich fest, *wer* eine Version liefern darf – auch wenn ein Paket später über die Storage Box oder einen
@@ -49,29 +55,27 @@ anderen Weg kommt. Ohne Arifs privaten Schlüssel nimmt der Server nichts an, au
 
 ## 4. Einmalige Umstellung (ca. 15 Minuten)
 
-Auf dem **PC** (PowerShell):
+Durchgeführt am 30.10.2026 (Testserver). Auf dem **PC** (PowerShell):
 
 ```powershell
-ssh -V                                     # OpenSSH mindestens 8.1 (Windows 11: ja)
-ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\stundenwerk_paket" -C stundenwerk-paket   # Passphrase vergeben
-certutil -hashfile C:\Users\User\appzentrale24\pakete\umstellen-ohne-github.sh SHA256    # mit dem Chat vergleichen
-scp "$env:USERPROFILE\.ssh\stundenwerk_paket.pub" C:\Users\User\appzentrale24\pakete\umstellen-ohne-github.sh root@159.195.199.222:/root/
+ssh -V                                     # OpenSSH mindestens 8.1 (Arifs PC: 9.5)
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\stundenwerk_paket" -C stundenwerk-paket   # Passphrase von Hand tippen
+(Get-FileHash C:\Users\User\appzentrale24\pakete\umstellen-ohne-github.sh).Hash          # mit dem Chat vergleichen
+$K = "$env:USERPROFILE\.ssh\appzentrale24_ed25519"
+scp -i $K "$env:USERPROFILE\.ssh\stundenwerk_paket.pub" C:\Users\User\appzentrale24\pakete\umstellen-ohne-github.sh appadmin@159.195.199.222:
+ssh -i $K appadmin@159.195.199.222 "sha256sum umstellen-ohne-github.sh"                   # gleiche Prüfsumme
+ssh -t -i $K appadmin@159.195.199.222 "sudo bash ~/umstellen-ohne-github.sh ~/stundenwerk_paket.pub"
+ssh -t -i $K appadmin@159.195.199.222 "sudo stunden-test-freigeben --status"             # Quelle: /srv/git/UWE-Stunden-App.git
 ```
 
 Der private Schlüssel `stundenwerk_paket` (ohne `.pub`) bleibt auf dem PC und gehört zusätzlich in KeePassXC.
-
-Auf dem **Server** (als root, z. B. netcup-Konsole):
-
-```bash
-sha256sum /root/umstellen-ohne-github.sh          # gleiche Prüfsumme wie oben
-bash /root/umstellen-ohne-github.sh /root/stundenwerk_paket.pub
-stunden-test-freigeben --status                   # Quelle: /srv/git/UWE-Stunden-App.git
-```
+Neuer Signier-Schlüssel (z. B. verloren): neu anlegen und das Umstellungs-Skript mit der neuen `.pub` erneut
+ausführen – es ist wiederholbar und ersetzt den eingetragenen Schlüssel.
 
 Das Skript (`deploy/umstellen-ohne-github.sh`) übernimmt nur den gerade freigegebenen Commit in das eigene
 Repository, stellt den Checkout darauf um, trägt den Schlüssel ein und installiert `stunden-test-paket` sowie eine
 neue `stunden-test-freigeben`. Container werden **nicht** neu gestartet; die laufende App bleibt unberührt.
-**Rückweg:** `bash /root/umstellen-ohne-github.sh --zurueck` (Quelle wieder GitHub, alte `stunden-test-freigeben`).
+**Rückweg:** `sudo bash ~/umstellen-ohne-github.sh --zurueck` (Quelle wieder GitHub, alte `stunden-test-freigeben`).
 
 ## 5. Tests ohne GitHub Actions
 
@@ -107,5 +111,8 @@ davon ab.
 
 - Der Server läuft bei netcup; die Storage Box ist bei Hetzner. Ein Umzug des Servers zu Hetzner ändert an diesem
   Verfahren nichts (gleiche Skripte), wäre aber ein eigener Schritt.
-- `deploy/windows/paket-hochladen.ps1` ist ungetestet (keine Windows-Umgebung bei der Entwicklung).
+- Einrichtung und Probe-Paket am 30.10.2026 auf dem Testserver erfolgreich (Paket 6990943 geprüft und übernommen,
+  nicht ausgerollt). `deploy/windows/paket-hochladen.ps1` selbst ist noch nicht auf Windows gelaufen.
+- Storage Box ist noch nicht eingebunden (`/root/.stunden-test-restic.env` fehlt): Sicherungen und Paket-Kopien liegen
+  bisher nur auf dem Server.
 - `deploy/test-env-check.sh` konnte aus der Entwicklungsumgebung nicht gegen die echte Adresse laufen (Netzsperre).

@@ -4,11 +4,13 @@
 #   powershell -ExecutionPolicy Bypass -File paket-hochladen.ps1 -Paket C:\Users\User\appzentrale24\pakete\stundenwerk-<commit12>.bundle
 #
 # Steps: compare the checksum (the value is also given in the chat), sign (asks for the key passphrase),
-# copy to /var/lib/stunden-test/eingang/ with scp, then on the server: stunden-test-paket <file> --freigeben.
+# copy to the home directory of the login user with scp, then on the server (sudo asks for the user password):
+# stunden-test-paket <file> --freigeben. Login: user appadmin with the existing server key (no root login).
 # One-time key: ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\stundenwerk_paket" -C stundenwerk-paket
 param(
   [Parameter(Mandatory = $true)][string]$Paket,
-  [string]$Server = "root@159.195.199.222",
+  [string]$Server = "appadmin@159.195.199.222",
+  [string]$Login = "$env:USERPROFILE\.ssh\appzentrale24_ed25519",
   [string]$Schluessel = "$env:USERPROFILE\.ssh\stundenwerk_paket",
   [switch]$NurSignieren
 )
@@ -32,8 +34,8 @@ if (Test-Path "$Paket.sig") { Remove-Item "$Paket.sig" }
 if ($LASTEXITCODE -ne 0) { throw "Signieren fehlgeschlagen (OpenSSH mindestens 8.1 nötig: ssh -V)." }
 if ($NurSignieren) { Write-Host "Signiert: $Paket.sig"; exit 0 }
 
-& scp $Paket "$Paket.sig" "$Paket.sha256" "${Server}:/var/lib/stunden-test/eingang/"
+& scp -i $Login $Paket "$Paket.sig" "$Paket.sha256" "${Server}:"
 if ($LASTEXITCODE -ne 0) { throw "Hochladen fehlgeschlagen." }
-& ssh $Server "stunden-test-paket /var/lib/stunden-test/eingang/$name --freigeben"
+& ssh -t -i $Login $Server "sudo stunden-test-paket ~/$name --freigeben && rm -f ~/$name ~/$name.sig ~/$name.sha256"
 if ($LASTEXITCODE -ne 0) { throw "Server hat das Paket NICHT angenommen (Meldung oben)." }
-Write-Host "Fertig. Stand ansehen: ssh $Server stunden-test-freigeben --status"
+Write-Host "Fertig. Stand ansehen: ssh -t -i $Login $Server ""sudo stunden-test-freigeben --status"""
