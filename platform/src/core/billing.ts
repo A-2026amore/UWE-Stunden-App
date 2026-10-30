@@ -4,8 +4,9 @@
  * the demo repository uses this module. Money in integer cents, time as instants
  * (ms / ISO strings) – month boundaries in Europe/Berlin.
  *
- *  - 5,00 € gross (incl. VAT) per billable employee and month (decision 30.10.2026),
- *    no base fee, no minimum, no tiers. No free accounts are offered any more.
+ *  - 5,00 € gross (incl. VAT) per billable employee and month in the 12-month subscription,
+ *    6,50 € in the monthly plan (decision 30.10.2026, subscription.ts / migration 0023),
+ *    no base fee, no minimum, no tiers. Free trial only as introductory offer (trial window).
  *  - Promo codes (migration 0022): a discount of 1–100 % on the price that applies
  *    otherwise, for every month the redemption period touches, until the super admin ends it.
  *  - Billable in month M: role "employee" and active at any time in M;
@@ -15,7 +16,7 @@
  */
 import type {
   BillableReason, BillingCondition, EmployeeStatus, ISODate, ISOMonth, License, PlatformRevenue, PlatformRevenueRow, TenantBlock, TenantRole,
-  TenantStatus,
+  SubscriptionInterval, TenantStatus,
 } from "./types";
 
 /** Platform default: 5,00 € gross (incl. VAT) per billable employee and month. */
@@ -32,6 +33,9 @@ export const BILLING_CONDITION_LABEL: Record<BillingCondition, string> = {
   tenant_suspended: "Firma gesperrt – nicht berechnet",
   tenant_deactivated: "Firma deaktiviert – nicht berechnet",
   promo: "Aktionscode",
+  monthly: "Monatstarif",
+  trial: "Testphase – kostenlos",
+  ended: "Kein laufender Vertrag – nicht berechnet",
 };
 
 export const BILLING_STATUS_LABEL: Record<string, string> = {
@@ -188,13 +192,23 @@ export function discountedPrice(priceCents: number, discountPercent: number): nu
 
 export type LicenseCondition = Pick<License, "plan" | "status" | "employeePriceCents" | "freeOfCharge" | "conditionValidFrom" | "conditionValidUntil">;
 
+/** Subscription data of a tenant for a month (migration 0023). */
+export interface SubscriptionForMonth {
+  trialEndsOn: ISODate | null;
+  /** Interval of the term covering the month, null = no term (ended / not started). */
+  interval: SubscriptionInterval | null;
+  monthlyPriceCents: number;
+}
+
 /**
- * Price of a tenant for a month: pilot_free is always free; a special condition
- * (free of charge or own price) applies when its validity overlaps the month;
- * otherwise (or without active licence) the platform default price. A promo
- * discount (0022) reduces the standard or special price.
+ * Price of a tenant for a month: blocked tenants and pilot_free are free; a "free" special
+ * condition overlapping the month is free. With subscription data (0023): a trial month is free,
+ * a month without term is not billed ("ended"); otherwise the special price, else the price of
+ * the interval (annual = platform default "standard", monthly = monthly price). Without
+ * subscription data the platform default applies (behaviour before 0023). A promo discount
+ * (0022) reduces the resulting price.
  */
-export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null, promo?: Pick<PromoPeriod, "discountPercent"> | null): { condition: BillingCondition; unitPriceCents: number } {
+export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null, promo?: Pick<PromoPeriod, "discountPercent"> | null, subscription?: SubscriptionForMonth | null): { condition: BillingCondition; unitPriceCents: number } {
   const b = monthBounds(month);
   if (block) return { condition: block.status === "suspended" ? "tenant_suspended" : "tenant_deactivated", unitPriceCents: 0 };
   const active = license && license.status === "active" ? license : null;
@@ -202,9 +216,15 @@ export function billingConditionFor(license: LicenseCondition | null, defaultPri
   const applies = !!active && (active.conditionValidFrom === null || active.conditionValidFrom <= b.lastDay)
     && (active.conditionValidUntil === null || active.conditionValidUntil >= b.firstDay);
   if (applies && active.freeOfCharge) return { condition: "free", unitPriceCents: 0 };
+  if (subscription) {
+    if (subscription.trialEndsOn && b.firstDay <= subscription.trialEndsOn) return { condition: "trial", unitPriceCents: 0 };
+    if (!subscription.interval) return { condition: "ended", unitPriceCents: 0 };
+  }
   const base: { condition: BillingCondition; unitPriceCents: number } = applies && active.employeePriceCents !== null
     ? { condition: "special", unitPriceCents: active.employeePriceCents }
-    : { condition: "standard", unitPriceCents: defaultPriceCents };
+    : subscription?.interval === "monthly"
+      ? { condition: "monthly", unitPriceCents: subscription.monthlyPriceCents }
+      : { condition: "standard", unitPriceCents: defaultPriceCents };
   if (promo && base.unitPriceCents > 0) return { condition: "promo", unitPriceCents: discountedPrice(base.unitPriceCents, promo.discountPercent) };
   return base;
 }

@@ -32,7 +32,7 @@ import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
 import type { StatementEvent } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvoiceApi, type PromoApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
+  type BillingApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
   type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type SystemOverview, type TenantOverview,
   type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
@@ -94,7 +94,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;

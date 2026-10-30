@@ -41,7 +41,7 @@ import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validat
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvoiceApi, type PromoApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
+  type BillingApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
   type Session, type SystemOverview, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
@@ -190,7 +190,7 @@ interface DemoDb {
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi {
+export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi {
   /**
    * Demo only: current 6-digit code of the account that is signing in
    * (second step) or signed in – so 2FA can be tried without an app.
