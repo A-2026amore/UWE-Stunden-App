@@ -65,7 +65,7 @@ insert into public.licenses (tenant_id, plan, status, price_cents, billing, vali
   ('11111111-1111-4111-8111-111111111111', 'pilot_free', 'active', 0, 'none', '2026-09-01', null, 25,
    '{work_account,pdf_export}', 'Kostenloser Pilot (Demo). Keine automatische Umstellung.'),
   ('22222222-2222-4222-8222-222222222222', 'standard', 'active', 0, 'manual', '2026-10-01', '2027-09-30', 50,
-   '{pdf_export}', 'Demo – Preis noch nicht festgelegt.');
+   '{pdf_export}', 'Demo – Standardkunde: Standardpreis je abrechenbarem Mitarbeiter (0012).');
 
 -- ---------------------------------------------------------------- employees (fake names)
 insert into public.employees (id, tenant_id, user_id, personnel_number, display_name, email, role, status) values
@@ -83,6 +83,19 @@ insert into public.employees (id, tenant_id, user_id, personnel_number, display_
    'P-10', 'Charlie Test', 'pflege1@muster-pflegedienst.example', 'employee', 'active'),
   ('be000000-0000-4000-8000-000000000004', '22222222-2222-4222-8222-222222222222', null,
    'P-11', 'Dana Eingeladen', 'pflege2@muster-pflegedienst.example', 'employee', 'invited');
+
+-- Tenant start and status history (0012): the trigger records the seeding time – use fixed, plausible start dates
+-- instead, so that the billing tests do not depend on the day the tests run.
+update public.tenants set created_at = '2026-09-01 00:00 Europe/Berlin' where id = '11111111-1111-4111-8111-111111111111';
+update public.tenants set created_at = '2026-10-01 00:00 Europe/Berlin' where id = '22222222-2222-4222-8222-222222222222';
+update public.employee_status_history set valid_from = '2026-09-01 00:00 Europe/Berlin'
+ where tenant_id = '11111111-1111-4111-8111-111111111111';
+update public.employee_status_history set valid_from = '2026-10-01 00:00 Europe/Berlin'
+ where tenant_id = '22222222-2222-4222-8222-222222222222';
+-- Tenant status history (0018) from the tenant start as well.
+update public.tenant_status_history h set valid_from = t.created_at
+  from public.tenants t where t.id = h.tenant_id and h.valid_to is null
+   and t.id in ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222');
 
 -- Open invitation for Dana (token "demo-einladung-nur-fuer-tests", only its hash is stored).
 insert into public.invitations (id, tenant_id, employee_id, email, created_by, expires_at) values

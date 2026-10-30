@@ -1,12 +1,12 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Employee, Tenant } from "../../core/types";
 import type { Session } from "../../data/repository";
-import { BottomNav, DialogProvider, ToastProvider, applyBranding, type NavItem } from "../../design";
+import { Avatar, BottomNav, DialogProvider, ToastProvider, applyBranding, type NavItem } from "../../design";
 import type { SyncStatus } from "../../data/sync";
 import { useRoute } from "../shared/router";
 import { getRepository, onAuthFailure } from "../shared/repo";
 import { TwoFactorGate } from "../shared/twoFactor";
-import { LoginScreen, TenantLogo, Watermark } from "../shared/ui";
+import { LoginScreen, TenantLogo, Watermark, rememberTenant } from "../shared/ui";
 import { currentMonth } from "../shared/format";
 import { errorText } from "../shared/hooks";
 import { Ctx, type EmployeeCtx } from "./context";
@@ -22,7 +22,7 @@ import { UpdateBanner } from "./UpdateBanner";
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Start", icon: "home", match: "/" },
-  { href: "#/erfassen", label: "Erfassen", icon: "plusCircle", match: "/erfassen" },
+  { href: "#/erfassen", label: "Erfassen", icon: "plus", match: "/erfassen", primary: true },
   { href: "#/monat", label: "Monat", icon: "calendar", match: "/monat" },
   { href: "#/konto", label: "Konto", icon: "wallet", match: "/konto" },
   { href: "#/einstellungen", label: "Profil", icon: "settings", match: "/einstellungen" },
@@ -78,6 +78,7 @@ export function EmployeeApp() {
         const me = list.find((e) => e.id === session.employeeId);
         if (!me) throw new Error("Mitarbeiterdaten nicht gefunden.");
         applyBranding(tenant.branding);
+        rememberTenant("app", tenant.name, tenant.branding);
         document.title = `${tenant.name} · Zeiterfassung`;
         setData({ tenant, me });
       })
@@ -153,7 +154,10 @@ export function EmployeeApp() {
           <div class="m-shell">
             <header class="m-header">
               <TenantLogo name={data.tenant.name} branding={data.tenant.branding} showSlogan />
-              <span class="xsmall muted" style={{ textAlign: "right" }}>{data.me.displayName}<br />Nr. {data.me.personnelNumber}</span>
+              <a class="user-chip" href="#/einstellungen" style={{ textDecoration: "none", color: "inherit" }} aria-label={`Profil: ${data.me.displayName}, Nr. ${data.me.personnelNumber}`}>
+                <span class="user-chip-text"><strong>{data.me.displayName}</strong><span>Nr. {data.me.personnelNumber}</span></span>
+                <Avatar name={data.me.displayName} />
+              </a>
             </header>
             <SyncIndicator status={syncStatus} onOpenConflicts={() => setConflictsOpen(true)} />
             <UpdateBanner />

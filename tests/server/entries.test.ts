@@ -95,6 +95,26 @@ describe("create / update / delete", () => {
   });
 });
 
+describe("source \"migration\" (legacy import, QA B5)", () => {
+  it("only for the signed-in person's own entries; managers cannot mark entries of others", async () => {
+    const own = await t.call("POST", `/api/employees/${E.emp1A}/time-entries`, { cookie: c.emp1A, body: { ...entry("legacy-own-0001", "2026-10-20", "08:00", "12:00", 0), source: "migration" } });
+    expect(own.status).toBe(201);
+    expect(own.body.source).toBe("migration");
+    for (const who of ["managerA", "ownerA"] as const) {
+      const other = await t.call("POST", `/api/employees/${E.emp2A}/time-entries`, { cookie: c[who], body: { ...entry(`legacy-${who}-0001`, "2026-10-21", "08:00", "12:00", 0), source: "migration" } });
+      expect(other.status).toBe(403);
+      expect(other.body.error.message).toBe("Altdaten können nur für das eigene Konto übernommen werden.");
+      expect(await countRows(E.emp2A, `legacy-${who}-0001`)).toBe(0);
+    }
+    // The same request without the marker is a normal entry by the manager.
+    const normal = await t.call("POST", `/api/employees/${E.emp2A}/time-entries`, { cookie: c.managerA, body: entry("legacy-managerA-0002", "2026-10-21", "08:00", "12:00", 0) });
+    expect(normal.status).toBe(201);
+    expect(normal.body.source).toBe("app");
+    const bad = await t.call("POST", `/api/employees/${E.emp1A}/time-entries`, { cookie: c.emp1A, body: { ...entry("legacy-own-0002", "2026-10-22", "08:00", "12:00", 0), source: "correction" } });
+    expect(bad.status).toBe(400);
+  });
+});
+
 describe("break rules (tenant breakPolicy, checked by the API with platform/src/core)", () => {
   it("tenant A (from exactly 6 h): 6:00 h without pause → 400 with the core message, nothing stored", async () => {
     const r = await t.call("POST", `/api/employees/${E.emp1A}/time-entries`, { cookie: c.emp1A, body: entry("pause-0001", "2026-10-16", "08:00", "14:00", 0) });
@@ -190,9 +210,14 @@ describe("monthly statements and work account", () => {
     const locked = await t.call("POST", `/api/employees/${E.emp1A}/time-entries`, { cookie: c.emp1A, body: entry("locked-0001", "2026-10-28", "08:00", "10:00", 0) });
     expect(locked.status).toBe(423);
 
-    const reopen = await t.call("POST", `/api/statements/${sub.body.id}/return`, { cookie: c.ownerA, body: { reason: "Korrektur nötig" } });
+    // decision 28.10.2026: approved months are re-opened (reason, history), no longer "returned"
+    const back = await t.call("POST", `/api/statements/${sub.body.id}/return`, { cookie: c.ownerA, body: { reason: "Korrektur nötig" } });
+    expect(back.status).toBe(409);
+    const reopen = await t.call("POST", `/api/statements/${sub.body.id}/reopen`, { cookie: c.ownerA, body: { reason: "Korrektur nötig" } });
     expect(reopen.status).toBe(200);
-    expect(reopen.body.status).toBe("returned");
+    expect(reopen.body.status).toBe("reopened");
+    const returned = await t.call("POST", `/api/statements/${sub.body.id}/return`, { cookie: c.ownerA, body: { reason: "Bitte selbst ergänzen" } });
+    expect(returned.body.status).toBe("returned");
   });
 
   it("refuses to submit a month with break-rule problems", async () => {
@@ -255,6 +280,18 @@ describe("tenant profile validation", () => {
     expect(settings.body.settings.breakPolicy.maxShiftMinutes).toBe(720);
     const badOrder = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: [{ minGrossMinutes: 540, minPauseMinutes: 45 }, { minGrossMinutes: 360, minPauseMinutes: 30 }] } } });
     expect(badOrder.status).toBe(400);
+    const lax = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: [{ minGrossMinutes: 420, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }] } } });
+    expect(lax.status).toBe(400);
+    expect(lax.body.error.message).toContain("§ 4 Arbeitszeitgesetz");
+    const segment = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { minPauseSegmentMinutes: 10 } } });
+    expect(segment.status).toBe(400);
+    const statutory = [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }];
+    const toStatutory = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: statutory } } });
+    expect(toStatutory.status).toBe(200);
+    expect(toStatutory.body.settings.breakPolicy).toMatchObject({ thresholds: statutory, maxShiftMinutes: 720 });
+    const strict = [{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }];
+    const back = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: strict } } });
+    expect(back.body.settings.breakPolicy.thresholds).toEqual(strict);
   });
 
   it("duplicate personnel number → 409 with German text", async () => {

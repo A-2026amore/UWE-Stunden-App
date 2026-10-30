@@ -74,7 +74,7 @@ export interface TenantSettings {
   workAccount: WorkAccountPolicy;
 }
 
-export type TenantStatus = "active" | "suspended" | "pending";
+export type TenantStatus = "active" | "suspended" | "pending" | "deactivated";
 
 export interface Tenant {
   id: UUID;
@@ -88,6 +88,11 @@ export interface Tenant {
   isDemo: boolean;
   /** Owner setting: managers and owners must use two-factor authentication (missing = false). */
   requireTwoFactorForManagers?: boolean;
+  /**
+   * Owner setting (0016): months after an employee left before the record may be anonymised.
+   * Missing/null = not configured (anonymisation refused). Legal period to be checked (docs/datenschutz.md).
+   */
+  retentionMonthsAfterExit?: number | null;
 }
 
 // ---------------------------------------------------------------- licences
@@ -100,7 +105,10 @@ export interface License {
   tenantId: UUID;
   plan: LicensePlan;
   status: LicenseStatus;
-  /** Always 0 for pilot_free. Final prices are a business decision (not set). */
+  /**
+   * Legacy flat price of the licence (always 0). Not used for billing since the
+   * price model of 28.10.2026 – see employeePriceCents / BillingSettings.
+   */
   priceCents: number;
   /** "none" = no payment data, no invoices, no automatic conversion. */
   billing: "none" | "manual" | "provider";
@@ -110,13 +118,116 @@ export interface License {
   maxEmployees: number | null;
   features: string[];
   note: string | null;
+  /**
+   * Special condition (price model 2026-10-28): own net price per billable
+   * employee and month in cents; null = platform default price.
+   */
+  employeePriceCents: number | null;
+  /** Free customer account (e.g. pilot, test). Always true for pilot_free. */
+  freeOfCharge: boolean;
+  conditionNote: string | null;
+  /** Validity of the special condition (null = open). It applies to every month it overlaps. */
+  conditionValidFrom: ISODate | null;
+  conditionValidUntil: ISODate | null;
+}
+
+// ---------------------------------------------------------------- billing (price model 2026-10-28)
+
+/** Which price applies to a tenant in a month. */
+export type BillingCondition = "standard" | "special" | "free" | "pilot_free"
+  /** Customer blocked (suspended / deactivated) for the whole month: 0 € (decision 28.10.2026, migration 0018). */
+  | "tenant_suspended" | "tenant_deactivated";
+
+/** Block of a customer covering a whole month (status and start of the block). */
+export interface TenantBlock {
+  status: "suspended" | "deactivated";
+  since: string;
+}
+/** Manual billing status of a tenant and month (platform operator). */
+export type BillingStatus = "open" | "invoiced" | "paid" | "waived";
+/** Why a person is billable: role employee, or leadership with own time entries in the month. */
+export type BillableReason = "employee" | "leader_with_time";
+
+export interface BillingSettings {
+  /** Net price per billable employee and month in cents (default 500 = 5,00 €). */
+  defaultPriceCents: number;
+  currency: "EUR";
+}
+
+/** One billable person (only visible to owner/manager of the tenant). */
+export interface BillingLine {
+  employeeId: UUID;
+  displayName: string;
+  personnelNumber: string;
+  role: TenantRole;
+  status: EmployeeStatus;
+  reason: BillableReason;
+}
+
+/** Numbers of one tenant and month (no names). */
+export interface BillingMonthSummary {
+  month: ISOMonth;
+  status: BillingStatus;
+  /** True when frozen by the platform operator (status other than "open"). */
+  final: boolean;
+  condition: BillingCondition;
+  unitPriceCents: number;
+  billableCount: number;
+  /** Net amount in cents (billableCount × unitPriceCents). */
+  amountCents: number;
+}
+
+/** Billing of a tenant for one month incl. the billable persons (owner/manager). */
+export interface TenantBillingMonth extends BillingMonthSummary {
+  tenantId: UUID;
+  isCurrentMonth: boolean;
+  plan: LicensePlan | null;
+  currency: "EUR";
+  closedAt: string | null;
+  lines: BillingLine[];
+  /** Set when the customer was blocked for the whole month (condition tenant_*), else null. */
+  tenantBlock?: TenantBlock | null;
+}
+
+/** One row of the platform revenue overview – numbers only, never names. */
+export interface PlatformRevenueRow extends BillingMonthSummary {
+  tenantId: UUID;
+  tenantName: string;
+  slug: string;
+  isDemo: boolean;
+  tenantStatus: Tenant["status"];
+  plan: LicensePlan | null;
+  note: string | null;
+  closedAt: string | null;
+  /** Condition tenant_*: start of the block and the reason given by the super-admin. */
+  blockSince?: string | null;
+  blockReason?: string | null;
+}
+
+export interface PlatformRevenue {
+  month: ISOMonth;
+  defaultPriceCents: number;
+  rows: PlatformRevenueRow[];
+  totals: {
+    /** Billable employees of all non-demo tenants. */
+    billableCount: number;
+    /** Net amount of all non-demo tenants, without waived months. */
+    amountCents: number;
+    /** Net amount of waived months (non-demo). */
+    waivedCents: number;
+    /** Net amount of demo tenants (not revenue). */
+    demoAmountCents: number;
+  };
+  /** Payment provider of the server: only "none" exists (nothing is charged automatically). */
+  paymentProvider: "none";
 }
 
 // ---------------------------------------------------------------- people
 
 export type TenantRole = "employee" | "manager" | "owner";
 export type PlatformRole = "super_admin" | "support";
-export type EmployeeStatus = "invited" | "active" | "deactivated";
+/** locked = temporarily blocked (no sign-in, data kept, reversible); deactivated = left the company. */
+export type EmployeeStatus = "invited" | "active" | "locked" | "deactivated";
 
 export interface Employee {
   id: UUID;
@@ -127,6 +238,8 @@ export interface Employee {
   role: TenantRole;
   status: EmployeeStatus;
   createdAt: string;
+  /** Set when the owner anonymised the record of a former employee (0016); missing = not anonymised. */
+  anonymizedAt?: string | null;
 }
 
 // ---------------------------------------------------------------- time
@@ -215,7 +328,8 @@ export interface MonthSummary {
 
 // ---------------------------------------------------------------- statements
 
-export type StatementStatus = "draft" | "submitted" | "approved" | "returned";
+/** "reopened": an approved month re-opened by the leadership with a reason (decision 28.10.2026, migration 0017). */
+export type StatementStatus = "draft" | "submitted" | "approved" | "returned" | "reopened";
 
 export interface MonthlyStatement {
   id: UUID;
@@ -231,6 +345,82 @@ export interface MonthlyStatement {
   workedMinutes: number;
   allocatedMinutes: number;
   billingMinutes: number;
+  /** Status "reopened": when the month was re-opened (the reason is in reviewNote). */
+  reopenedAt?: string | null;
+  /**
+   * Legacy cases only: corrections of an approved month made after the approval
+   * before migration 0017. Since the decision of 28.10.2026 an approved month can
+   * only be changed after a documented re-opening, so new cases cannot arise.
+   */
+  correctedAfterApproval?: { count: number; lastAt: string } | null;
+}
+
+/** One entry of the history of a monthly statement (monthly_statement_events). */
+export interface StatementEvent {
+  action: "submit" | "approve" | "return" | "reopen";
+  at: string;
+  actorName: string | null;
+  reason: string | null;
+  workedMinutes: number;
+  allocatedMinutes: number;
+  billingMinutes: number;
+}
+
+// ---------------------------------------------------------------- correction requests
+
+/** Values of a time entry as used in correction requests and revisions. */
+export interface EntryValues {
+  date: ISODate;
+  start: ClockTime;
+  end: ClockTime;
+  pauseMinutes: number;
+  note: string;
+}
+
+export type CorrectionKind = "change" | "delete" | "add";
+export type CorrectionStatus = "open" | "accepted" | "rejected" | "withdrawn";
+
+/** An employee asks the leadership to change, delete or add one of their own entries. */
+export interface CorrectionRequest {
+  id: UUID;
+  tenantId: UUID;
+  employeeId: UUID;
+  kind: CorrectionKind;
+  /** Entry concerned (change/delete); null for "add". */
+  entryId: string | null;
+  /** Entry version at request time (accepting fails when the entry changed since). */
+  entryVersion: number | null;
+  /** Values at request time (change/delete). */
+  before: EntryValues | null;
+  /** Requested values (change/add). */
+  proposed: EntryValues | null;
+  /** Mandatory reason of the employee. */
+  reason: string;
+  status: CorrectionStatus;
+  createdAt: string;
+  decidedAt: string | null;
+  /** Display name of the deciding person (null when not visible to the caller). */
+  decidedByName: string | null;
+  /** Answer of the leadership (mandatory for rejections). */
+  decisionNote: string | null;
+  /** Entry changed/created by the acceptance. */
+  appliedEntryId: string | null;
+}
+
+/** One version of a time entry from the change history (time_entry_revisions). */
+export interface TimeEntryRevision {
+  entryId: string;
+  version: number;
+  operation: "insert" | "update" | "delete" | "restore";
+  /** Made through the leadership's correction function. */
+  isCorrection: boolean;
+  changedAt: string;
+  /** Display name of the person (null when not visible to the caller). */
+  changedByName: string | null;
+  reason: string | null;
+  values: EntryValues;
+  deleted: boolean;
+  source: TimeEntry["source"];
 }
 
 // ---------------------------------------------------------------- audit

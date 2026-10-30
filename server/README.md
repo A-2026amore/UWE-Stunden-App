@@ -25,7 +25,10 @@ Browser ──HTTPS──▶ Caddy ──▶ Node-API (127.0.0.1:3000) ──▶
 | `src/twoFactor.ts` | Zwei-Faktor-Anmeldung (TOTP): Verschlüsselung des Geheimnisses, Code-Prüfung mit Replay-Schutz, Wiederherstellungscodes, zweiter Anmeldeschritt |
 | `src/static.ts` | Optional: Auslieferung von `platform/dist` (`STATIC_DIR`) mit eigener CSP |
 | `src/mailer.ts` | E-Mail (minimaler SMTP-Client; ohne SMTP: Ausgabe ins Log nur in Entwicklung) |
-| `src/cli.ts` | Betriebsbefehl `set-password` |
+| `src/cli.ts` | Betriebsbefehle `set-password`, `invite-link`, `seed-test-env`, `export-tenant`, `delete-tenant` |
+| `src/offboarding.ts` | Vertragsende: Gesamtexport und Löschung eines Mandanten (nur Konsole, Eigentümerrolle) |
+| `src/operator.ts` | Einladungslink für den Betrieb ohne E-Mail (`invite-link`), Link-Aufbau |
+| `src/migrate.ts` | Migrationsjob: `db/migrations` als Eigentümer einspielen (Versionstabelle `ops.schema_migrations` mit Prüfsumme), Passwort für `app_api` setzen (`deploy/README.md`) |
 | `register.mjs`, `resolve-ts.mjs` | Lädt TypeScript direkt (Node-Typ-Entfernung) inkl. `platform/src/core` |
 
 Es gibt **keinen Build-Schritt**: Node ≥ 22.6 führt die `.ts`-Dateien direkt aus
@@ -54,6 +57,33 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **nur** wenn
 `NODE_ENV` nicht `production` ist. In Produktion ohne SMTP wird nur eine Warnung ohne Inhalt geloggt.
 
+**Einladung ohne E-Mail (Betrieb ohne SMTP, z. B. Testumgebung):** Der Betreiber erzeugt den Link auf der
+Server-Konsole. Er erscheint nur dort (stdout), nie im Log und nie in einer API-Antwort:
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs   server/src/cli.ts invite-link <mandant-kurzname> <email> <employee|manager|owner> [--days=7] [--name="Vorname Name"]
+```
+
+Gibt es im Mandanten schon eine offene Einladung für die Adresse (z. B. Inhaber nach dem Anlegen des Mandanten),
+wird sie erneuert (gleiche Rolle nötig, ältere Links werden ungültig); sonst entsteht ein neuer Zugang im Status
+`invited` mit Personalnummer `CLI-…` (später im Chef-Portal änderbar). Bereits verknüpfte oder deaktivierte Zugänge
+werden abgelehnt. Benötigt `DATABASE_URL` und `PUBLIC_ORIGIN` (wie die API). Den Link nur persönlich bzw. über einen
+sicheren Kanal weitergeben; Terminal-Verlauf/Mitschnitte beachten.
+
+### Vertragsende: Mandant exportieren und löschen
+
+Nur auf der Server-Konsole, mit `MIGRATION_DATABASE_URL` (Eigentümer der Datenbank). Ablauf, Umfang und
+Aufbewahrung: `docs/betrieb.md` 6.1b.
+
+```bash
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+  server/src/cli.ts export-tenant <mandant-kurzname> --out <neues-verzeichnis>
+node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+  server/src/cli.ts delete-tenant <mandant-kurzname> --confirm <mandant-kurzname> --after-export <verzeichnis>
+```
+
+Exit-Codes: 0 erledigt, 1 abgelehnt (Grund auf stderr, nichts geändert), 2 Aufruf falsch.
+
 ## Umgebungsvariablen
 
 | Variable | Pflicht | Standard | Bedeutung |
@@ -63,6 +93,7 @@ Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **
 | `NODE_ENV` | – | – | `production` aktiviert Secure-Cookies, HSTS und verbietet Log-Ausgabe von E-Mails. |
 | `HOST` / `PORT` | – | `127.0.0.1` / `3000` | Nur lokal lauschen; nach außen geht es über Caddy. |
 | `TRUST_PROXY` | – | aus | `1` = Client-IP aus `X-Forwarded-For` (letzter Eintrag) – nur hinter dem eigenen Proxy setzen. |
+| `TRUST_PROXY_CIDRS` | – | leer | Netze (CIDR oder einzelne IPs, kommagetrennt), aus denen `X-Forwarded-For` ausgewertet wird, z. B. das Docker-Netz des Proxys. Leer = jeder Absender (bisheriges Verhalten). Ungültige Einträge verhindern den Start. |
 | `SESSION_TTL_HOURS` | – | `12` | Absolute Sitzungsdauer. |
 | `SESSION_IDLE_MINUTES` | – | `120` | Sitzung endet nach so langer Inaktivität. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_TLS`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | – | – | Mailversand. `SMTP_TLS`: `implicit` (465), `starttls` (587, Standard), `none` (nur lokal/Test, in Produktion verboten). |
@@ -72,11 +103,16 @@ Ohne SMTP stehen Passwort-Reset- und Einladungs-E-Mails (mit Link) im Log – **
 | `RATE_LIMIT_LOGIN_PER_ACCOUNT` | – | `5` | Fehlversuche je IP + E-Mail. |
 | `RATE_LIMIT_LOGIN_PER_IP` | – | `100` | Anmeldeversuche je IP. |
 | `RATE_LIMIT_RESET_PER_ACCOUNT` | – | `3` | Reset-Anfragen je IP + E-Mail. |
+| `RATE_LIMIT_LOGIN_PER_EMAIL` | – | `30` | Fehlversuche je E-Mail-Adresse **über alle IPs** (verteilte Angriffe auf ein Konto). Danach 429 bis zum Ende des Zeitfensters – auch mit richtigem Passwort. |
+| `RATE_LIMIT_RESET_PER_EMAIL` | – | `10` | Reset-Mails je E-Mail-Adresse über alle IPs (kein Mail-Bombing über wechselnde IPs). |
 | `RATE_LIMIT_TOKEN_PER_IP` | – | `20` | Einlösen von Reset-/Einladungs-Links je IP. |
 | `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Zwei-Faktor-Codes je Konto bzw. IP. |
 | `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel | 32 Byte (Base64 oder 64 Hex), verschlüsselt die TOTP-Geheimnisse. Erzeugen: `openssl rand -base64 32`. Getrennt von DB-Backups sichern; Rotation: `docs/betrieb.md` Abschnitt 6.1. |
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel (kommagetrennt), nur zum Entschlüsseln während einer Rotation. |
 | `TOTP_ISSUER` | – | `Stundenwerk` | Anzeigename in der Authenticator-App. |
+| `PAYMENT_PROVIDER` | – | `none` | Zahlungsdienstleister. Nur `none` (keine Abbuchungen, keine externen Aufrufe, `src/payment.ts`); jeder andere Wert verhindert den Start. |
+| `APP_COMMIT` | – | – | Commit des Builds (7–40 Hex-Zeichen) für `GET /api/platform/system`. |
+| `BACKUP_STATUS_FILE` | – | – | Zeitstempel-Datei der letzten erfolgreichen Sicherung (Inhalt ISO-Zeit oder Änderungszeit) für `GET /api/platform/system`; fehlt sie: „nicht bekannt“. |
 
 Ein `SESSION_SECRET` wird nicht benötigt: Sitzungs-Token sind 32 zufällige Bytes, die Datenbank
 speichert nur ihren SHA-256-Hash.
@@ -120,7 +156,7 @@ PostgreSQL 16 lauscht nur auf `127.0.0.1`, Domain `zeit.example.de` (Platzhalter
 
 ```bash
 sudo adduser --system --group --home /srv/uwe-zeit uwe-api
-cd /srv/uwe-zeit && sudo -u uwe-api npm ci   # pg steht derzeit unter devDependencies → nicht --omit=dev
+cd /srv/uwe-zeit && sudo -u uwe-api npm ci   # Build-Werkzeuge nötig; zur Laufzeit reicht `npm ci --omit=dev` (nur pg)
 sudo -u uwe-api env VITE_DATA_MODE=api npm run build   # Frontend (API-Modus) nach platform/dist
 ```
 

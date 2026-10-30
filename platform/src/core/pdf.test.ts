@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStatementPdf, createStatementPdfBytes, statementFileName, type StatementPdfArgs } from "./pdf";
+import { createStatementPdf, createStatementPdfBytes, jpegInfo, statementFileName, type StatementPdfArgs } from "./pdf";
 import type { ShiftLike } from "./types";
 import { loadLegacy } from "./__legacy__/loadLegacy";
 import { clock, int, pick, rng } from "./__legacy__/random";
@@ -29,7 +29,7 @@ const uweTenant: StatementPdfArgs["tenant"] = {
 describe("pdf", () => {
   it("60 entries → multi-page PDF with %PDF header, repeated table header and page numbers", async () => {
     const entries = makeEntries(60);
-    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30) });
+    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30), productName: "Stundenwerk" });
     expect(blob.type).toBe("application/pdf");
     const text = latin1(new Uint8Array(await blob.arrayBuffer()));
     expect(text.startsWith("%PDF-1.4")).toBe(true);
@@ -39,8 +39,11 @@ describe("pdf", () => {
     for (let p = 1; p <= pages; p++) expect(text).toContain("(Seite " + p + " von " + pages + ")");
     expect(text.split("(Bemerkung)").length - 1).toBe(pages); // table header on every page
     expect(text.split("(STUNDENNACHWEIS)").length - 1).toBe(pages);
-    expect(text).toContain("(Status: Eingereicht)");
+    expect(text.split("(STATUS)").length - 1).toBe(pages); // info panel on every page
+    expect(text).toContain("(Eingereicht)");
     expect(text).toContain("(Erstellt: 30.11.2026)");
+    expect(text.split("(Erstellt mit Stundenwerk)").length - 1).toBe(pages);
+    expect(text).toContain("(November 2026)");
     expect(text).toContain("0.000 0.663 0.620 rg"); // UWE vector logo colour
     expect(text).toContain("/GSWatermark gs");
     expect(text).toContain("Tel. 0241 400 111 11");
@@ -61,6 +64,22 @@ describe("pdf", () => {
       expect(/\/Count (\d+)/.exec(mine)![1]).toBe(/\/Count (\d+)/.exec(legacy)![1]);
       expect(/GESAMT: [\d,]+ Stunden/.exec(mine)![0]).toBe(/GESAMT: [\d,]+ Stunden/.exec(legacy)![0]);
     }
+  });
+
+  it("design: zebra rows, coloured table header, summary block; never more rows per page than the legacy layout", () => {
+    const entries = makeEntries(45, 3);
+    const text = latin1(createStatementPdfBytes({ tenant: { name: "Muster Pflege GmbH", primaryColor: "#336699" }, employee: { name: "Max", personnelNumber: "M-1" }, month: "2026-11", entries }));
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    // Every page: header row in the strong brand colour with white labels.
+    expect(text.split("1 1 1 rg /F2 8 Tf").length - 1).toBe(pages * 6);
+    // Zebra stripes (very light tint of #336699) behind every second row.
+    const zebra = text.split("0.964 0.973 0.982 rg").length - 1;
+    expect(zebra).toBeGreaterThanOrEqual(Math.floor(entries.length / 2) - pages);
+    expect(text).toMatch(/\(Eins\xe4tze: 45 {3}\| {3}Arbeitstage: \d+ {3}\| {3}Pausen gesamt: [\d,]+ Std\.\)/);
+    // No product name line when none is given.
+    expect(text).not.toContain("Erstellt mit");
+    // Weekday in the date column.
+    expect(text).toMatch(/\((Mo|Di|Mi|Do|Fr|Sa|So) \d{2}\.11\.2026\)/);
   });
 
   it("generic tenant: typographic logo in primary colour, no UWE artwork", () => {
@@ -110,3 +129,54 @@ function loadLegacyWithBlob(): (args: unknown) => string {
     return latin1(last!);
   };
 }
+
+describe("pdf: tenant logo (generic brand)", () => {
+  // Minimal JPEG header: SOI, APP0 stub, SOF0 (8 bit, 40×20 px, 3 components), EOI.
+  const jpeg = new Uint8Array([
+    0xff, 0xd8,
+    0xff, 0xe0, 0x00, 0x04, 0x00, 0x00,
+    0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x14, 0x00, 0x28, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01,
+    0xff, 0xd9,
+  ]);
+  const generic = (logo: StatementPdfArgs["tenant"]["logo"]): StatementPdfArgs["tenant"] => ({
+    name: "Muster Pflegedienst GmbH", brand: "generic", primaryColor: "#2d4f73", logo,
+    contact: { legalName: "Muster Pflegedienst GmbH", street: "Beispielweg 2", postalCode: "50667", city: "Köln" },
+  });
+
+  it("reads the pixel size of a JPEG and rejects other data", () => {
+    expect(jpegInfo(jpeg)).toEqual({ width: 40, height: 20, components: 3 });
+    expect(jpegInfo(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBeNull();
+    expect(jpegInfo(new Uint8Array([0xff, 0xd8, 0xff]))).toBeNull();
+  });
+
+  it("embeds the logo once and shows it top left and as watermark on every page", () => {
+    const text = latin1(createStatementPdfBytes({
+      tenant: generic({ jpeg, width: 40, height: 20 }), employee: { name: "Erika Muster", personnelNumber: "4711" },
+      month: "2026-11", entries: makeEntries(60), createdAt: new Date(2026, 10, 30),
+    }));
+    const pages = Number(/\/Count (\d+)/.exec(text)![1]);
+    expect(pages).toBeGreaterThan(1);
+    expect(text.split("/Subtype /Image").length - 1).toBe(1);
+    expect(text).toContain("/Width 40 /Height 20 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode");
+    // Header logo plus the faint watermark (centred, 380 pt wide for this 2:1 logo) on every page.
+    expect(text.split("/Logo Do").length - 1).toBe(2 * pages);
+    expect(text.split("q /GSWatermark gs 380.00 0 0 190.00 107.64 325.94 cm /Logo Do Q").length - 1).toBe(pages);
+    // The logo carries the name: no company name next to it in the header (footer only).
+    expect(text).not.toContain("(Muster Pflegedienst GmbH) Tj");
+    // xref offsets stay correct with binary image data.
+    const start = Number(/startxref\n(\d+)/.exec(text)![1]);
+    expect(text.slice(start, start + 4)).toBe("xref");
+    for (const m of text.matchAll(/^(\d{10}) 00000 n $/gm)) expect(text.slice(Number(m[1]))).toMatch(/^\d+ 0 obj/);
+  });
+
+  it("falls back to the typographic logo without (or with an unusable) logo; UWE keeps its vector logo", () => {
+    const base = { employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries: makeEntries(3) };
+    const none = latin1(createStatementPdfBytes({ ...base, tenant: generic(null) }));
+    expect(none).not.toContain("/XObject");
+    expect(none).toContain("(Muster Pflegedienst GmbH) Tj");
+    const broken = latin1(createStatementPdfBytes({ ...base, tenant: generic({ jpeg: new Uint8Array([1, 2, 3]), width: 1, height: 1 }) }));
+    expect(broken).not.toContain("/XObject");
+    const uwe = latin1(createStatementPdfBytes({ ...base, tenant: { ...uweTenant, logo: { jpeg, width: 40, height: 20 } } }));
+    expect(uwe).not.toContain("/XObject");
+  });
+});

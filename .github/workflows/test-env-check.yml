@@ -1,0 +1,71 @@
+name: Testumgebung prüfen
+
+# Checks the public test environment after a commit was approved on the server (`stunden-test-freigeben <commit>`,
+# deploy/bootstrap-test.sh). Started by a push to the branch stunden-test-check: either exactly the approved commit,
+# or a commit whose file .github/test-env-commit names it (for approved commits that predate this workflow).
+# Manual dispatch only works once the file is on main.
+# Read-only: no secrets, no access to the server, only public HTTPS requests.
+on:
+  push:
+    branches: [stunden-test-check]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-env-check
+  cancel-in-progress: true
+
+env:
+  URL: https://stunden-test.appzentrale24.de
+
+jobs:
+  check:
+    name: HTTPS, Version, Sicherheit, Seiten
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Warten, bis der Server den Stand ausgerollt hat
+        run: |
+          want="$(git rev-parse HEAD)"
+          [ ! -f .github/test-env-commit ] || want="$(tr -d '[:space:]' < .github/test-env-commit)"
+          [[ "$want" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Ungültiger Commit: $want"; exit 1; }
+          echo "Erwarteter Stand: $want"
+          for i in $(seq 1 70); do
+            body="$(curl -fsS --max-time 10 "$URL/api/health" 2>/dev/null || true)"
+            got="$(printf '%s' "$body" | sed -n 's/.*"commit":"\([0-9a-f]*\)".*/\1/p')"
+            echo "Versuch $i: ${body:-keine Antwort}"
+            if [ -n "$got" ] && [ "${want#"$got"}" != "$want" ]; then echo "Ausgerollt: $got"; exit 0; fi
+            sleep 30
+          done
+          echo "::error::Die Testumgebung zeigt nach 35 Minuten nicht den Stand $want."
+          exit 1
+      - name: HTTPS und Sicherheits-Header
+        run: |
+          set -x
+          # valid certificate (curl verifies by default), redirect from http
+          curl -fsS -o /dev/null "$URL/"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://stunden-test.appzentrale24.de/")" -ge 300
+          h="$(curl -fsSI "$URL/app/")"
+          echo "$h" | grep -qi '^strict-transport-security:'
+          echo "$h" | grep -qi '^content-security-policy:'
+          echo "$h" | grep -qi '^x-content-type-options: nosniff'
+          for p in / /app/ /chef/ /admin/ /app/manifest.webmanifest; do
+            test "$(curl -s -o /dev/null -w '%{http_code}' "$URL$p")" = 200
+          done
+          # no session: null; protected data: 401; foreign origin: refused
+          test "$(curl -fsS "$URL/api/auth/session")" = "null"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$URL/api/employees/00000000-0000-0000-0000-000000000000/time-entries")" = 401
+          code="$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Origin: https://angreifer.example' -H 'Content-Type: application/json' \
+            --data '{"email":"x@example.com","password":"x"}' "$URL/api/auth/login")"
+          test "$code" = 403
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Anmeldeseiten im Browser (Chromium und WebKit)
+        run: node scripts/check-test-env.mjs

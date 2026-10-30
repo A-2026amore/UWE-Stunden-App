@@ -2,6 +2,7 @@
 import { createContext, type ComponentChildren, type JSX } from "preact";
 import { useCallback, useContext, useEffect, useId, useRef, useState } from "preact/hooks";
 import { Icon, type IconName } from "./icons";
+import { getThemePreference, setThemePreference, type ThemePreference } from "./theme";
 
 type Tone = "neutral" | "brand" | "success" | "warning" | "danger" | "info";
 
@@ -74,15 +75,169 @@ export function Card({ title, actions, accent, muted, children, class: cls, head
 
 // ------------------------------------------------------------ StatTile
 
-export function StatTile({ label, value, hint, tone, class: cls }: {
+export function StatTile({ label, value, hint, tone, icon, href, class: cls, testId }: {
   label: ComponentChildren; value: ComponentChildren; hint?: ComponentChildren;
   tone?: "default" | "brand" | "warning" | "hero"; class?: string;
+  /** KPI style with an icon badge (dashboards). */
+  icon?: IconName;
+  /** Makes the whole tile a link (e.g. to the list behind the number). */
+  href?: string;
+  testId?: string;
 }) {
-  return (
-    <div class={cx("stat", tone && tone !== "default" && `stat-${tone}`, cls)}>
+  const classes = cx("stat", icon && "kpi", href && "kpi-link", tone && tone !== "default" && `stat-${tone}`, cls);
+  const body = (
+    <>
+      {icon && <span class="stat-icon" aria-hidden="true"><Icon name={icon} size={18} /></span>}
       <span class="stat-label">{label}</span>
       <strong class="stat-value">{value}</strong>
       {hint && <span class="stat-hint">{hint}</span>}
+    </>
+  );
+  return href
+    ? <a class={classes} href={href} data-testid={testId}>{body}</a>
+    : <div class={classes} data-testid={testId}>{body}</div>;
+}
+
+// ------------------------------------------------------------ Skeleton (loading placeholder)
+
+/** Shimmering placeholder while data loads; announced once as "Wird geladen …". */
+export function Skeleton({ lines = 3, cards = 0, title = true }: { lines?: number; cards?: number; title?: boolean }) {
+  return (
+    <div class="stack" aria-busy="true">
+      <span class="sr-only" role="status">Wird geladen …</span>
+      {title && <span class="skeleton skeleton-title" aria-hidden="true" />}
+      {cards > 0 && (
+        <div class="grid-4" aria-hidden="true">
+          {Array.from({ length: cards }, (_, i) => <span key={i} class="skeleton skeleton-card" />)}
+        </div>
+      )}
+      {Array.from({ length: lines }, (_, i) => (
+        <span key={i} class="skeleton skeleton-line" aria-hidden="true" style={{ width: `${92 - ((i * 17) % 40)}%` }} />
+      ))}
+    </div>
+  );
+}
+
+// ------------------------------------------------------------ Avatar
+
+export function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  const first = parts[0]!.charAt(0);
+  const last = parts.length > 1 ? parts[parts.length - 1]!.charAt(0) : "";
+  return (first + last).toUpperCase();
+}
+
+export function Avatar({ name, small }: { name: string; small?: boolean }) {
+  return <span class={cx("avatar", small && "avatar-sm")} aria-hidden="true">{initials(name)}</span>;
+}
+
+// ------------------------------------------------------------ Bar chart (inline SVG, no library)
+
+export interface BarDatum {
+  /** Short axis label, e.g. "Mo 3." or "KW 45". */
+  label: string;
+  /** Full text for screen readers and the tooltip, e.g. "Montag, 3.11.: 24,5 Std.". */
+  title: string;
+  value: number;
+  /** Emphasised bar (e.g. today). */
+  highlight?: boolean;
+  /** De-emphasised bar (e.g. weekend, future). */
+  muted?: boolean;
+}
+
+/**
+ * Simple accessible bar chart. Rendered as SVG with role="img" and a text
+ * alternative; the full values are additionally available as a visually
+ * hidden list for screen readers.
+ */
+export function BarChart({ data, label, formatValue, height = 160, legend }: {
+  data: BarDatum[]; label: string; formatValue: (v: number) => string; height?: number; legend?: ComponentChildren;
+}) {
+  // The SVG is drawn in real pixels of its container, so labels keep their size on phones.
+  const box = useRef<HTMLElement>(null);
+  const [width, setWidth] = useState(640);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => { const w = Math.round(el.clientWidth); if (w > 0) setWidth(w); };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const top = 12;
+  const bottom = 24;
+  const left = 36;
+  const plotH = height - top - bottom;
+  const max = Math.max(1, ...data.map((d) => d.value));
+  // "Nice" scale: 1, 2, 5 × 10^n
+  const pow = 10 ** Math.floor(Math.log10(max));
+  const step = [1, 2, 5, 10].map((m) => m * pow).find((s) => max / s <= 4) ?? pow * 10;
+  const scaleMax = Math.ceil(max / step) * step;
+  const ticks = Array.from({ length: Math.round(scaleMax / step) + 1 }, (_, i) => i * step);
+  const n = Math.max(1, data.length);
+  const slot = (width - left) / n;
+  const barW = Math.max(3, Math.min(28, slot * 0.62));
+  const maxLabels = Math.max(4, Math.floor((width - left) / 26));
+  const labelEvery = n > maxLabels ? Math.ceil(n / maxLabels) : 1;
+  return (
+    <figure class="chart" style={{ margin: 0 }} ref={box}>
+      <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} role="img" aria-label={label}>
+        {ticks.map((t) => {
+          const y = top + plotH - (t / scaleMax) * plotH;
+          return (
+            <g key={t}>
+              <line class="grid-line" x1={left} x2={width} y1={y} y2={y} />
+              <text class="axis-label" x={left - 8} y={y + 4} text-anchor="end">{formatValue(t)}</text>
+            </g>
+          );
+        })}
+        {data.map((d, i) => {
+          const h = (d.value / scaleMax) * plotH;
+          const x = left + i * slot + (slot - barW) / 2;
+          return (
+            <g key={i}>
+              <rect class={cx("bar", d.highlight && "is-today", d.muted && "is-muted")} x={x} y={top + plotH - h} width={barW} height={Math.max(0, h)} rx={Math.min(4, barW / 2)}>
+                <title>{d.title}</title>
+              </rect>
+              {i % labelEvery === 0 && <text class="axis-label" x={x + barW / 2} y={height - 6} text-anchor="middle">{d.label}</text>}
+            </g>
+          );
+        })}
+      </svg>
+      <ul class="sr-only">{data.map((d, i) => <li key={i}>{d.title}</li>)}</ul>
+      {legend && <figcaption class="chart-legend">{legend}</figcaption>}
+    </figure>
+  );
+}
+
+// ------------------------------------------------------------ Theme switch (light / dark / system)
+
+const THEME_OPTIONS: Array<{ key: ThemePreference; label: string; icon: IconName }> = [
+  { key: "system", label: "System", icon: "monitor" },
+  { key: "light", label: "Hell", icon: "sun" },
+  { key: "dark", label: "Dunkel", icon: "moon" },
+];
+
+/** Segmented control for the colour scheme; the choice is stored on this device only. */
+export function ThemeSwitch({ label = "Darstellung", hint, compact }: { label?: string; hint?: ComponentChildren; compact?: boolean }) {
+  const [pref, setPref] = useState<ThemePreference>(getThemePreference);
+  const labelId = useId();
+  const choose = (p: ThemePreference) => { setThemePreference(p); setPref(p); };
+  return (
+    <div class={cx("theme-switch", compact && "theme-switch-compact")}>
+      <span class={compact ? "sr-only" : "field-label"} id={labelId}>{label}</span>
+      <div class="segmented" role="group" aria-labelledby={labelId}>
+        {THEME_OPTIONS.map((o) => (
+          <button key={o.key} type="button" aria-pressed={pref === o.key ? "true" : "false"} onClick={() => choose(o.key)}
+            title={compact ? `Darstellung: ${o.label}` : undefined}>
+            <Icon name={o.icon} size={16} />{compact ? <span class="sr-only">Darstellung {o.label}</span> : o.label}
+          </button>
+        ))}
+      </div>
+      {hint && <p class="field-hint">{hint}</p>}
     </div>
   );
 }
@@ -274,13 +429,24 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   returned: { label: "Zurückgegeben", tone: "danger" },
   proposed: { label: "Zur Prüfung", tone: "warning" },
   rejected: { label: "Abgelehnt", tone: "danger" },
+  open: { label: "Offen", tone: "warning" },
+  accepted: { label: "Angenommen", tone: "success" },
+  withdrawn: { label: "Zurückgezogen", tone: "neutral" },
   active: { label: "Aktiv", tone: "success" },
   invited: { label: "Eingeladen", tone: "info" },
   deactivated: { label: "Deaktiviert", tone: "neutral" },
+  locked: { label: "Gesperrt", tone: "warning" },
+  invoiced: { label: "In Rechnung gestellt", tone: "info" },
+  paid: { label: "Bezahlt", tone: "success" },
+  waived: { label: "Erlassen", tone: "warning" },
   suspended: { label: "Gesperrt", tone: "danger" },
   pending: { label: "In Vorbereitung", tone: "warning" },
   expired: { label: "Abgelaufen", tone: "neutral" },
   none: { label: "Nicht erstellt", tone: "neutral" },
+  reopened: { label: "Wieder geöffnet", tone: "warning" },
+  cancelled: { label: "Storniert", tone: "neutral" },
+  cancellation: { label: "Stornorechnung", tone: "danger" },
+  issued: { label: "Ausgestellt", tone: "info" },
 };
 
 export function StatusPill({ status, label }: { status: string; label?: string }) {
@@ -311,9 +477,11 @@ export function Alert({ tone = "info", title, children, live }: {
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-export function Dialog({ open, title, onClose, children, footer, describedBy }: {
+export function Dialog({ open, title, onClose, children, footer, describedBy, wide }: {
   open: boolean; title: ComponentChildren; onClose: () => void; children?: ComponentChildren;
   footer?: ComponentChildren; describedBy?: string;
+  /** Wider on desktop (e.g. a table with several columns); full width on phones as usual. */
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -348,7 +516,7 @@ export function Dialog({ open, title, onClose, children, footer, describedBy }: 
   return (
     <dialog
       ref={ref}
-      class="dialog"
+      class={cx("dialog", wide && "dialog-wide")}
       aria-labelledby={titleId}
       aria-describedby={describedBy}
       onCancel={(e) => { e.preventDefault(); onClose(); }}
@@ -511,14 +679,15 @@ export function Segmented<K extends string>({ options, value, onChange, label }:
 
 // ------------------------------------------------------------ Navigation
 
-export interface NavItem { href: string; label: string; icon: IconName; count?: number; match?: string }
+export interface NavItem { href: string; label: string; icon: IconName; count?: number; match?: string; primary?: boolean }
+export interface NavGroup { label: string; items: NavItem[] }
 
 export function BottomNav({ items, current }: { items: NavItem[]; current: string }) {
   return (
     <nav class="bottom-nav" aria-label="Hauptnavigation">
       <ul>
         {items.map((it) => (
-          <li key={it.href}>
+          <li key={it.href} class={it.primary ? "is-primary" : undefined}>
             <a href={it.href} aria-current={current === (it.match ?? it.href) ? "page" : undefined}>
               <span class="bn-icon"><Icon name={it.icon} size={22} /></span>
               {it.label}
@@ -530,26 +699,37 @@ export function BottomNav({ items, current }: { items: NavItem[]; current: strin
   );
 }
 
-export function Sidebar({ items, current, brand, footer, open, onNavigate }: {
-  items: NavItem[]; current: string; brand: ComponentChildren; footer?: ComponentChildren; open: boolean; onNavigate: () => void;
+export function Sidebar({ items, groups, current, brand, footer, open, onNavigate }: {
+  /** Flat list (legacy) – or `groups` with headings. */
+  items?: NavItem[]; groups?: NavGroup[]; current: string; brand: ComponentChildren; footer?: ComponentChildren; open: boolean; onNavigate: () => void;
 }) {
+  const list = (navItems: NavItem[], labelledBy?: string) => (
+    <ul aria-labelledby={labelledBy}>
+      {navItems.map((it) => (
+        <li key={it.href}>
+          <a class="sidebar-link" href={it.href} onClick={onNavigate} aria-current={current === (it.match ?? it.href) ? "page" : undefined}>
+            <Icon name={it.icon} size={18} />
+            <span>{it.label}</span>
+            {it.count ? <span class="count"><Badge tone="warning">{it.count}</Badge></span> : null}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
   return (
     <>
       {open && <div class="sidebar-scrim" onClick={onNavigate} aria-hidden="true" />}
-      <aside class={cx("sidebar", open && "is-open")} id="sidebar">
+      <aside class={cx("sidebar", open && "is-open")} id="sidebar" onKeyDown={(e) => { if (open && e.key === "Escape") onNavigate(); }}>
         <div class="sidebar-brand">{brand}</div>
         <nav aria-label="Hauptnavigation">
-          <ul>
-            {items.map((it) => (
-              <li key={it.href}>
-                <a class="sidebar-link" href={it.href} onClick={onNavigate} aria-current={current === (it.match ?? it.href) ? "page" : undefined}>
-                  <Icon name={it.icon} />
-                  <span>{it.label}</span>
-                  {it.count ? <span class="count"><Badge tone="warning">{it.count}</Badge></span> : null}
-                </a>
-              </li>
-            ))}
-          </ul>
+          {groups
+            ? groups.map((g, i) => (
+                <div class="sidebar-group" key={g.label}>
+                  <p class="sidebar-group-label" id={`nav-group-${i}`}>{g.label}</p>
+                  {list(g.items, `nav-group-${i}`)}
+                </div>
+              ))
+            : list(items ?? [])}
         </nav>
         {footer && <div class="sidebar-footer">{footer}</div>}
       </aside>

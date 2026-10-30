@@ -92,6 +92,73 @@ jobs:
       # Each project starts its own throwaway PostgreSQL 16 (preinstalled on ubuntu-latest runners).
       - run: npm run test:e2e:fullstack -- --project desktop-chromium --project mobile-android
 
+  container:
+    name: Container-Image (Bau + Start)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose-Datei prüfen (Beispielwerte)
+        run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env.example config --quiet
+      # Nur bauen und lokal starten – kein Push in eine Registry, kein Deployment.
+      - name: Image bauen
+        run: docker build -t stunden-app:ci .
+      - name: Start mit Wegwerf-Werten (DB, Migration, App)
+        run: |
+          docker network create proxy
+          {
+            echo "STAGE=ci"
+            echo "APP_HOSTNAME=stunden-ci.example.invalid"
+            echo "APP_IMAGE=stunden-app"
+            echo "APP_IMAGE_TAG=ci"
+            echo "TRUSTED_PROXY_IP=172.30.0.2"
+            echo "POSTGRES_USER=stunden_admin"
+            echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
+            echo "APP_DB_PASSWORD=$(openssl rand -hex 24)"
+            echo "TOTP_ENCRYPTION_KEY=$(openssl rand -base64 32)"
+          } > deploy/.env
+          C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"
+          $C up -d --no-build db
+          $C run --rm migrate
+          $C run --rm migrate   # zweiter Lauf: nichts mehr zu tun
+          $C up -d --no-build stundenwerk-app
+          for i in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' stunden-ci-app)
+            [ "$status" = healthy ] && break
+            sleep 3
+          done
+          test "$status" = healthy
+          test "$(docker exec stunden-ci-app id -u)" != 0
+          test "$(docker inspect -f '{{len .HostConfig.PortBindings}}' stunden-ci-app)" = 0
+          docker exec stunden-ci-app node -e "fetch('http://127.0.0.1:3000/app/').then(async r=>{const csp=r.headers.get('content-security-policy')||'';if(!r.ok||!csp.includes(\"default-src 'self'\"))process.exit(1)})"
+          docker exec stunden-ci-db psql -U stunden_admin -d stunden -Atc "select rolbypassrls or rolsuper from pg_roles where rolname = 'app_api'" | grep -qx f
+      # Testzugänge (fiktiv, Passwörter nur in der Konsole dieses Laufs), Backup aus dem Compose-Container,
+      # Wiederherstellungsprobe in einem Wegwerf-Container ohne Netz.
+      - name: Testzugänge, Backup und Wiederherstellungsprobe
+        run: |
+          C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"
+          L="$RUNNER_TEMP/step.log"
+          # Fehlerausgabe zusätzlich als Annotation (ohne Passwörter: die Ausgabe der Testzugänge wird verworfen).
+          annotate() { echo "::error title=$1::$(tail -c 4000 "$L" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+          $C run --rm migrate node --experimental-strip-types --disable-warning=ExperimentalWarning --import ./server/register.mjs \
+            server/src/cli.ts seed-test-env --confirm-test-environment --domain=stunden-ci.example > /dev/null 2> "$L" \
+            || annotate "seed-test-env"
+          docker exec stunden-ci-db psql -U stunden_admin -d stunden -Atc "select count(*) from public.employees" > "$L" 2>&1 || annotate "Zählung"
+          grep -qx 10 "$L" || annotate "Testzugänge: erwartet 10 Mitarbeitende"
+          umask 077
+          BK="$RUNNER_TEMP/backup"; mkdir -p "$BK"; openssl rand -hex 32 > "$BK/pass"
+          BACKUP_PASSPHRASE_FILE="$BK/pass" BACKUP_KEEP_LOCAL=0 deploy/backup.sh --compose deploy/.env --out "$BK/out" > "$L" 2>&1 \
+            || annotate "backup.sh --compose"
+          cat "$L"
+          BACKUP_PASSPHRASE_FILE="$BK/pass" deploy/restore-test.sh --docker --migrations db/migrations "$BK"/out/stunden-ci-*.tar.gpg > "$L" 2>&1 \
+            || annotate "restore-test.sh --docker"
+          cat "$L"
+      - name: Logs bei Fehler
+        if: failure()
+        run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env logs --no-color || true
+      - name: Aufräumen
+        if: always()
+        run: docker compose -f deploy/docker-compose.yml --env-file deploy/.env down -v || true
+
   secrets:
     name: Geheimnis-Scan
     runs-on: ubuntu-latest

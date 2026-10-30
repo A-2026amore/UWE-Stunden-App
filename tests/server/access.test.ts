@@ -175,7 +175,8 @@ describe("manager scope", () => {
     expect((await t.call("PATCH", `/api/tenants/${A}/settings`, { cookie: c, body: { breakPolicy: { maxShiftMinutes: 600 } } })).status).toBe(403);
     expect((await t.call("PATCH", `/api/employees/${E.emp1A}`, { cookie: c, body: { role: "manager" } })).status).toBe(403);
     expect((await t.call("PUT", `/api/tenants/${A}/support-grant`, { cookie: c, body: { hours: 1 } })).status).toBe(403);
-    expect((await t.call("POST", `/api/statements/${statementA}/return`, { cookie: c, body: { reason: "Wieder öffnen" } })).status).toBe(403);
+    // since 0017 nobody returns an approved statement (re-opening is POST …/reopen, tested in entries/corrections)
+    expect((await t.call("POST", `/api/statements/${statementA}/return`, { cookie: c, body: { reason: "Wieder öffnen" } })).status).toBe(409);
   });
 });
 
@@ -219,6 +220,28 @@ describe("platform staff", () => {
     expect(revoke.status).toBe(200);
     expect(revoke.body).toBeNull();
     expect((await t.call("GET", `/api/tenants/${A}/time-entries?from=2026-09-01&to=2026-10-31`, { cookie: c })).status).toBe(403);
+  });
+
+  it("platform staff cannot change a tenant's company profile – not even with a support grant (QA B3)", async () => {
+    const before = (await t.db.admin.query("select branding, contact from public.tenants where id = $1", [A])).rows[0];
+    const attempts = async () => {
+      for (const c of [cookies.superAdmin, cookies.support]) {
+        const b = await t.call("PATCH", `/api/tenants/${A}/branding`, { cookie: c, body: { slogan: "Plattform" } });
+        expect(b.status).toBe(403);
+        expect(b.body.error.message).toBe("Firmendaten darf nur der Inhaber ändern.");
+        expect((await t.call("PATCH", `/api/tenants/${A}/contact`, { cookie: c, body: { city: "Plattformstadt" } })).status).toBe(403);
+        expect((await t.call("PATCH", `/api/tenants/${A}/settings`, { cookie: c, body: { breakPolicy: { maxShiftMinutes: 600 } } })).status).toBe(403);
+      }
+    };
+    await attempts();
+    expect((await t.call("PUT", `/api/tenants/${A}/support-grant`, { cookie: cookies.ownerA, body: { hours: 1, reason: "Supportfall Branding" } })).status).toBe(200);
+    try {
+      await attempts();
+    } finally {
+      await t.call("PUT", `/api/tenants/${A}/support-grant`, { cookie: cookies.ownerA, body: { hours: 0 } });
+    }
+    const after = (await t.db.admin.query("select branding, contact from public.tenants where id = $1", [A])).rows[0];
+    expect(after).toEqual(before);
   });
 
   it("only super_admin creates tenants and changes licences", async () => {

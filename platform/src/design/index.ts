@@ -2,3 +2,5 @@
 export * from "./branding";
 export * from "./components";
 export * from "./icons";
+export * from "./logo";
+export * from "./theme";

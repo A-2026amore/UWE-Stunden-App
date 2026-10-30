@@ -21,7 +21,7 @@ export default defineConfig({
   timeout: 60000,
   expect: { timeout: 10000 },
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never", outputFolder: "playwright-report/fullstack" }]] : "list",
+  reporter: process.env.CI ? [["list"], ["github"], ["html", { open: "never", outputFolder: "playwright-report/fullstack" }]] : "list",
   outputDir: "test-results/fullstack",
   use: { trace: "retain-on-failure", locale: "de-DE", timezoneId: "Europe/Berlin" },
   projects: [

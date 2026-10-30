@@ -1,10 +1,12 @@
 import { useState } from "preact/hooks";
-import { Alert, Badge, Button, Card, Checkbox, Icon, LinkButton, PRODUCT_FULL_NAME, useDialogs, useToast } from "../../../design";
+import { Alert, Badge, Button, Card, Checkbox, Icon, LinkButton, PRODUCT_FULL_NAME, ThemeSwitch, useDialogs, useToast } from "../../../design";
 import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
 import { IS_DEMO, getRepository } from "../../shared/repo";
 import { TwoFactorCard } from "../../shared/twoFactor";
+import { MyDataCard } from "../../shared/privacy";
 import { errorText } from "../../shared/hooks";
 import { useEmployee } from "../context";
+import { InstallCard } from "../InstallHint";
 import { isOfflineSimulated, setOfflineSimulated } from "../syncRepo";
 import { conflictText, pendingText } from "../SyncStatus";
 
@@ -58,7 +60,15 @@ export function SettingsPage() {
         <p class="muted small" style={{ marginTop: "var(--space-3)" }}>Änderungen an deinen Stammdaten nimmt dein Arbeitgeber vor.</p>
       </Card>
 
+      <Card title="Darstellung">
+        <ThemeSwitch label="Farbschema" hint="„System“ folgt der Einstellung deines Handys. Die Auswahl wird nur auf diesem Gerät gespeichert." />
+      </Card>
+
       <TwoFactorCard repo={getRepository("app")} account={session.email} />
+
+      <MyDataCard repo={getRepository("app")} employeeId={me.id} />
+
+      <InstallCard />
 
       <Card title={`Kontakt zu ${tenant.name}`}>
         <div class="stack-sm">

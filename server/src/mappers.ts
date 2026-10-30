@@ -1,6 +1,7 @@
 /** Database rows (snake_case) → domain objects of platform/src/core/types.ts. */
 import type {
-  AuditEvent, Employee, License, MonthAllocation, MonthlyStatement, Tenant, TimeEntry,
+  AuditEvent, BillingMonthSummary, CorrectionRequest, Employee, EntryValues, License, MonthAllocation, MonthlyStatement,
+  PlatformRevenueRow, Tenant, TimeEntry, TimeEntryRevision,
 } from "../../platform/src/core/types.ts";
 
 type Row = Record<string, unknown>;
@@ -45,6 +46,7 @@ export function toEmployee(r: Row): Employee {
     role: r.role as Employee["role"],
     status: r.status as Employee["status"],
     createdAt: iso(r.created_at),
+    ...(r.anonymized_at ? { anonymizedAt: iso(r.anonymized_at) } : {}),
   };
 }
 
@@ -59,6 +61,7 @@ export function toTenant(r: Row): Tenant {
     settings: r.settings as Tenant["settings"],
     isDemo: Boolean(r.is_demo),
     requireTwoFactorForManagers: Boolean(r.require_two_factor_for_managers),
+    ...(r.retention_months_after_exit == null ? {} : { retentionMonthsAfterExit: Number(r.retention_months_after_exit) }),
   };
 }
 
@@ -75,6 +78,41 @@ export function toLicense(r: Row): License {
     maxEmployees: r.max_employees === null || r.max_employees === undefined ? null : Number(r.max_employees),
     features: (r.features as string[] | null) ?? [],
     note: (r.note as string | null) ?? null,
+    employeePriceCents: r.employee_price_cents === null || r.employee_price_cents === undefined ? null : Number(r.employee_price_cents),
+    freeOfCharge: Boolean(r.free_of_charge),
+    conditionNote: (r.condition_note as string | null) ?? null,
+    conditionValidFrom: (r.condition_valid_from as string | null) ?? null,
+    conditionValidUntil: (r.condition_valid_until as string | null) ?? null,
+  };
+}
+
+/** Row of tenant_billing_history / billing_month / billing_periods → numbers of one month. */
+export function toBillingSummary(r: Row): BillingMonthSummary {
+  return {
+    month: String(r.month),
+    status: r.status as BillingMonthSummary["status"],
+    final: r.final === undefined ? r.status !== "open" : Boolean(r.final),
+    condition: r.condition as BillingMonthSummary["condition"],
+    unitPriceCents: Number(r.unit_price_cents),
+    billableCount: Number(r.billable_count),
+    amountCents: Number(r.amount_cents),
+  };
+}
+
+/** Row of platform_billing_overview(month) (numbers only; the row has no month column). */
+export function toRevenueRow(r: Row, month: string): PlatformRevenueRow {
+  return {
+    ...toBillingSummary({ ...r, month }),
+    tenantId: String(r.tenant_id),
+    tenantName: String(r.tenant_name),
+    slug: String(r.slug),
+    isDemo: Boolean(r.is_demo),
+    tenantStatus: r.tenant_status as PlatformRevenueRow["tenantStatus"],
+    plan: (r.plan as PlatformRevenueRow["plan"]) ?? null,
+    note: (r.note as string | null) ?? null,
+    closedAt: isoOrNull(r.closed_at),
+    blockSince: isoOrNull(r.block_since),
+    blockReason: (r.block_reason as string | null) ?? null,
   };
 }
 
@@ -101,6 +139,58 @@ export function toStatement(r: Row): MonthlyStatement {
     workedMinutes: Number(r.worked_minutes),
     allocatedMinutes: Number(r.allocated_minutes),
     billingMinutes: Number(r.billing_minutes),
+    reopenedAt: isoOrNull(r.reopened_at),
+    // statement_correction_flags (0013), joined by the routes; null = no correction after approval.
+    correctedAfterApproval: r.corrections ? { count: Number(r.corrections), lastAt: iso(r.last_corrected_at) } : null,
+  };
+}
+
+/** Columns for toStatement: statement plus the "corrected after approval" flag. */
+export const STATEMENT_SELECT = `select s.*, f.corrections, f.last_corrected_at
+  from public.monthly_statements s
+  left join public.statement_correction_flags f on f.statement_id = s.id`;
+
+function values(v: unknown): EntryValues | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  return { date: String(o.date), start: String(o.start), end: String(o.end), pauseMinutes: Number(o.pauseMinutes), note: String(o.note ?? "") };
+}
+
+/** Correction request row (+ decided_by_name from a join with employees). */
+export function toCorrectionRequest(r: Row): CorrectionRequest {
+  return {
+    id: String(r.id),
+    tenantId: String(r.tenant_id),
+    employeeId: String(r.employee_id),
+    kind: r.kind as CorrectionRequest["kind"],
+    entryId: (r.entry_id as string | null) ?? null,
+    entryVersion: r.entry_version === null || r.entry_version === undefined ? null : Number(r.entry_version),
+    before: values(r.before),
+    proposed: values(r.proposed),
+    reason: String(r.reason),
+    status: r.status as CorrectionRequest["status"],
+    createdAt: iso(r.created_at),
+    decidedAt: isoOrNull(r.decided_at),
+    decidedByName: (r.decided_by_name as string | null) ?? null,
+    decisionNote: (r.decision_note as string | null) ?? null,
+    appliedEntryId: (r.applied_entry_id as string | null) ?? null,
+  };
+}
+
+/** time_entry_revisions row: snapshot is to_jsonb(time_entries) (snake_case, times as HH:MM:SS). */
+export function toRevision(r: Row): TimeEntryRevision {
+  const s = (r.snapshot ?? {}) as Record<string, unknown>;
+  return {
+    entryId: String(r.entry_id),
+    version: Number(r.version),
+    operation: r.operation as TimeEntryRevision["operation"],
+    isCorrection: Boolean(r.is_correction),
+    changedAt: iso(r.changed_at),
+    changedByName: (r.changed_by_name as string | null) ?? null,
+    reason: (r.reason as string | null) ?? null,
+    values: { date: String(s.work_date), start: hhmm(s.start_time), end: hhmm(s.end_time), pauseMinutes: Number(s.pause_minutes), note: String(s.note ?? "") },
+    deleted: s.deleted_at !== null && s.deleted_at !== undefined,
+    source: (s.source as TimeEntry["source"]) ?? "app",
   };
 }
 

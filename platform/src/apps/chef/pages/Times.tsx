@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { activeShifts, addDays, isRealDate, netMinutes } from "../../../core/time";
-import { evaluateDay, issueForDay } from "../../../core/breaks";
+import { timeEntriesCsv } from "../../shared/exports";
+import { evaluateDay, issueForDay, requiredPauseText } from "../../../core/breaks";
 import type { Employee, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
 import {
@@ -8,8 +9,9 @@ import {
 } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, todayISO, weekdayShort } from "../../shared/format";
-import { buildStatement } from "../../shared/statement";
+import { buildStatementWithLogo } from "../../shared/statement";
 import { monthRange, useChef } from "../context";
+import { EntryHistoryDialog } from "./Corrections";
 
 type View = "day" | "week" | "month";
 
@@ -42,11 +44,6 @@ function rangeLabel(view: View, date: string): string {
 
 const net = (e: TimeEntry) => netMinutes({ ...e, pause: e.pauseMinutes });
 
-function csvCell(v: string | number): string {
-  const s = String(v);
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
 export function TimesPage() {
   const { repo, tenant, version, changed } = useChef();
   const toast = useToast();
@@ -55,6 +52,7 @@ export function TimesPage() {
   const [date, setDate] = useState(todayISO());
   const [employeeId, setEmployeeId] = useState("all");
   const [correcting, setCorrecting] = useState<TimeEntry | null>(null);
+  const [history, setHistory] = useState<{ employeeId: string; entryId: string; title: string } | null>(null);
   const [from, to] = rangeFor(view, date);
 
   const q = useAsync(async () => {
@@ -68,12 +66,8 @@ export function TimesPage() {
   const total = rows.reduce((s, e) => s + net(e), 0);
 
   const exportCsv = () => {
-    const head = ["Personalnummer", "Name", "Datum", "Beginn", "Ende", "Pause (Min.)", "Stunden", "Bemerkung", "Quelle"];
-    const lines = rows.map((e) => {
-      const emp = byId.get(e.employeeId);
-      return [emp?.personnelNumber ?? "", emp?.displayName ?? "", formatDateDE(e.date), e.start, e.end, e.pauseMinutes, (net(e) / 60).toFixed(2).replace(".", ","), e.note, e.source === "correction" ? "Korrektur" : "App"].map(csvCell).join(";");
-    });
-    const csv = "﻿" + [head.join(";"), ...lines].join("\r\n");
+    // Formula-like free texts (notes, names) are neutralised – QA B6.
+    const csv = timeEntriesCsv(rows, byId);
     const who = employeeId === "all" ? "alle" : (byId.get(employeeId)?.personnelNumber ?? "mitarbeiter");
     downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `Arbeitszeiten_${tenant.slug}_${from}_${to}_${who}.csv`);
     toast("CSV-Datei wurde erstellt.");
@@ -85,7 +79,7 @@ export function TimesPage() {
     const month = date.slice(0, 7);
     try {
       const [entries, allocations, statement] = await Promise.all([repo.listTimeEntries(emp.id, month), repo.listAllocations(emp.id), repo.getStatement(emp.id, month)]);
-      const { blob, fileName } = buildStatement({ tenant, employee: emp, month, entries, allocations, statement });
+      const { blob, fileName } = await buildStatementWithLogo({ tenant, employee: emp, month, entries, allocations, statement });
       downloadBlob(blob, fileName);
       toast(`PDF erstellt: ${fileName}`);
     } catch (e) {
@@ -156,6 +150,7 @@ export function TimesPage() {
               key: "a", header: "Aktionen", actions: true, render: (e) => (
                 <div class="btn-row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
                   <Button size="sm" variant="secondary" icon="edit" onClick={() => setCorrecting(e)} aria-label={`Einsatz ${formatDateDE(e.date)} ${e.start}–${e.end} von ${byId.get(e.employeeId)?.displayName ?? ""} korrigieren`}>Korrigieren</Button>
+                  <Button size="sm" variant="ghost" icon="log" onClick={() => setHistory({ employeeId: e.employeeId, entryId: e.id, title: `${byId.get(e.employeeId)?.displayName ?? ""} – ${formatDateDE(e.date)}, ${e.start}–${e.end} Uhr` })} aria-label={`Verlauf des Einsatzes ${formatDateDE(e.date)} ${e.start}–${e.end} von ${byId.get(e.employeeId)?.displayName ?? ""}`} />
                   <Button size="sm" variant="ghost" icon="trash" onClick={() => remove(e)} aria-label={`Einsatz ${formatDateDE(e.date)} ${e.start}–${e.end} löschen`} />
                 </div>
               ),
@@ -169,10 +164,15 @@ export function TimesPage() {
           </div>
         )}
       </Card>
+      <EntryHistoryDialog target={history} onClose={() => setHistory(null)} />
       <CorrectionDialog entry={correcting} employee={correcting ? byId.get(correcting.employeeId) ?? null : null} onClose={() => setCorrecting(null)} onSaved={() => { setCorrecting(null); changed(); }} />
     </div>
   );
 }
+
+const CHEF_SHORT_PAUSE_ADVICE =
+  "Die Korrektur wird so nicht gespeichert. Bitte keine Pause eintragen, die nicht genommen wurde: " +
+  "Bei einer Unterbrechung den Einsatz in mehrere Einsätze aufteilen, sonst Beginn und Ende so erfassen, wie tatsächlich gearbeitet wurde.";
 
 function CorrectionDialog({ entry, employee, onClose, onSaved }: { entry: TimeEntry | null; employee: Employee | null; onClose: () => void; onSaved: () => void }) {
   const { repo, tenant } = useChef();
@@ -189,16 +189,23 @@ function CorrectionDialog({ entry, employee, onClose, onSaved }: { entry: TimeEn
     repo.listTimeEntries(entry.employeeId, entry.date.slice(0, 7)).then(setDayEntries).catch(() => setDayEntries([]));
   }, [entry]);
 
+  const policy = tenant.settings.breakPolicy;
   const candidate = { id: entry?.id, date: f.date, start: f.start, end: f.end, pause: Number(f.pause) };
   const others = activeShifts(dayEntries.filter((x) => x.id !== entry?.id));
-  const issue = entry && /^\d+$/.test(f.pause) ? issueForDay(evaluateDay([...others, candidate], f.date, tenant.settings.breakPolicy), tenant.settings.breakPolicy) : "";
+  const pauseOk = /^\d+$/.test(f.pause);
+  const day = entry && pauseOk ? evaluateDay([...others, candidate], f.date, policy) : null;
+  const issue = day ? issueForDay(day, policy) : "";
+  // Minimum pause of the day (also while the pause field is empty); never pre-filled as a suggestion.
+  const ruleDay = entry ? evaluateDay([...others, { ...candidate, pause: pauseOk ? Number(f.pause) : 0 }], f.date, policy) : null;
+  const pauseHint = ruleDay?.valid ? `${requiredPauseText(ruleDay, policy)} Nur die tatsächlich genommene Pause eintragen.` : undefined;
 
   const save = async (e: Event) => {
     e.preventDefault();
     if (!entry) return;
     setError(null);
     if (f.reason.trim().length < 3) { setError("Bitte eine Begründung für die Korrektur angeben."); return; }
-    if (!/^\d+$/.test(f.pause)) { setError("Pause bitte in ganzen Minuten angeben."); return; }
+    if (!pauseOk) { setError("Pause bitte in ganzen Minuten angeben (0, wenn keine Pause genommen wurde)."); return; }
+    if (issue) { setError(day?.valid && day.missing ? `${issue} ${CHEF_SHORT_PAUSE_ADVICE}` : issue); return; }
     setBusy(true);
     try {
       await repo.updateTimeEntry(entry.id, { date: f.date, start: f.start, end: f.end, pauseMinutes: Number(f.pause), note: f.note }, entry.version, f.reason);
@@ -225,8 +232,9 @@ function CorrectionDialog({ entry, employee, onClose, onSaved }: { entry: TimeEn
           <div class="grid-3" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
             <InputField label="Beginn" type="time" value={f.start} onValue={set("start")} />
             <InputField label="Ende" type="time" value={f.end} onValue={set("end")} />
-            <InputField label="Pause (Min.)" inputMode="numeric" value={f.pause} onValue={set("pause")} />
+            <InputField label="Pause (Min.)" inputMode="numeric" value={f.pause} onValue={set("pause")} required />
           </div>
+          {pauseHint && <p class="muted small mb-0" aria-live="polite" data-testid="correction-pause-hint">{pauseHint}</p>}
           <InputField label="Bemerkung" optional value={f.note} onValue={set("note")} maxLength={200} />
           {issue && <Alert tone="warning" live>{issue}</Alert>}
           <TextareaField label="Begründung der Korrektur" value={f.reason} onValue={set("reason")} required hint="Pflichtangabe – wird im Änderungsprotokoll gespeichert und ist für den Mitarbeitenden nachvollziehbar." maxLength={500} />
