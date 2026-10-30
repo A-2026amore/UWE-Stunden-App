@@ -1,5 +1,6 @@
 name: Testumgebung Diagnose
 # Read-only diagnosis of the public test environment (DNS, TCP, TLS, HTTP). No secrets.
+# Polls up to 40 minutes until the name resolves and HTTPS answers.
 on:
   push:
     branches: [stunden-test-diag]
@@ -8,13 +9,16 @@ permissions:
 jobs:
   diag:
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     steps:
       - run: |
           H=stunden-test.appzentrale24.de
-          for t in A AAAA CNAME; do echo "== dig $t"; dig +short $t $H @1.1.1.1; done
-          echo "== dig A appzentrale24.de"; dig +short A appzentrale24.de @1.1.1.1
-          echo "== NS"; dig +short NS appzentrale24.de @1.1.1.1
-          echo "== HTTPS via DNS"; curl -sv --max-time 15 -o /dev/null https://$H/api/health 2>&1 | grep -E '^\*|^< HTTP' | head -30 || true
-          echo "== HTTPS forced to 159.195.199.222"; curl -sv --max-time 15 --resolve $H:443:159.195.199.222 https://$H/api/health 2>&1 | grep -Ev '^> |^\{|^\}' | tail -30 || true
-          echo "== HTTP forced"; curl -s --max-time 15 -o /dev/null -w '%{http_code} %{redirect_url}\n' --resolve $H:80:159.195.199.222 http://$H/ || true
-          echo "== insecure body"; curl -sk --max-time 15 --resolve $H:443:159.195.199.222 https://$H/api/health; echo
+          for i in $(seq 1 80); do
+            auth="$(dig +short A $H @netcup.firstns.cc | tr '\n' ' ')"
+            pub="$(dig +short A $H @1.1.1.1 | tr '\n' ' ')"
+            code="$(curl -s --max-time 10 -o /dev/null -w '%{http_code}' https://$H/api/health || true)"
+            echo "$(date -u +%H:%M:%S) netcup-NS: ${auth:-leer} | 1.1.1.1: ${pub:-leer} | HTTPS: $code"
+            [ "$code" = 200 ] && { curl -sv --max-time 10 https://$H/api/health 2>&1 | grep -E 'subject:|issuer:|expire|^< HTTP|ok'; exit 0; }
+            sleep 30
+          done
+          exit 1
