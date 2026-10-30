@@ -369,6 +369,20 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
     catch (e) { toast(errorText(e), "error"); }
   };
 
+  const toggleLegacyImport = async () => {
+    const enable = !t.legacyImportEnabled;
+    const reason = await dialogs.askReason({
+      title: enable ? "Übernahme aus der bisherigen UWE-App anbieten?" : "Übernahme aus der bisherigen UWE-App ausblenden?",
+      message: enable
+        ? "Die Mitarbeitenden dieses Mandanten sehen im Profil „Daten aus der bisherigen UWE-App übernehmen“. Nur für Firmen, die die alte UWE Stunden-App genutzt haben."
+        : "Die Mitarbeitenden sehen die Übernahme nicht mehr. Bereits übernommene Zeiten bleiben unverändert.",
+      confirmLabel: enable ? "Anbieten" : "Ausblenden", danger: false,
+    });
+    if (!reason) return;
+    try { await repo.setLegacyImport(t.id, enable, reason); toast(enable ? "Übernahme wird angeboten." : "Übernahme ausgeblendet."); setTick((x) => x + 1); }
+    catch (e) { toast(errorText(e), "error"); }
+  };
+
   const saveLicense = async (e: Event) => {
     e.preventDefault();
     setError(null);
@@ -408,6 +422,7 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
             <dt>Mitarbeitende</dt><dd>{o.activeEmployeeCount} aktiv / {o.employeeCount} gesamt</dd>
             <dt>Arbeitszeitkonto</dt><dd>{t.settings.workAccount.enabled ? (t.settings.workAccount.model === "school-year" ? "Schuljahr" : "Kalenderjahr") : "deaktiviert"}</dd>
             <dt>Demo-Daten</dt><dd>{t.isDemo ? "ja" : "nein"}</dd>
+            <dt>Übernahme aus alter UWE-App</dt><dd data-testid="tenant-legacy-import">{t.legacyImportEnabled ? "angeboten" : "ausgeblendet"}</dd>
           </dl>
           {!readOnly && (
             <div class="btn-row" style={{ marginTop: "var(--space-4)" }}>
@@ -418,6 +433,13 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
             </div>
           )}
           <p class="xsmall muted" style={{ marginTop: "var(--space-3)" }}>Gesperrt = vorübergehend, deaktiviert = Vertrag beendet. In beiden Fällen bleiben alle Daten erhalten.</p>
+          {!readOnly && (
+            <div style={{ marginTop: "var(--space-3)" }}>
+              <Button variant="secondary" size="sm" icon="upload" onClick={toggleLegacyImport}>
+                {t.legacyImportEnabled ? "Übernahme aus alter UWE-App ausblenden" : "Übernahme aus alter UWE-App anbieten"}
+              </Button>
+            </div>
+          )}
         </Card>
         <Card title="Lizenz">
           <form class="stack" onSubmit={saveLicense} noValidate>

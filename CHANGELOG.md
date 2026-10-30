@@ -5,6 +5,11 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Übernahme aus der alten UWE-App nur noch für freigeschaltete Firmen (30.10.2026, Migration
+  `0024_legacy_import_setting.sql`): Die Karte „Daten aus der bisherigen UWE-App übernehmen“ im Profil der
+  Mitarbeiter-App (und der direkte Link `#/einstellungen/import`) erscheint nur, wenn der Super-Admin sie für den
+  Mandanten anbietet (Mandant → „Übernahme aus alter UWE-App anbieten“, Grund Pflicht, protokolliert). Standard
+  aus; bei Einführung für den UWE-Mandanten (Name enthält „UWE“, keine Demo) automatisch an.
 - Tarife, Einführungsangebot, Vertragsschluss und automatische Rechnungen (Entscheidung 30.10.2026, Migration
   `0023_subscriptions.sql`, Regeln in `platform/src/core/subscription.ts`, Doku `docs/preismodell.md`):
   - Zwei Tarife je abrechenbarem Mitarbeiter und Monat, brutto: **12-Monats-Abo 5,00 €** (verlängert sich um

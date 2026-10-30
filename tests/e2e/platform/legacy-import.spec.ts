@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { legacyBackups, snapshots } from "../../fixtures/legacy-storage";
-import { ANNA_ID, APP, confirmDialog, dbEntries, freeze, go, loginEmployee, patchDb } from "./helpers";
+import { ADMIN, ANNA_ID, APP, confirmDialog, dbEntries, freeze, go, login, loginEmployee, patchDb } from "./helpers";
 
 // Backup months (Oct/Nov 2026) lie outside the demo seed of this date (Feb/Mar 2027) → no overlaps with seed data.
 const IMPORT_NOW = new Date("2027-03-15T10:00:00+01:00");
@@ -112,4 +112,29 @@ test("import from the legacy keys of this browser; legacy data stays untouched",
   await page.getByRole("button", { name: "Daten aus diesem Browser lesen" }).click();
   await expect(page.getByTestId("report-write")).toHaveText("0");
   await expect(page.getByTestId("report-present")).toHaveText("2");
+});
+
+test("other companies do not see the import; the super admin can switch it on per tenant", async ({ page }) => {
+  await page.goto(APP);
+  await loginEmployee(page, "mia@muster-pflege.example", "Mia");
+  await go(page, "#/einstellungen");
+  await expect(page.getByRole("button", { name: "Abmelden" })).toBeVisible();
+  await expect(page.getByText("Daten aus der bisherigen UWE-App übernehmen")).toHaveCount(0);
+  // The direct link does not open the import either.
+  await go(page, "#/einstellungen/import");
+  await expect(page.getByRole("heading", { level: 1, name: "Daten aus der bisherigen UWE-App übernehmen" })).toHaveCount(0);
+
+  const admin = await page.context().newPage();
+  await login(admin, ADMIN, "admin@plattform.example");
+  await admin.getByRole("row", { name: /Muster Pflegedienst/ }).getByRole("link", { name: "Muster Pflegedienst GmbH verwalten" }).click();
+  await expect(admin.getByTestId("tenant-legacy-import")).toHaveText("ausgeblendet");
+  await admin.getByRole("button", { name: "Übernahme aus alter UWE-App anbieten" }).click();
+  const dialog = admin.getByRole("dialog");
+  await dialog.getByLabel("Begründung").fill("Kunde hatte die alte App");
+  await dialog.getByRole("button", { name: "Anbieten", exact: true }).click();
+  await expect(admin.getByTestId("tenant-legacy-import")).toHaveText("angeboten");
+
+  await page.reload();
+  await go(page, "#/einstellungen");
+  await expect(page.getByRole("link", { name: "Daten aus der bisherigen UWE-App übernehmen" })).toBeVisible();
 });

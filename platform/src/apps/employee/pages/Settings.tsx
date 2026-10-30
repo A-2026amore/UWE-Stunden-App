@@ -113,10 +113,12 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <Card title="Daten aus der bisherigen UWE-App übernehmen">
-        <p class="small">Übernimm deine Arbeitszeiten und dein Arbeitszeitkonto aus der bisherigen UWE Stunden-App – aus einer Sicherungsdatei oder direkt aus diesem Browser. Du siehst vorher einen Bericht und bestätigst die Übernahme.</p>
-        <LinkButton href="#/einstellungen/import" icon="upload">Daten aus der bisherigen UWE-App übernehmen</LinkButton>
-      </Card>
+      {tenant.legacyImportEnabled && (
+        <Card title="Daten aus der bisherigen UWE-App übernehmen">
+          <p class="small">Übernimm deine Arbeitszeiten und dein Arbeitszeitkonto aus der bisherigen UWE Stunden-App – aus einer Sicherungsdatei oder direkt aus diesem Browser. Du siehst vorher einen Bericht und bestätigst die Übernahme.</p>
+          <LinkButton href="#/einstellungen/import" icon="upload">Daten aus der bisherigen UWE-App übernehmen</LinkButton>
+        </Card>
+      )}
 
       <Alert tone="info">
         <p>Erfasse nur deine tatsächlich geleisteten Zeiten und Pausen. Ursprüngliche Einträge werden bei Korrekturen nicht stillschweigend überschrieben.</p>

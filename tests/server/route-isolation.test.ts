@@ -126,6 +126,7 @@ const ROUTE_RULES: Record<string, Rule> = {
   },
   "POST /api/platform/tenants/:tenantId/status": { scope: "tenant", body: { status: "suspended", reason: "Fremdzugriff" } },
   "PUT /api/platform/tenants/:tenantId/license": { scope: "tenant", body: { plan: "enterprise" } },
+  "PUT /api/platform/tenants/:tenantId/legacy-import": { scope: "tenant", body: { enabled: true, reason: "Fremdzugriff" } },
 
   // ---------------------------------------------------------------- billing (0012)
   "GET /api/tenants/:tenantId/billing": { scope: "tenant", allowed: ["managerA"], query: "month=2026-10" },

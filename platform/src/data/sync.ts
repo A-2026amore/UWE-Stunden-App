@@ -865,6 +865,7 @@ export function createSyncingRepository(inner: Repository, opts: SyncOptions): S
     listTenants: () => inner.listTenants(),
     createTenant: (i) => inner.createTenant(i),
     setTenantStatus: (t, st, r) => inner.setTenantStatus(t, st, r),
+    setLegacyImport: (t, e, r) => inner.setLegacyImport(t, e, r),
     setLicense: (t, p, x) => inner.setLicense(t, p, x),
   };
   return repo;

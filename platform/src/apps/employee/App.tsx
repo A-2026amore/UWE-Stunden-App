@@ -145,7 +145,8 @@ export function EmployeeApp() {
     case "/erfassen": page = <EntryPage editId={route.parts[0] ?? null} presetDate={route.query.get("datum")} />; break;
     case "/monat": page = <MonthPage initialMonth={route.query.get("m")} />; break;
     case "/konto": page = <AccountPage />; break;
-    case "/einstellungen": page = route.parts[0] === "import" ? <LegacyImportPage /> : <SettingsPage />; break;
+    // The import from the old UWE app exists only for tenants the platform enabled it for (0024).
+    case "/einstellungen": page = route.parts[0] === "import" && data.tenant.legacyImportEnabled ? <LegacyImportPage /> : <SettingsPage />; break;
     default: page = <StartPage />;
   }
 

@@ -38,6 +38,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "tenant.status_pending": "Mandant in Vorbereitung gesetzt",
   "tenant.renamed": "Firmenname geändert",
   "tenant.two_factor_policy_updated": "Zwei-Faktor-Pflicht geändert",
+  "tenant.legacy_import_updated": "Übernahme aus alter UWE-App geändert",
   "invitation.created": "Einladung erstellt",
   "statement.submit": "Monatsnachweis eingereicht",
   "statement.approve": "Monatsnachweis freigegeben",

@@ -197,6 +197,20 @@ describe("demo repository – statements, work account, platform", () => {
     expect(audit.some((e) => e.action === "license.updated")).toBe(true);
   });
 
+  it("import from the old UWE app: only the UWE-like demo tenant has it, only super admins switch it (with reason)", async () => {
+    const admin = (await as("admin@plattform.example")).repo;
+    const all = await admin.listTenants();
+    expect(all.find((o) => o.tenant.id === DEMO_TENANT_IDS.kt)?.tenant.legacyImportEnabled).toBe(true);
+    expect(all.find((o) => o.tenant.id === DEMO_TENANT_IDS.pflege)?.tenant.legacyImportEnabled).toBe(false);
+    const support = (await as("support@plattform.example")).repo;
+    await expect(support.setLegacyImport(DEMO_TENANT_IDS.pflege, true, "Test")).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(admin.setLegacyImport(DEMO_TENANT_IDS.pflege, true, "")).rejects.toThrow();
+    const t = await admin.setLegacyImport(DEMO_TENANT_IDS.pflege, true, "Kunde hatte die alte App");
+    expect(t.legacyImportEnabled).toBe(true);
+    const audit = await admin.listPlatformAudit();
+    expect(audit.some((e) => e.reason === "Kunde hatte die alte App" && (e.after as { legacyImportEnabled?: boolean } | null)?.legacyImportEnabled === true)).toBe(true);
+  });
+
   it("blocks sign-in for suspended tenants", async () => {
     const ctx = await as("admin@plattform.example");
     await ctx.repo.setTenantStatus(DEMO_TENANT_IDS.pflege, "suspended", "Zahlungsklärung (Demo)");

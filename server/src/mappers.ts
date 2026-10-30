@@ -61,6 +61,7 @@ export function toTenant(r: Row): Tenant {
     settings: r.settings as Tenant["settings"],
     isDemo: Boolean(r.is_demo),
     requireTwoFactorForManagers: Boolean(r.require_two_factor_for_managers),
+    legacyImportEnabled: Boolean(r.legacy_import_enabled),
     ...(r.retention_months_after_exit == null ? {} : { retentionMonthsAfterExit: Number(r.retention_months_after_exit) }),
   };
 }

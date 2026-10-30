@@ -879,6 +879,19 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  // Import from the old UWE app (0024): super admin only, reason required.
+  router.add("PUT", "/api/platform/tenants/:tenantId/legacy-import", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const b = v.object(ctx.body, ["enabled", "reason"]);
+    if (typeof b.enabled !== "boolean") throw badRequest("enabled muss true oder false sein.");
+    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Änderung angeben.");
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen die Übernahme aus der bisherigen UWE-App freischalten.");
+      const r = await one(q, "select * from public.platform_set_legacy_import($1, $2, $3)", [id, b.enabled, reason]);
+      return json(200, toTenant(r!));
+    });
+  });
+
   router.add("PUT", "/api/platform/tenants/:tenantId/license", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const b = v.object(ctx.body, ["plan", "maxEmployees", "validUntil", "note", "features",

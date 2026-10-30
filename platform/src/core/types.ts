@@ -93,6 +93,11 @@ export interface Tenant {
    * Missing/null = not configured (anonymisation refused). Legal period to be checked (docs/datenschutz.md).
    */
   retentionMonthsAfterExit?: number | null;
+  /**
+   * Platform setting (0024, super_admin only): the employee app offers the import from the old
+   * UWE Stunden-App. Missing = false – only the former UWE customer needs it.
+   */
+  legacyImportEnabled?: boolean;
 }
 
 // ---------------------------------------------------------------- licences

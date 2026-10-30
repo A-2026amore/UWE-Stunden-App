@@ -389,6 +389,8 @@ function seedDb(now: Date): DemoDb {
         contactPerson: "Chef Demo",
       },
       settings: { breakPolicy: clone(UWE_BREAK_POLICY), workAccount: ktPolicy },
+      // Plays the former UWE customer: the import from the old app is offered (0024).
+      legacyImportEnabled: true,
     },
     {
       id: DEMO_TENANT_IDS.pflege, slug: "muster-pflegedienst", name: "Muster Pflegedienst GmbH", status: "active", isDemo: true,
@@ -603,6 +605,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     };
     db.invoiceCounters ??= {};
     db.invoices ??= [];
+    // Import from the old UWE app (0024): stored demo databases from before keep it for the UWE-like demo tenant.
+    for (const t of db.tenants) if (t.legacyImportEnabled === undefined) t.legacyImportEnabled = t.id === DEMO_TENANT_IDS.kt;
     // Subscriptions (0023), like the migration: no trial for existing tenants (window empty), monthly term from the month of creation.
     db.billingSettings = { ...DEFAULT_BILLING_SETTINGS, ...db.billingSettings };
     const subs = (db.subscriptions ??= []);
@@ -1920,7 +1924,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       return read((db, s) => {
         assertPlatform(s);
         return db.audit
-          .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.created" || e.entity === "support_grant"
+          .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.legacy_import_updated" || e.action === "tenant.created" || e.entity === "support_grant"
             || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings"
             || e.entity === "promo_code" || e.entity === "promo_redemption" || e.entity === "subscription")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -2007,6 +2011,17 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         }
         t.status = status;
         addAudit(db, s, { tenantId, action: `tenant.status_${status}`, entity: "tenant", entityId: tenantId, before, after: { status }, reason: r });
+        return t;
+      });
+    },
+    async setLegacyImport(tenantId, enabled, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(reason);
+        const t = tenantById(db, tenantId);
+        const before = { legacyImportEnabled: !!t.legacyImportEnabled };
+        t.legacyImportEnabled = enabled;
+        addAudit(db, s, { tenantId, action: "tenant.legacy_import_updated", entity: "tenant", entityId: tenantId, before, after: { legacyImportEnabled: enabled }, reason: r });
         return t;
       });
     },
