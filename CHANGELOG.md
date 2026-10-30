@@ -173,6 +173,9 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Behoben
+- Chef-Portal, Monatsnachweise: Die Seite öffnete immer den Vormonat, das Dashboard zählt aber auch eingereichte
+  Nachweise des laufenden Monats. Jetzt öffnet sie den Monat mit offenen Nachweisen, weist auf offene Nachweise im
+  anderen Monat hin (ein Klick zum Wechseln), und die Dashboard-Kachel verlinkt direkt den passenden Monat.
 - Browsertests iPhone-Emulation (WebKit) laufen mit „Bewegung reduzieren“, weil Animationen dort die Klickprüfung von
   Playwright unter Last zeitweise blockierten. Ob Dialoge auf echten iPhones sauber reagieren, ist im Gerätetest zu prüfen.
 - Dialoge ohne Einblend-Animation und ohne Unschärfe-Hintergrund: In der Safari-Engine (iPhone-Emulation) waren

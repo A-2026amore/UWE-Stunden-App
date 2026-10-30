@@ -1,6 +1,6 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import { errorsForMonth } from "../../../core/breaks";
-import { activeShifts } from "../../../core/time";
+import { activeShifts, isValidMonth } from "../../../core/time";
 import type { Employee, MonthlyStatement } from "../../../core/types";
 import { shiftMonth } from "../../../data/demo";
 import { Alert, Badge, Button, Card, LinkButton, StatusPill, Table, useToast } from "../../../design";
@@ -14,10 +14,36 @@ import { StatementHistoryButton, useReopenStatement } from "../StatementHistory"
 
 interface Row { employee: Employee; statement: MonthlyStatement | null; worked: number; allocated: number; billing: number; issues: number }
 
-export function StatementsPage() {
+const isOpen = (s: MonthlyStatement) => s.status === "submitted" || s.status === "reopened";
+
+/** Months the dashboard and the menu count open statements for: last month and the current one. */
+export function openStatementMonths(): string[] {
+  const cur = currentMonth();
+  return [shiftMonth(cur, -1), cur];
+}
+
+export function StatementsPage({ initialMonth }: { initialMonth?: string | null }) {
   const { repo, tenant, version } = useChef();
   const toast = useToast();
-  const [month, setMonth] = useState(shiftMonth(currentMonth(), -1));
+  const linked = initialMonth && isValidMonth(initialMonth) ? initialMonth : null;
+  const [month, setMonth] = useState(linked ?? openStatementMonths()[0]!);
+  useEffect(() => { if (linked) setMonth(linked); }, [linked]);
+
+  // Open statements per counted month: without a link the page opens the month that has open ones,
+  // and a hint points to the other month (the dashboard counts both).
+  const [picked, setPicked] = useState(Boolean(linked));
+  const openByMonth = useAsync(async () => {
+    const months = openStatementMonths();
+    const lists = await Promise.all(months.map((m) => repo.listStatements(tenant.id, m)));
+    return months.map((m, i) => ({ month: m, open: lists[i]!.filter(isOpen).length }));
+  }, [version, tenant.id]);
+  useEffect(() => {
+    if (picked || !openByMonth.data) return;
+    const first = openByMonth.data.find((x) => x.open > 0);
+    if (first) setMonth(first.month);
+    setPicked(true);
+  }, [openByMonth.data, picked]);
+  const elsewhere = (openByMonth.data ?? []).filter((x) => x.month !== month && x.open > 0);
 
   const q = useAsync(async () => {
     const [data, statements] = await Promise.all([loadTenantMonth(repo, tenant, month), repo.listStatements(tenant.id, month)]);
@@ -47,7 +73,7 @@ export function StatementsPage() {
   };
 
   const rows = q.data ?? [];
-  const open = rows.filter((r) => r.statement?.status === "submitted" || r.statement?.status === "reopened").length;
+  const open = rows.filter((r) => r.statement && isOpen(r.statement)).length;
   const corrected = rows.filter((r) => r.statement?.correctedAfterApproval);
 
   return (
@@ -55,10 +81,15 @@ export function StatementsPage() {
       <h1 class="page-title">Monatsnachweise</h1>
       <Card>
         <div class="row-between" style={{ marginBottom: "var(--space-4)" }}>
-          <MonthPicker month={month} onChange={setMonth} />
+          <MonthPicker month={month} onChange={(m) => { setPicked(true); setMonth(m); }} />
           <Badge tone={open ? "warning" : "success"}>{open} zur Prüfung</Badge>
         </div>
         {q.error && <Alert tone="danger" live>{q.error}</Alert>}
+        {elsewhere.map((x) => (
+          <Alert key={x.month} tone="warning" title={`${x.open} offene${x.open > 1 ? "" : "r"} Nachweis${x.open > 1 ? "e" : ""} im ${monthLabelDE(x.month)}`}>
+            <Button size="sm" variant="secondary" icon="calendar" onClick={() => { setPicked(true); setMonth(x.month); }}>{monthLabelDE(x.month)} anzeigen</Button>
+          </Alert>
+        ))}
         {corrected.length > 0 && (
           <Alert tone="warning" title={`${corrected.length} freigegebene${corrected.length > 1 ? "" : "r"} Nachweis${corrected.length > 1 ? "e" : ""} nach Freigabe korrigiert`}>
             <p>Altfälle vor der Regel vom 28.10.2026: Die Spalten zeigen die Zahlen zum Zeitpunkt der Freigabe; die aktuellen Werte stehen unter „Hinweise“.

@@ -134,7 +134,7 @@ export function ChefApp() {
     case "/mitarbeiter": page = <EmployeesPage />; break;
     case "/stunden": page = <HoursPage initialMonth={route.query.get("m")} initialEmployee={route.query.get("ma")} />; break;
     case "/zeiten": page = <TimesPage />; break;
-    case "/nachweise": page = <StatementsPage />; break;
+    case "/nachweise": page = <StatementsPage initialMonth={route.query.get("m")} />; break;
     case "/korrekturen": page = <CorrectionsPage />; break;
     case "/konten": page = <AccountsPage />; break;
     case "/firma": page = <CompanyPage />; break;

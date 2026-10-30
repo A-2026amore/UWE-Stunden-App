@@ -85,7 +85,7 @@ export function DashboardPage() {
       <div class="kpi-grid" data-testid="dashboard-kpis">
         <StatTile icon="clock" href="#/stunden" label={`Geleistete Stunden ${monthLabelDE(month)}`} value={hoursLabel(worked)} tone="brand"
           hint={`Für Abrechnung vorgesehen: ${hoursLabel(billing)}`} />
-        <StatTile icon="fileCheck" href="#/nachweise" label="Offene Monatsnachweise" value={openStatements.length} tone={openStatements.length ? "warning" : "default"} hint="eingereicht, warten auf Prüfung" />
+        <StatTile icon="fileCheck" href={openStatements.length ? `#/nachweise?m=${openStatements[0]!.month}` : "#/nachweise"} label="Offene Monatsnachweise" value={openStatements.length} tone={openStatements.length ? "warning" : "default"} hint="eingereicht, warten auf Prüfung" />
         <StatTile icon="message" href="#/korrekturen" label="Offene Korrekturanfragen" value={openCorrections.length} tone={openCorrections.length ? "warning" : "default"} hint="warten auf Entscheidung" />
         <StatTile icon="users" href="#/mitarbeiter" label="Mitarbeitende" value={staff.length} hint={`${active.length} aktiv, ${staff.length - active.length} eingeladen`} />
         <StatTile icon="creditCard" href="#/abrechnung" label={`Kosten ${monthLabelDE(month)}`} value={billingInfo ? formatEuro(billingInfo.amountCents) : "—"}
