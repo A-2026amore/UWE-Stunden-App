@@ -1,0 +1,111 @@
+# Betrieb ohne GitHub
+
+Stand: 30.10.2026 · gilt für die Testumgebung `stunden-test.appzentrale24.de` und später genauso für die Produktion.
+
+## 1. Kurzfassung
+
+- **Der Server holt nichts mehr von GitHub.** Neue Versionen kommen als **signiertes Release-Paket** (eine Datei
+  plus Signatur) auf den Server. Der Server nimmt nur Pakete an, die mit Arifs Schlüssel signiert sind, und stellt
+  danach – wie bisher – nur den ausdrücklich freigegebenen Commit bereit.
+- **Tests laufen ohne GitHub Actions** in einem Wegwerf-Container (`deploy/pruefen.sh`), auf dem Server oder auf
+  jedem Rechner mit Docker. Die Online-Prüfung der Testumgebung läuft ebenfalls ohne GitHub (`deploy/test-env-check.sh`).
+- **Sicherungen** gehen weiter verschlüsselt auf die Hetzner Storage Box (restic, unverändert). Jedes angenommene
+  Paket wird zusätzlich dort abgelegt.
+- **Ehrliche Grenze:** Claude entwickelt technisch in einem GitHub-Repository – andere Quellen kann Claude Code in
+  der Cloud nicht bearbeiten. GitHub bleibt deshalb **nur Arbeitsplatz für die Entwicklung**. Fällt GitHub aus oder
+  wird gesperrt, läuft der Betrieb weiter; nur neue Änderungen durch Claude warten dann.
+
+## 2. Was heute noch an GitHub hängt
+
+| Stelle | Heute | Danach |
+|---|---|---|
+| Einrichtung des Servers | `curl` von `raw.githubusercontent.com` | Skript per `scp` vom eigenen PC, Prüfsumme vergleichen |
+| Code auf dem Server | `git fetch` von `github.com` (Timer, `stunden-test-freigeben`) | eigenes Repository `/srv/git/UWE-Stunden-App.git` auf dem Server, gefüllt nur aus signierten Paketen |
+| Freigabe | `stunden-test-freigeben <commit>` | unverändert – zusätzlich muss der Commit aus einem geprüften Paket stammen |
+| Automatische Tests (CI) | GitHub Actions | `deploy/pruefen.sh <commit>` |
+| Prüfung der Testumgebung | Workflow „Testumgebung prüfen“ | `deploy/test-env-check.sh <commit>` |
+| Alt-App UWE (Produktion) | GitHub Pages `a-2026amore.github.io` | **bleibt vorerst**, siehe Abschnitt 6 |
+
+## 3. Ablauf einer neuen Version
+
+1. **Claude** entwickelt und testet wie bisher, baut am Ende mit `deploy/release-paket.sh <commit>` das Paket
+   `stundenwerk-<commit12>.bundle` (+ `.sha256`) und legt es in Arifs Ordner `C:\Users\User\appzentrale24\pakete\`.
+   Im Chat nennt Claude Commit und SHA-256-Prüfsumme.
+2. **Arif** startet auf dem PC `deploy/windows/paket-hochladen.ps1 -Paket <datei>`: vergleicht die Prüfsumme,
+   signiert mit seinem Schlüssel (Passphrase), lädt per `scp` hoch und gibt auf dem Server frei.
+3. **Server** (`stunden-test-paket … --freigeben`): prüft Signatur, Prüfsumme und dass das Paket genau einen Commit
+   enthält, übernimmt ihn ins eigene Repository, legt eine Kopie auf die Storage Box und setzt die Freigabe. Der Timer
+   baut, migriert, startet neu, prüft Gesundheit, sichert und macht die Wiederherstellungsprobe (wie bisher).
+4. Optional danach: `deploy/test-env-check.sh <commit>` (HTTPS, Header, Schnittstellen, Anmeldeseiten).
+
+Ohne PowerShell geht Schritt 2 auch von Hand:
+`ssh-keygen -Y sign -f %USERPROFILE%\.ssh\stundenwerk_paket -n stundenwerk-paket <datei>`, dann
+`scp <datei> <datei>.sig <datei>.sha256 root@159.195.199.222:/var/lib/stunden-test/eingang/` und auf dem Server
+`stunden-test-paket /var/lib/stunden-test/eingang/<datei> --freigeben`.
+
+**Warum signieren, wenn doch per SSH hochgeladen wird?** Die SSH-Anmeldung schützt den Weg. Die Signatur legt
+zusätzlich fest, *wer* eine Version liefern darf – auch wenn ein Paket später über die Storage Box oder einen
+anderen Weg kommt. Ohne Arifs privaten Schlüssel nimmt der Server nichts an, auch nicht von Claude.
+
+## 4. Einmalige Umstellung (ca. 15 Minuten)
+
+Auf dem **PC** (PowerShell):
+
+```powershell
+ssh -V                                     # OpenSSH mindestens 8.1 (Windows 11: ja)
+ssh-keygen -t ed25519 -f "$env:USERPROFILE\.ssh\stundenwerk_paket" -C stundenwerk-paket   # Passphrase vergeben
+certutil -hashfile C:\Users\User\appzentrale24\pakete\umstellen-ohne-github.sh SHA256    # mit dem Chat vergleichen
+scp "$env:USERPROFILE\.ssh\stundenwerk_paket.pub" C:\Users\User\appzentrale24\pakete\umstellen-ohne-github.sh root@159.195.199.222:/root/
+```
+
+Der private Schlüssel `stundenwerk_paket` (ohne `.pub`) bleibt auf dem PC und gehört zusätzlich in KeePassXC.
+
+Auf dem **Server** (als root, z. B. netcup-Konsole):
+
+```bash
+sha256sum /root/umstellen-ohne-github.sh          # gleiche Prüfsumme wie oben
+bash /root/umstellen-ohne-github.sh /root/stundenwerk_paket.pub
+stunden-test-freigeben --status                   # Quelle: /srv/git/UWE-Stunden-App.git
+```
+
+Das Skript (`deploy/umstellen-ohne-github.sh`) übernimmt nur den gerade freigegebenen Commit in das eigene
+Repository, stellt den Checkout darauf um, trägt den Schlüssel ein und installiert `stunden-test-paket` sowie eine
+neue `stunden-test-freigeben`. Container werden **nicht** neu gestartet; die laufende App bleibt unberührt.
+**Rückweg:** `bash /root/umstellen-ohne-github.sh --zurueck` (Quelle wieder GitHub, alte `stunden-test-freigeben`).
+
+## 5. Tests ohne GitHub Actions
+
+```bash
+cd /srv/stunden-test
+deploy/pruefen.sh <commit>          # Lint, Typecheck, Unit, Build, Datenbank/RLS + Server (ca. 5–10 min)
+deploy/pruefen.sh <commit> --voll   # zusätzlich Browsertests (Chromium, Android, iPhone-WebKit) und Gesamttest
+```
+
+Der Code des Commits wird per `git archive` in einen Wegwerf-Container gestreamt (Playwright-Image, PostgreSQL 16
+darin). Der Container bekommt höchstens 2 CPUs / 4 GB RAM, keine Ports, keine Server-Verzeichnisse, keine
+Geheimnisse. Protokoll: `/var/lib/stunden-test/pruefung-<commit12>.log`. Abweichung zu GitHub Actions: Der
+Prüfcontainer nutzt die Node-Version des Playwright-Images; das App-Image selbst läuft mit Node 22 und wird bei jeder
+Bereitstellung gebaut und auf Gesundheit geprüft. Nicht enthalten: Geheimnis-Scan (gitleaks) und CodeQL.
+
+Bis zur Umstellung können die GitHub-Workflows weiterlaufen; sie schaden nicht, der Server hängt nur nicht mehr
+davon ab.
+
+## 6. Was danach noch von außen kommt (ehrlich)
+
+- **Docker Hub** (Basis-Images `node`, `postgres`, per Digest festgenagelt), **npm-Registry** (gehört ebenfalls zu
+  GitHub/Microsoft), **Ubuntu-Paketquellen** und **mcr.microsoft.com** (Prüf-Image). Diese werden beim Bauen bzw.
+  Prüfen geladen. **Stufe 2 (möglich, noch nicht gebaut):** Das fertige App-Image wird mit ins Paket gelegt
+  (`docker save`, signiert); dann braucht der Server beim Ausrollen gar keine fremde Quelle mehr. Nachteil: Paket
+  ca. 150–250 MB statt < 1 MB.
+- **Alt-App UWE auf GitHub Pages:** Die Mitarbeitenden speichern ihre Stunden im Browser **unter der Adresse
+  `a-2026amore.github.io`**. Ein Umzug auf eine eigene Adresse würde diese Daten auf den Geräten nicht mitnehmen.
+  Empfehlung: Alt-App bis zum Wechsel auf Stundenwerk dort lassen und danach abschalten – nicht vorher umziehen.
+- **Claude-Entwicklung** bleibt im GitHub-Repository (siehe 1). Empfehlung: Repository auf **privat** stellen,
+  sobald die Alt-App nicht mehr über GitHub Pages läuft (Pages für private Repositories ist kostenpflichtig).
+
+## 7. Offene Punkte
+
+- Der Server läuft bei netcup; die Storage Box ist bei Hetzner. Ein Umzug des Servers zu Hetzner ändert an diesem
+  Verfahren nichts (gleiche Skripte), wäre aber ein eigener Schritt.
+- `deploy/windows/paket-hochladen.ps1` ist ungetestet (keine Windows-Umgebung bei der Entwicklung).
+- `deploy/test-env-check.sh` konnte aus der Entwicklungsumgebung nicht gegen die echte Adresse laufen (Netzsperre).
