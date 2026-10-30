@@ -181,6 +181,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 - Chef-Portal, Monatsnachweise: Die Seite öffnete immer den Vormonat, das Dashboard zählt aber auch eingereichte
   Nachweise des laufenden Monats. Jetzt öffnet sie den Monat mit offenen Nachweisen, weist auf offene Nachweise im
   anderen Monat hin (ein Klick zum Wechseln), und die Dashboard-Kachel verlinkt direkt den passenden Monat.
+- Testserver-Erstinstallation: `update-test.sh` hielt ein übrig gebliebenes Docker-Netz `stunden-test-db` für die
+  Datenbank und brach bei der Sicherung ab; Prüfungen fragen jetzt nur Container ab (`--type container`).
+  `backup.sh` bricht bei nicht erreichbarer Datenbank mit der eigentlichen Meldung ab statt mit
+  „PSQL_PID: unbound variable“.
 - Browsertests iPhone-Emulation (WebKit) laufen mit „Bewegung reduzieren“, weil Animationen dort die Klickprüfung von
   Playwright unter Last zeitweise blockierten. Ob Dialoge auf echten iPhones sauber reagieren, ist im Gerätetest zu prüfen.
 - Dialoge ohne Einblend-Animation und ohne Unschärfe-Hintergrund: In der Safari-Engine (iPhone-Emulation) waren

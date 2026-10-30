@@ -96,16 +96,17 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 NAME="stunden-$STAGE-$STAMP.tar.gpg"
 TARGET="$OUT_DIR/$NAME"
 WORK="$(mktemp -d "$OUT_DIR/.work-XXXXXX")"
-PSQL_PID=""
+PSQL_CHILD=""
 cleanup() {
-  [ -n "$PSQL_PID" ] && kill "$PSQL_PID" 2>/dev/null || true
+  [ -n "$PSQL_CHILD" ] && kill "$PSQL_CHILD" 2>/dev/null || true
   rm -rf "$WORK" "$TARGET.partial"
 }
 trap cleanup EXIT
 
 # Lesende Transaktion offenhalten, Schnappschuss exportieren, darin zählen und dumpen.
 coproc PSQL { "${PSQL_CMD[@]}" 2>&1; }
-PSQL_PID=$PSQL_PID
+# bash unsets PSQL_PID as soon as the coprocess ends; keep our own copy for cleanup and wait.
+PSQL_CHILD="${PSQL_PID:-}"
 ask() { # eine Abfrage, deren Ausgabe mit der Zeile __END__ endet
   printf '%s\n\\echo __END__\n' "$1" >&"${PSQL[1]}"
   local line
@@ -145,8 +146,8 @@ grep -q '^tenants=[0-9]' "$WORK/manifest.txt" || die "Zählung fehlgeschlagen: $
 pg_dump_snapshot "$SNAPSHOT" > "$WORK/database.dump" || die "pg_dump fehlgeschlagen."
 ask "commit;" >/dev/null
 eval "exec ${PSQL[1]}>&-"
-wait "$PSQL_PID" 2>/dev/null || true
-PSQL_PID=""
+wait "$PSQL_CHILD" 2>/dev/null || true
+PSQL_CHILD=""
 pg_dump_roles > "$WORK/roles.sql" || die "pg_dumpall --roles-only fehlgeschlagen."
 echo "pg_dump_version=$(pg_dump_version)" >> "$WORK/manifest.txt"
 echo "dump_sha256=$(sha256sum "$WORK/database.dump" | cut -d' ' -f1)" >> "$WORK/manifest.txt"
