@@ -149,7 +149,7 @@ describe("pdf: tenant logo (generic brand)", () => {
     expect(jpegInfo(new Uint8Array([0xff, 0xd8, 0xff]))).toBeNull();
   });
 
-  it("embeds the logo once and shows it with the company name and as watermark on every page", () => {
+  it("embeds the logo once and shows it top left and as watermark on every page", () => {
     const text = latin1(createStatementPdfBytes({
       tenant: generic({ jpeg, width: 40, height: 20 }), employee: { name: "Erika Muster", personnelNumber: "4711" },
       month: "2026-11", entries: makeEntries(60), createdAt: new Date(2026, 10, 30),
@@ -161,7 +161,8 @@ describe("pdf: tenant logo (generic brand)", () => {
     // Header logo plus the faint watermark (centred, 380 pt wide for this 2:1 logo) on every page.
     expect(text.split("/Logo Do").length - 1).toBe(2 * pages);
     expect(text.split("q /GSWatermark gs 380.00 0 0 190.00 107.64 325.94 cm /Logo Do Q").length - 1).toBe(pages);
-    expect(text.split("(Muster Pflegedienst GmbH) Tj").length - 1).toBeGreaterThanOrEqual(pages);
+    // The logo carries the name: no company name next to it in the header (footer only).
+    expect(text).not.toContain("(Muster Pflegedienst GmbH) Tj");
     // xref offsets stay correct with binary image data.
     const start = Number(/startxref\n(\d+)/.exec(text)![1]);
     expect(text.slice(start, start + 4)).toBe("xref");

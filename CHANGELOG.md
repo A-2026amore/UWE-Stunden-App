@@ -174,7 +174,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ### Geändert
 - Stundennachweis-PDF: Ein hochgeladenes Firmenlogo erscheint zusätzlich groß und blass als Wasserzeichen in der
-  Mitte jeder Seite (wie der UWE-Flügel); Zahlen und Text bleiben gut lesbar.
+  Mitte jeder Seite (wie der UWE-Flügel); Zahlen und Text bleiben gut lesbar. Neben einem hochgeladenen Logo steht
+  der Firmenname nicht mehr ein zweites Mal (Fußzeile nennt die Firma weiterhin).
 
 ### Behoben
 - Chef-Portal, Monatsnachweise: Die Seite öffnete immer den Vormonat, das Dashboard zählt aber auch eingereichte

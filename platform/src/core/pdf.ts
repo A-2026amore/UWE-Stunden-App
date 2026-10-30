@@ -6,9 +6,9 @@
  *    page) – header and table header are repeated on every page, footer
  *    shows "Seite x von y";
  *  - UWE brand: original vector logo + wing watermark (paths copied 1:1);
- *    other tenants: their uploaded logo (as JPEG, see StatementPdfLogo) next
- *    to the company name and faint as watermark in the middle of every page, or the company name as typographic logo in the
- *    primary colour when there is no logo;
+ *    other tenants: their uploaded logo (as JPEG, see StatementPdfLogo) top
+ *    left and faint as watermark in the middle of every page, or the company
+ *    name as typographic logo in the primary colour when there is no logo;
  *  - optional work-account section; worked hours are never replaced.
  *  - Layout (Stundenwerk design, 2026-10): info panel (person, personnel
  *    number, period, status), table with coloured header and zebra rows,
@@ -350,13 +350,10 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
       s += drawWingWatermark();
       s += drawOriginalLogo(M, H - 15, 250);
     } else if (logoSize) {
-      // Uploaded logo (top left, max. 150 × 46 pt) and the company name next to it.
+      // Uploaded logo (top left, max. 150 × 46 pt). No company name next to it: the logo carries it
+      // (owner's decision 30.10.2026); the footer still names the company.
       const [lw, lh] = logoSize;
       s += "q " + lw.toFixed(2) + " 0 0 " + lh.toFixed(2) + " " + M + " " + (H - 76 + (46 - lh) / 2).toFixed(2) + " cm /Logo Do Q\n";
-      const x = M + lw + 12;
-      let name = tenant.name;
-      while (name.length > 1 && x + textWidth(name, 13, true) > W - 182) name = name.slice(0, -2) + "…";
-      s += txt(x, H - 57, name, 13, true, pal.accent);
     } else {
       // Typographic logo: company name in the primary colour.
       const name = latin(tenant.name).length > 34 ? tenant.name.slice(0, 33) + "…" : tenant.name;
