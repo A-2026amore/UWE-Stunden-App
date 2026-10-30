@@ -104,7 +104,7 @@ test("chef: invite with a one-time link to share via WhatsApp or copy", async ({
   await expect(share.getByTestId("invitation-status")).toContainText("Demo: Für Lena Neu wurde eine Einladung erstellt");
 });
 
-test("chef: company name and logo appear in the PDF head (generic brand)", async ({ page }) => {
+test("chef: company logo in the PDF head and as watermark, name only in the footer (generic brand)", async ({ page }) => {
   await loginChef(page, "leitung@muster-pflege.example");
   await go(page, "#/firma");
   await page.getByLabel("Firmenname (Anzeige)").fill("Muster Pflegedienst Köln GmbH");
@@ -118,7 +118,11 @@ test("chef: company name and logo appear in the PDF head (generic brand)", async
   const pdf = await downloadText(page, () => table.getByRole("button", { name: "PDF-Stundenzettel für Mia Musterfrau" }).click());
   expect(pdf.text).toContain("/Subtype /Image");
   expect(pdf.text).toContain("/Filter /DCTDecode");
-  expect(pdf.text).toContain("(Muster Pflegedienst K\xf6ln GmbH) Tj");
+  // Logo top left and as watermark on every page; the name is not repeated next to the logo (decision 30.10.2026).
+  const pages = Number(/\/Count (\d+)/.exec(pdf.text)![1]);
+  expect(pdf.text.split("/Logo Do").length - 1).toBe(2 * pages);
+  expect(pdf.text.split("/GSWatermark gs").length - 1).toBe(pages);
+  expect(pdf.text).not.toMatch(/\(Muster Pflegedienst K\xf6ln GmbH\) Tj/);
 });
 
 test("chef on a phone: collapsible menu, tables as cards, no horizontal scrolling", async ({ page, isMobile }) => {
