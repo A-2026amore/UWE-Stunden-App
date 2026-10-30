@@ -620,7 +620,22 @@ button.linklike.small { font-size: var(--text-sm); }
 .status-list li { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
 .status-list li:last-child { border-bottom: 0; }
 .status-list .status-text { flex: 1; min-width: 0; }
-.install-hint ol { margin: var(--space-2) 0 0; padding-left: 1.3em; }
+.install-banner { border: 2px solid var(--brand-primary); }
+.install-steps { list-style: none; counter-reset: install-step; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.install-steps li { counter-increment: install-step; display: flex; align-items: flex-start; gap: var(--space-3); font-size: var(--text-sm); line-height: 1.45; }
+.install-step-icon { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border-radius: var(--radius-md); background: var(--brand-primary-soft); color: var(--brand-primary-text); }
+.install-step-icon::after { content: counter(install-step); position: absolute; top: -0.4rem; left: -0.4rem; min-width: 1.25rem; height: 1.25rem; padding: 0 0.25rem; border-radius: 999px; background: var(--brand-primary); color: var(--brand-on-primary); font-size: 0.75rem; font-weight: var(--weight-semibold); line-height: 1.25rem; text-align: center; }
+.install-step-text { padding-top: 0.45rem; min-width: 0; }
+/* Chef-Portal: printable guide for the employee app */
+.print-sheet { display: grid; gap: var(--space-5); max-width: 52rem; }
+.print-sheet-head { display: grid; gap: var(--space-1); }
+.print-sheet-qr { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+.print-sheet-qr .qr-box { width: 180px; flex: 0 0 auto; }
+.print-sheet-qr > .stack-sm { flex: 1 1 16rem; min-width: 0; }
+.print-sheet-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--space-5); }
+.print-sheet-cols > .stack-sm { align-content: start; }
+.print-sheet h4 { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-md, 1rem); }
+.print-sheet-contact { border-top: 1px solid var(--color-border); padding-top: var(--space-3); }
 .correction-request { border-top: 1px solid var(--color-border); padding-top: var(--space-3); }
 @media (max-width: 639px) {
   .d-main .row-between > .btn-row { width: 100%; }
@@ -647,4 +662,10 @@ button.linklike.small { font-size: var(--text-sm); }
   .sidebar, .d-topbar, .bottom-nav, .m-header, .toast-region, .skip-link { display: none !important; }
   .d-main { margin: 0; padding: 0; }
   body, .d-shell, .m-shell { background: #fff; color: #000; }
+  .no-print { display: none !important; }
+  .print-sheet { box-shadow: none; border: 0; padding: 0; max-width: none; color: #000; background: #fff; }
+  .print-sheet .install-step-icon { border: 1px solid #000; background: #fff; color: #000; }
+  .print-sheet .install-step-icon::after { background: #000; color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .print-sheet .muted, .print-sheet .xsmall { color: #333; }
+  .print-sheet-cols { grid-template-columns: 1fr 1fr; }
 }

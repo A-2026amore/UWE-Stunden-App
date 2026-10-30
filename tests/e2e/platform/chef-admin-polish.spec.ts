@@ -203,7 +203,7 @@ test("employee app: install hint for the home screen, dismissible; full card in 
   await loginEmployee(page);
   const hint = page.getByTestId("install-hint");
   await expect(hint).toBeVisible();
-  await expect(hint.getByRole("heading", { name: "Zum Home-Bildschirm hinzufügen" })).toBeVisible();
+  await expect(hint.getByRole("heading", { name: "Zeiterfassung als App aufs Handy" })).toBeVisible();
   // Android shows the browser-menu steps; the iPhone project gets the Safari steps (tested below).
   if (testInfo.project.name === "mobile-android") await expect(hint.getByTestId("install-steps-browser")).toContainText("⋮ oben rechts");
   await hint.getByRole("button", { name: "Hinweis ausblenden" }).click();
@@ -227,5 +227,43 @@ test("employee app on an iPhone user agent: Safari steps", async ({ browser }) =
   await freeze(page);
   await loginEmployee(page);
   await expect(page.getByTestId("install-steps-ios")).toContainText("„Zum Home-Bildschirm“");
+  await expect(page.getByTestId("install-steps-ios")).toContainText("neue Symbol auf dem Startbildschirm");
   await ctx.close();
+});
+
+test("employee login on a phone: install tip before signing in; warning inside other apps", async ({ browser }) => {
+  const open = async (userAgent: string) => {
+    const ctx = await browser.newContext({ userAgent, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: "de-DE", timezoneId: "Europe/Berlin" });
+    const page = await ctx.newPage();
+    await freeze(page);
+    await page.goto(APP);
+    return { ctx, page };
+  };
+  const safari = await open("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1");
+  const tip = safari.page.getByTestId("login-install-hint");
+  await expect(tip.getByRole("heading", { name: "Tipp: Erst als App speichern, dann anmelden" })).toBeVisible();
+  await expect(tip.getByTestId("install-steps-ios")).toContainText("Teilen-Symbol");
+  await safari.ctx.close();
+
+  const facebook = await open("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/470.0.0]");
+  await expect(facebook.page.getByTestId("install-inapp")).toContainText("In Safari öffnen");
+  await expect(facebook.page.getByRole("button", { name: "Link kopieren" })).toBeVisible();
+  await facebook.ctx.close();
+
+  const chromeIos = await open("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0.6478.54 Mobile/15E148 Safari/604.1");
+  await expect(chromeIos.page.getByTestId("install-ios-other")).toContainText("Safari");
+  await chromeIos.ctx.close();
+});
+
+test("chef portal: printable guide with QR code to the employee app", async ({ page }) => {
+  await loginChef(page);
+  await go(page, "#/mitarbeiter");
+  await page.getByRole("link", { name: "Anleitung mit QR-Code" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Kurzanleitung für Mitarbeiter" })).toBeVisible();
+  const guide = page.getByTestId("app-guide");
+  await expect(guide.getByRole("img", { name: /QR-Code zur Mitarbeiter-App/ })).toBeVisible();
+  await expect(page.getByTestId("app-guide-url")).toHaveText(/\/app\/$/);
+  await expect(guide.getByTestId("install-steps-ios")).toBeVisible();
+  await expect(guide.getByTestId("install-steps-browser")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Drucken" })).toBeVisible();
 });

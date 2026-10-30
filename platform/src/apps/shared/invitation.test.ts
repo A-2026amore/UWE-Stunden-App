@@ -15,6 +15,12 @@ describe("invitation sharing", () => {
     expect(text.toLowerCase()).not.toMatch(/passwort: /);
   });
 
+  it("tells the employee how to get the app onto the phone afterwards", () => {
+    expect(text).toContain("„Weiter zur Mitarbeiter-App“");
+    expect(text).toContain("Startbildschirm");
+    expect(text).toContain("ohne App-Store");
+  });
+
   it("builds a wa.me link with the encoded text (with or without number)", () => {
     const url = whatsappShareUrl(text);
     expect(url.startsWith("https://wa.me/?text=")).toBe(true);

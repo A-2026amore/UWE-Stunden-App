@@ -287,7 +287,13 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     return {
       to: email,
       subject: `Einladung zur Zeiterfassung – ${tenantName}`,
-      text: `Hallo,\n\ndu wurdest zur Zeiterfassung von ${tenantName} eingeladen. Über diesen Link legst du dein Passwort fest:\n\n${app.link("invite", token)}\n\nDer Link ist begrenzt gültig. Wenn du diese Einladung nicht erwartet hast, kannst du die E-Mail ignorieren.\n`,
+      text: `Hallo,\n\ndu wurdest zur Zeiterfassung von ${tenantName} eingeladen. Über diesen Link legst du dein Passwort fest:\n\n${app.link("invite", token)}\n\n` +
+        "Danach holst du dir die Zeiterfassung als App aufs Handy – kostenlos und ohne App-Store: " +
+        "Tippe nach dem Speichern des Passworts auf „Weiter zur Mitarbeiter-App“. Die App zeigt dir Schritt für Schritt, " +
+        "wie du sie auf deinen Startbildschirm legst. Am besten öffnest du den Link dafür direkt am Handy " +
+        "(iPhone: in Safari, Android: in Chrome).\n\n" +
+        `Die Mitarbeiter-App findest du auch später jederzeit unter ${app.config.publicOrigins[0]}/app/\n\n` +
+        "Der Einladungslink ist begrenzt gültig. Wenn du diese Einladung nicht erwartet hast, kannst du die E-Mail ignorieren.\n",
     };
   }
 
