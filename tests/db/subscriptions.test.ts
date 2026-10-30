@@ -80,16 +80,23 @@ describe("rules in SQL = core rules", () => {
 });
 
 describe("existing and seed tenants", () => {
-  it("monthly term from the month of creation, no trial, contract 'bestand'; monthly price 6,50 €", async () => {
+  it("legacy: subscription model from the next month (terms_from); earlier months keep the default price, no retroactive 6,50 €", async () => {
+    const termsFrom = nextFirst(today);
+    expect((await db.admin.query("select terms_from::text as t from public.tenant_subscriptions where tenant_id = $1", [B])).rows[0].t).toBe(termsFrom);
     const s = await sub(U.ownerB, B);
     expect(s).toMatchObject({
-      tenantId: B, trialEndsOn: null, inTrial: false, firstPaidMonth: "2026-10", ended: false, next: null, contractEndsOn: null,
+      tenantId: B, trialEndsOn: null, inTrial: false, firstPaidMonth: "2026-10", ended: false, next: null, contractEndsOn: null, withdrawable: null,
       annualPriceCents: 500, monthlyPriceCents: 650, termMonths: 12, renewalMonths: 6, cancelNoticeDays: 0,
-      current: { interval: "monthly", startsOn: "2026-10-01", endsOn: null, currentTermEndsOn: null, cancelledAt: null, thenMonthly: false },
+      current: { interval: "monthly", startsOn: termsFrom, endsOn: null, currentTermEndsOn: null, cancelledAt: null, thenMonthly: false },
       contract: { termsVersion: "bestand", dpaVersion: "bestand", interval: "monthly", acceptedByName: null },
     });
-    expect(await cond(B, "2026-10")).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond(B, "2026-10")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond(B, month(today))).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond(B, month(termsFrom))).toEqual({ unit_price_cents: 650, condition: "monthly" });
     expect(await cond(A, "2026-10")).toEqual({ unit_price_cents: 0, condition: "pilot_free" });
+    // a later correction of the start date keeps the legacy start of the terms
+    await db.admin.query("update public.tenants set created_at = created_at - interval '1 day' where id = $1", [B]);
+    expect((await terms(B)).map((t) => t.startsOn)).toEqual([termsFrom]);
   });
 
   it("leadership and platform staff read; employees and other tenants do not; tables are not readable", async () => {
@@ -105,6 +112,12 @@ describe("existing and seed tenants", () => {
 });
 
 describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026)", () => {
+  beforeAll(async () => {
+    // B here like a customer that started after 0023 (no legacy months): monthly plan since 10/2026.
+    await db.admin.query("update public.tenant_subscriptions set terms_from = null where tenant_id = $1", [B]);
+    await db.admin.query("update public.subscription_terms set starts_on = '2026-10-01' where tenant_id = $1", [B]);
+  });
+
   it("only the owner changes; monthly → annual from the next month (as core planChoice)", async () => {
     expect((await pgError(call(U.empB, "select public.tenant_choose_subscription($1, 'annual') as s", [B]))).code).toBe("42501");
     expect((await pgError(call(U.support, "select public.tenant_choose_subscription($1, 'annual') as s", [B]))).code).toBe("42501");
@@ -150,6 +163,7 @@ describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026
       ["monthly", annual.startsOn, null, false],
     ]);
     expect(s.next).toMatchObject({ interval: "monthly", startsOn: annual.startsOn });
+    expect(s.withdrawable).toMatchObject({ interval: "annual", startsOn: annual.startsOn, endsOn: end, thenMonthly: true });
     expect(await cond(B, month(annual.startsOn))).toEqual({ unit_price_cents: 650, condition: "monthly" });
     const w = await call(U.ownerB, "select public.tenant_withdraw_cancellation($1) as s", [B]);
     expect((await terms(B)).map((t) => [t.interval, t.startsOn, t.endsOn])).toEqual([
@@ -157,8 +171,25 @@ describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026
       ["annual", annual.startsOn, null],
     ]);
     expect(w.next).toMatchObject({ interval: "annual", endsOn: null, cancelledAt: null });
+    expect(w.withdrawable).toBeNull();
     expect(await pgError(call(U.ownerB, "select public.tenant_withdraw_cancellation($1) as s", [B])))
       .toMatchObject({ code: "55000", message: "Es gibt keine Kündigung, die noch zurückgenommen werden kann." });
+  });
+
+  it("cancelling a planned switch that has not started undoes it: the replaced monthly term runs on (core planCancel)", async () => {
+    const before = await terms(B);
+    const s = await call(U.ownerB, "select public.tenant_cancel_subscription($1, false, null) as s", [B]);
+    expect((await terms(B)).map((t) => [t.interval, t.startsOn, t.endsOn, t.cancelledAt])).toEqual([["monthly", "2026-10-01", null, null]]);
+    expect(s).toMatchObject({ current: { interval: "monthly", endsOn: null }, next: null, contractEndsOn: null, withdrawable: null });
+    const audit = (await db.admin.query("select after, reason from public.audit_log where tenant_id = $1 and action = 'subscription.cancel' order by created_at desc, id desc limit 1", [B])).rows[0];
+    expect(audit.after).toMatchObject({ undoneSwitch: true, cancelledInterval: "annual", continuesInterval: "monthly" });
+    expect(audit.reason).toBe("Geplanter Tarifwechsel zurückgenommen");
+    // restore the switch for the next case
+    await db.admin.query("delete from public.subscription_terms where tenant_id = $1", [B]);
+    for (const t of before) {
+      await db.admin.query("insert into public.subscription_terms (id, tenant_id, billing_interval, starts_on, ends_on) values ($1, $2, $3, $4, $5)",
+        [t.id, B, t.interval, t.startsOn, t.endsOn]);
+    }
   });
 
   it("a running annual term ends at its term end (+6 months per renewal); afterwards nothing is billed; a new plan follows", async () => {
@@ -184,7 +215,7 @@ describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026
     expect(n.next).toMatchObject({ interval: "monthly", startsOn: after });
     expect(n.contractEndsOn).toBeNull();
     const audit = (await db.admin.query("select action from public.audit_log where entity = 'subscription' and tenant_id = $1 order by created_at, id", [B])).rows;
-    expect(audit.map((r) => r.action)).toEqual(["subscription.choose", "subscription.cancel", "subscription.withdraw", "subscription.cancel", "subscription.choose"]);
+    expect(audit.map((r) => r.action)).toEqual(["subscription.choose", "subscription.cancel", "subscription.withdraw", "subscription.cancel", "subscription.cancel", "subscription.choose"]);
   });
 
   it("'then monthly' only for the 12-month subscription; terms never overlap", async () => {
@@ -199,6 +230,8 @@ describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026
 
 describe("frozen months and issued invoices stay unchanged", () => {
   it("a frozen month keeps condition and price when prices or plans change", async () => {
+    // A here like a customer that started after 0023 (no legacy months)
+    await db.admin.query("update public.tenant_subscriptions set terms_from = null where tenant_id = $1", [A]);
     await db.admin.query("update public.tenants set created_at = '2026-06-01 00:00 Europe/Berlin' where id = $1", [A]);
     await db.admin.query("update public.licenses set plan = 'standard', free_of_charge = false, price_cents = 0, billing = 'manual' where tenant_id = $1", [A]);
     await db.admin.query("update public.employee_status_history set valid_from = '2026-06-01 00:00 Europe/Berlin' where tenant_id = $1", [A]);
@@ -276,8 +309,11 @@ describe("settings (super admin)", () => {
     expect(await w(U.support)).toHaveLength(1);
     await sa((q) => q.query("select public.platform_end_promo_code($1, 'Aktion vorbei')", [code.id]));
     expect(await w(U.superAdmin)).toEqual([]); // ended
-    expect((await pgError(settings({ welcomePromoCodeId: code.id }))).code).toBe("22023");
+    // the unchanged stored code may have ended – saving other fields with it still works
+    expect(await settings({ welcomePromoCodeId: code.id, trialMonths: 3 })).toMatchObject({ welcomePromoCodeId: code.id });
     expect((await settings({ welcomePromoCodeId: null })).welcomePromoCode).toBeNull();
+    // newly setting an ended code is refused
+    expect((await pgError(settings({ welcomePromoCodeId: code.id }))).code).toBe("22023");
     await db.admin.query("delete from public.promo_redemptions where tenant_id = $1", [B]);
   });
 });
@@ -361,11 +397,22 @@ describe("new tenant: trial, contract conclusion, reminders", () => {
   });
 
   it("reminders: 14 days before the trial end and one month before the end of a running annual term – each once", async () => {
-    const claim = (day: string) => db.as(null, async (q) => (await q.query(
-    `select tenant_id, tenant_name, kind, ref_date::text, cancel_by::text, next_interval, annual_price_cents, monthly_price_cents, emails
-       from auth.claim_subscription_reminders($1)`, [day])).rows, { role: "app_auth", commit: true });
+    // a different day only from maintenance (owner connection here); the server job (app_auth) always uses today
+    const claim = async (day: string) => (await db.admin.query(
+      `select tenant_id, tenant_name, kind, ref_date::text, cancel_by::text, next_interval, annual_price_cents, monthly_price_cents, emails
+         from auth.claim_subscription_reminders($1)`, [day])).rows;
+    expect((await pgError(db.as(null, (q) => q.query("select * from auth.claim_subscription_reminders($1)", [today]), { role: "app_auth" }))).code).toBe("42501");
+    expect(await db.as(null, async (q) => (await q.query("select * from auth.claim_subscription_reminders()")).rows, { role: "app_auth" })).toEqual([]);
     const trial = (await sub(OWNER_C_USER, C)).trialEndsOn as string;
     expect(await claim(addDays(trial, -15))).toEqual([]);
+    // no reminder when no term follows the trial (planned annual cancelled) or without a contract
+    await call(OWNER_C_USER, "select public.tenant_cancel_subscription($1, false, null) as s", [C]);
+    expect(await claim(addDays(trial, -14))).toEqual([]);
+    await call(OWNER_C_USER, "select public.tenant_withdraw_cancellation($1) as s", [C]);
+    const contract = (await db.admin.query("delete from public.tenant_contracts where tenant_id = $1 returning *", [C])).rows[0];
+    expect(await claim(addDays(trial, -14))).toEqual([]);
+    await db.admin.query("insert into public.tenant_contracts select * from json_populate_record(null::public.tenant_contracts, $1)", [JSON.stringify(contract)]);
+    await db.admin.query("delete from public.subscription_reminders where tenant_id = $1", [C]);
     const r = await claim(addDays(trial, -14));
     expect(r).toEqual([expect.objectContaining({
       tenant_id: C, tenant_name: "Abo Test GmbH", kind: "trial_end", ref_date: trial, next_interval: "annual",
@@ -387,9 +434,21 @@ describe("new tenant: trial, contract conclusion, reminders", () => {
     const end2 = annualTermEnd(annual.startsOn, 1);
     const b = await claim(addDays(end2, -10));
     expect(b.map((x) => [x.kind, x.ref_date])).toEqual([["annual_renewal", end2]]);
-    // demo tenants and blocked tenants get no reminders; cancelled terms neither
+    // with notice days the window ends at end − notice and starts one month before that
+    await settings({ cancelNoticeDays: 14 });
+    try {
+      const end3 = annualTermEnd(annual.startsOn, 2);
+      const deadline = addDays(end3, -14);
+      const from = (await db.admin.query("select private.add_months($1, -1)::text as d", [deadline])).rows[0].d;
+      expect(await claim(addDays(from, -1))).toEqual([]);
+      expect(await claim(addDays(deadline, 1))).toEqual([]);
+      expect(await claim(deadline)).toEqual([expect.objectContaining({ kind: "annual_renewal", ref_date: end3, cancel_by: deadline })]);
+    } finally {
+      await settings({ cancelNoticeDays: 0 });
+    }
+    // demo tenants get no reminders
     await db.admin.query("update public.tenants set is_demo = true where id = $1", [C]);
-    expect(await claim(addDays(annualTermEnd(annual.startsOn, 2), -10))).toEqual([]);
+    expect(await claim(addDays(annualTermEnd(annual.startsOn, 3), -10))).toEqual([]);
     await db.admin.query("update public.tenants set is_demo = false where id = $1", [C]);
   });
 });
@@ -399,7 +458,8 @@ describe("automatic monthly invoices", () => {
     issuerName: "Stundenwerk Beispiel GmbH (Testdaten)", issuerStreet: "Musterstraße 1", issuerPostalCode: "52062",
     issuerCity: "Aachen", taxNumber: "201/123/45678",
   };
-  const run = (day: string) => db.as(null, async (q) => (await q.query("select * from auth.issue_monthly_invoices($1)", [day])).rows, { role: "app_auth", commit: true });
+  // a different day only from maintenance (owner connection here)
+  const run = async (day: string) => (await db.admin.query("select * from auth.issue_monthly_invoices($1)", [day])).rows;
   const second = () => `${month(today)}-02`;
   const prev = () => addDays(`${month(today)}-01`, -1).slice(0, 7);
 
@@ -445,5 +505,6 @@ describe("automatic monthly invoices", () => {
     const numbers = (await db.admin.query("select seq from public.invoices order by seq")).rows.map((r) => r.seq);
     expect(numbers).toEqual([1, 2, 3]); // gapless: invoice, cancellation, reissue
     expect((await pgError(db.as(U.superAdmin, (q) => q.query("select * from auth.issue_monthly_invoices()")))).code).toBe("42501");
+    expect((await pgError(db.as(null, (q) => q.query("select * from auth.issue_monthly_invoices($1)", [second()]), { role: "app_auth" }))).code).toBe("42501");
   });
 });

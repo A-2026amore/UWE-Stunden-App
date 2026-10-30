@@ -1,8 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ADMIN, CHEF, NOW, freeze, go, login, statValue } from "./helpers";
+import { ADMIN, CHEF, NOW, freeze, go, login, patchDb, statValue } from "./helpers";
 
-// Subscription (migration 0023), demo frozen at 20.11.2026: Muster Pflegedienst has the monthly plan since its
-// creation (no trial); the owner is "leitung@muster-pflege.example".
+// Subscription (migration 0023), demo frozen at 20.11.2026: Muster Pflegedienst is an existing tenant, so the old
+// 5,00 € rule applies until 30.11.2026 and the monthly plan from 01.12.2026; the owner is "leitung@muster-pflege.example".
 
 test.beforeEach(async ({ page }) => {
   await freeze(page);
@@ -18,8 +18,8 @@ test("owner: switch to the 12-month subscription, cancel with monthly afterwards
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
   await openBilling(page);
   const tariff = page.locator(".card", { has: page.getByRole("heading", { name: "Tarif", exact: true }) });
-  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 €");
-  await expect(statValue(page, "Preis je Person")).toHaveText("6,50 €");
+  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 € je Mitarbeiter/Monat ab 01.12.2026");
+  await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
 
   await tariff.getByRole("button", { name: "Zum 12-Monats-Abo wechseln" }).click();
   const confirm = page.getByRole("dialog", { name: "Zum 12-Monats-Abo wechseln?" });
@@ -28,14 +28,15 @@ test("owner: switch to the 12-month subscription, cancel with monthly afterwards
   await expect(confirm).toContainText("um 6 Monate, wenn Sie nicht bis 30.11.2027 kündigen");
   await confirm.getByRole("button", { name: "Verbindlich wechseln" }).click();
   await expect(page.locator(".toast").filter({ hasText: "12-Monats-Abo ab 01.12.2026 gewählt." })).toBeVisible();
-  await expect(page.getByTestId("subscription-next")).toContainText("12-Monats-Abo ab 01.12.2026 (5,00 €");
+  await expect(page.getByTestId("subscription-plan")).toContainText("12-Monats-Abo: 5,00 € je Mitarbeiter/Monat ab 01.12.2026");
+  await expect(page.getByTestId("subscription-next")).toHaveCount(0);
   await expect(tariff.getByRole("button", { name: "Zum 12-Monats-Abo wechseln" })).toHaveCount(0);
-  // November is still billed in the monthly plan.
-  await expect(statValue(page, "Preis je Person")).toHaveText("6,50 €");
+  await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
 
   // December: the subscription runs.
   await page.clock.setFixedTime(new Date("2026-12-10T10:00:00+01:00"));
   await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await openBilling(page);
   await expect(page.getByTestId("subscription-plan")).toContainText("12-Monats-Abo: 5,00 €");
   await expect(page.getByTestId("subscription-term-end")).toContainText("30.11.2027");
@@ -51,15 +52,66 @@ test("owner: switch to the 12-month subscription, cancel with monthly afterwards
   await expect(page.getByTestId("subscription-next")).toContainText("Monatstarif ab 01.12.2027");
 
   await tariff.getByRole("button", { name: "Kündigung zurücknehmen" }).click();
-  await page.getByRole("dialog", { name: "Kündigung zurücknehmen?" }).getByRole("button", { name: "Zurücknehmen" }).click();
+  const back = page.getByRole("dialog", { name: "Kündigung zurücknehmen?" });
+  await expect(back).toContainText("Das 12-Monats-Abo endet nicht am 30.11.2027");
+  await expect(back).toContainText("Der geplante Monatstarif ab 01.12.2027 entfällt.");
+  await back.getByRole("button", { name: "Zurücknehmen" }).click();
   await expect(page.locator(".toast").filter({ hasText: "Kündigung zurückgenommen." })).toBeVisible();
   await expect(page.getByTestId("subscription-cancelled")).toHaveCount(0);
   await expect(page.getByTestId("subscription-next")).toHaveCount(0);
   await expect(page.getByTestId("subscription-term-end")).toContainText("30.11.2027");
 
+  await expect(page.getByTestId("subscription-term-end")).toContainText("wenn bis 30.11.2027 nicht gekündigt wird");
+
+  // Notice period longer than the time left (set directly in the demo DB): the effective date is shown, not a passed deadline.
+  await patchDb(page, "db.billingSettings.cancelNoticeDays = 360;", null);
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await openBilling(page);
+  await expect(page.getByTestId("subscription-term-end")).toContainText("Kündigung jetzt wirkt zum 31.05.2028.");
+  await tariff.getByRole("button", { name: "Kündigen" }).click();
+  await expect(page.getByRole("dialog", { name: "12-Monats-Abo kündigen?" }).getByTestId("cancel-end")).toContainText("31.05.2028");
+  await page.getByRole("dialog", { name: "12-Monats-Abo kündigen?" }).getByRole("button", { name: "Abbrechen" }).click();
+
   await go(page, "#/protokoll");
   const main = page.getByRole("main");
   for (const label of ["Tarif gewählt", "Vertrag gekündigt", "Kündigung zurückgenommen"]) await expect(main).toContainText(label);
+});
+
+test("owner: cancelling a planned switch undoes it, the monthly plan runs on", async ({ page }) => {
+  await login(page, CHEF, "leitung@muster-pflege.example");
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
+  // January 2027: the monthly plan runs since 01.12.2026.
+  await page.clock.setFixedTime(new Date("2027-01-10T10:00:00+01:00"));
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await openBilling(page);
+  const tariff = page.locator(".card", { has: page.getByRole("heading", { name: "Tarif", exact: true }) });
+  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 €");
+  await tariff.getByRole("button", { name: "Zum 12-Monats-Abo wechseln" }).click();
+  const confirm = page.getByRole("dialog", { name: "Zum 12-Monats-Abo wechseln?" });
+  await expect(confirm).toContainText("beginnt am 01.02.2027");
+  await expect(confirm).toContainText("Bis dahin gilt der Monatstarif.");
+  await confirm.getByRole("button", { name: "Verbindlich wechseln" }).click();
+  await expect(page.locator(".toast").filter({ hasText: "12-Monats-Abo ab 01.02.2027 gewählt." })).toBeVisible();
+  await expect(page.getByTestId("subscription-next")).toContainText("12-Monats-Abo ab 01.02.2027");
+
+  await tariff.getByRole("button", { name: "Kündigen" }).click();
+  const cancel = page.getByRole("dialog", { name: "Wechsel zum 12-Monats-Abo zurücknehmen?" });
+  await expect(cancel.getByTestId("cancel-end")).toHaveText("Der Wechsel zum 12-Monats-Abo wird zurückgenommen, der Monatstarif läuft weiter.");
+  await expect(cancel.getByLabel("Danach im Monatstarif weiter")).toHaveCount(0);
+  await expect(cancel.getByText("Danach besteht kein Vertrag mehr")).toHaveCount(0);
+  await cancel.getByRole("button", { name: "Kündigen", exact: true }).click();
+  await expect(page.locator(".toast").filter({ hasText: "Wechsel zum 12-Monats-Abo zurückgenommen." })).toBeVisible();
+  await expect(page.getByTestId("subscription-next")).toHaveCount(0);
+  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 €");
+  await expect(tariff.getByRole("button", { name: "Kündigung zurücknehmen" })).toHaveCount(0);
+
+  // Cancelling the monthly plan ends the contract: the warning is shown.
+  await tariff.getByRole("button", { name: "Kündigen" }).click();
+  const end = page.getByRole("dialog", { name: "Monatstarif kündigen?" });
+  await expect(end.getByTestId("cancel-end")).toContainText("Der Vertrag endet am 31.01.2027");
+  await expect(end.getByText("Danach besteht kein Vertrag mehr")).toBeVisible();
 });
 
 test("manager: sees the plan read-only", async ({ page }) => {

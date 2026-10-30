@@ -39,11 +39,21 @@ export function welcomeCodeText(code: string, discountPercent: number): string {
     + `Einlösen: nach der Anmeldung im Chef-Portal unter „Abrechnung“ den Code eingeben. ${PROMO_TERMS_NOTE}`;
 }
 
+/** Active owners of the tenant (account address, else the employee record) – same as the jobs. */
 async function ownerEmails(q: Queryable, tenantId: string): Promise<string[]> {
-  const r = await q.query<{ email: string }>(
-    `select distinct email from public.employees
-      where tenant_id = $1 and role = 'owner' and status = 'active' and email is not null order by email`, [tenantId]);
-  return r.rows.map((x) => x.email);
+  const r = await q.query<{ e: string[] }>("select public.tenant_subscription_mail_recipients($1) as e", [tenantId]);
+  return r.rows[0]?.e ?? [];
+}
+
+/** Cancelling a planned switch that has not started: the previous plan runs on. */
+export function switchUndoneMail(to: string, tenantName: string, continues: SubscriptionInterval): Mail {
+  return {
+    to,
+    subject: `Tarifwechsel zurückgenommen – ${tenantName}`,
+    text: `Guten Tag,\n\nder geplante Tarifwechsel Ihrer Firma ${tenantName} in der Zeiterfassung wurde zurückgenommen. `
+      + `Tarifwechsel zurückgenommen, ${INTERVAL_LABEL[continues]} läuft weiter.\n\n`
+      + "Den Tarif sehen Sie im Chef-Portal unter „Abrechnung“.\n",
+  };
 }
 
 function cancellationMail(to: string, tenantName: string, s: TenantSubscription, endsOn: string, thenMonthly: boolean): Mail {
@@ -94,12 +104,15 @@ export function registerSubscriptionRoutes(router: Router, app: AppContext): voi
     const mails: Mail[] = [];
     const result = await app.asUser(ctx, async (q) => {
       const s = await read(q, "select public.tenant_cancel_subscription($1, $2, $3) as s", [id, thenMonthly, reason]);
-      const r = await q.query<{ ends_on: string; name: string }>(
-        `select (a.after ->> 'cancelledTermEndsOn') as ends_on, t.name
+      const r = await q.query<{ ends_on: string | null; undone: boolean | null; continues: SubscriptionInterval | null; name: string }>(
+        `select (a.after ->> 'cancelledTermEndsOn') as ends_on, (a.after ->> 'undoneSwitch')::boolean as undone,
+                (a.after ->> 'continuesInterval') as continues, t.name
            from public.audit_log a join public.tenants t on t.id = a.tenant_id
           where a.tenant_id = $1 and a.action = 'subscription.cancel' order by a.created_at desc, a.id desc limit 1`, [id]);
       const row = r.rows[0];
-      if (row?.ends_on) {
+      if (row?.undone) {
+        for (const to of await ownerEmails(q, id)) mails.push(switchUndoneMail(to, row.name, row.continues ?? "monthly"));
+      } else if (row?.ends_on) {
         for (const to of await ownerEmails(q, id)) mails.push(cancellationMail(to, row.name, s, row.ends_on, thenMonthly));
       }
       return json(200, s);
@@ -132,14 +145,14 @@ interface ReminderRow {
 export function reminderMail(to: string, r: ReminderRow): Mail {
   if (r.kind === "trial_end") {
     const plan = r.next_interval === "annual"
-      ? `das ${INTERVAL_LABEL.annual} (${formatEuro(r.annual_price_cents)} je abrechenbarem Mitarbeiter und Monat, ${VAT_NOTE})`
-      : `der ${INTERVAL_LABEL.monthly} (${formatEuro(r.monthly_price_cents)} je abrechenbarem Mitarbeiter und Monat, ${VAT_NOTE}); `
-        + `im ${INTERVAL_LABEL.annual} kostet es ${formatEuro(r.annual_price_cents)}`;
+      ? `Ab dem Folgemonat wird das ${INTERVAL_LABEL.annual} (${formatEuro(r.annual_price_cents)} je abrechenbarem Mitarbeiter und Monat, ${VAT_NOTE}) berechnet.`
+      : `Ab dem Folgemonat wird der ${INTERVAL_LABEL.monthly} (${formatEuro(r.monthly_price_cents)} je abrechenbarem Mitarbeiter und Monat, ${VAT_NOTE}) berechnet. `
+        + `Im ${INTERVAL_LABEL.annual} kostet es ${formatEuro(r.annual_price_cents)}.`;
     return {
       to,
       subject: `Ihre kostenlose Testphase endet am ${germanDate(r.ref_date)} – ${r.tenant_name}`,
       text: `Guten Tag,\n\ndie kostenlose Testphase Ihrer Firma ${r.tenant_name} in der Zeiterfassung endet am ${germanDate(r.ref_date)}. `
-        + `Ab dem Folgemonat wird ${plan}.\n\n`
+        + `${plan}\n\n`
         + "Tarif wählen oder kündigen: im Chef-Portal unter „Abrechnung“.\n",
     };
   }
@@ -154,13 +167,14 @@ export function reminderMail(to: string, r: ReminderRow): Mail {
 
 /**
  * Claims the reminders due today (each only once, also across several server instances) and
- * sends them. Returns the number of mails handed to the mailer. `today` only for tests.
+ * sends them. Returns the number of mails handed to the mailer. Always today (Berlin): a
+ * different day is only accepted from maintenance (role app_service), not from the server.
  */
 export async function runSubscriptionReminders(
-  pool: pg.Pool, send: (mails: Mail[]) => void, opts: { today?: string } = {},
+  pool: pg.Pool, send: (mails: Mail[]) => void,
 ): Promise<number> {
   const rows = await withTx(pool, "app_auth", null, async (q) =>
-    (await q.query<ReminderRow>("select * from auth.claim_subscription_reminders($1)", [opts.today ?? null])).rows);
+    (await q.query<ReminderRow>("select * from auth.claim_subscription_reminders()")).rows);
   const mails = rows.flatMap((r) => r.emails.map((to) => reminderMail(to, r)));
   send(mails);
   return mails.length;
@@ -204,13 +218,13 @@ export interface InvoiceRunResult {
 
 /**
  * From the 2nd of a month: issues the invoices of the previous month (auth.issue_monthly_invoices,
- * same issue path as the super admin, idempotent) and mails all owners. `today` only for tests.
+ * same issue path as the super admin, idempotent) and mails all owners.
  */
 export async function runMonthlyInvoices(
-  pool: pg.Pool, send: (mails: Mail[]) => void, opts: { today?: string } = {},
+  pool: pg.Pool, send: (mails: Mail[]) => void,
 ): Promise<InvoiceRunResult> {
   const rows = await withTx(pool, "app_auth", null, async (q) =>
-    (await q.query<InvoiceRunRow>("select * from auth.issue_monthly_invoices($1)", [opts.today ?? null])).rows);
+    (await q.query<InvoiceRunRow>("select * from auth.issue_monthly_invoices()")).rows);
   const result: InvoiceRunResult = { issued: [], problems: [], mails: 0 };
   const mails: Mail[] = [];
   for (const r of rows) {
@@ -228,10 +242,10 @@ export async function runMonthlyInvoices(
 
 /** One run of the periodic billing job: reminders and monthly invoices (callable once from tests and the CLI). */
 export async function runBillingJobs(
-  pool: pg.Pool, send: (mails: Mail[]) => void, opts: { today?: string } = {},
+  pool: pg.Pool, send: (mails: Mail[]) => void,
 ): Promise<{ reminders: number; invoices: InvoiceRunResult }> {
-  const reminders = await runSubscriptionReminders(pool, send, opts);
-  const invoices = await runMonthlyInvoices(pool, send, opts);
+  const reminders = await runSubscriptionReminders(pool, send);
+  const invoices = await runMonthlyInvoices(pool, send);
   return { reminders, invoices };
 }
 

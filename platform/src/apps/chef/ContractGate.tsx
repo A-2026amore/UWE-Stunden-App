@@ -11,7 +11,7 @@ import { Alert, Button, Checkbox } from "../../design";
 import { errorText } from "../shared/hooks";
 import { formatDateDE, monthLabelDE } from "../shared/format";
 import { ProductMark, TenantLogo } from "../shared/ui";
-import { annualStartMonth, berlinToday, priceLine } from "../shared/subscription";
+import { berlinToday, choiceStart, priceLine } from "../shared/subscription";
 import type { AreaRepository } from "../shared/repo";
 
 /** Legal pages (built by platform/rechtliches); relative to /chef/. */
@@ -27,7 +27,7 @@ export function ContractGate({ repo, tenant, me, sub, onAccepted, onSignOut }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = berlinToday();
-  const annualStart = firstDayOf(annualStartMonth(sub, today));
+  const annualStart = choiceStart(sub, "annual", today) ?? firstDayOf(sub.firstPaidMonth);
   const annualEnd = addDays(addMonthsToDate(annualStart, sub.termMonths), -1);
   const trial = sub.trialEndsOn && sub.inTrial ? sub.trialEndsOn : null;
 
@@ -71,7 +71,7 @@ export function ContractGate({ repo, tenant, me, sub, onAccepted, onSignOut }: {
                 <span><span>12-Monats-Abo: {priceLine(sub, "annual")}</span>
                   <span class="field-hint" style={{ display: "block" }}>
                     {sub.termMonths} Monate fest ab {formatDateDE(annualStart)} (bis {formatDateDE(annualEnd)}). Verlängert sich jeweils um {sub.renewalMonths} Monate,
-                    wenn Sie nicht bis zum Ende der Laufzeit kündigen.{annualStart > firstDayOf(sub.firstPaidMonth) ? " Bis zum Beginn gilt der Monatstarif." : ""}
+                    wenn Sie nicht bis zum Ende der Laufzeit kündigen.{sub.current?.interval === "monthly" && sub.current.startsOn < annualStart ? " Bis zum Beginn gilt der Monatstarif." : ""}
                   </span></span>
               </label>
               <p class="xsmall muted mb-0">Alle Preise {VAT_NOTE} Keine Grundgebühr, keine Mindestanzahl.</p>

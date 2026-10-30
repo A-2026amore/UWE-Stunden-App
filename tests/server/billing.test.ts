@@ -29,15 +29,15 @@ describe("tenant billing (owner / manager)", () => {
     expect(r.body.lines.map((l: { displayName: string; reason: string }) => `${l.displayName}:${l.reason}`).sort())
       .toEqual(["Jo Demo:employee", "Robin Leitung:leader_with_time", "Sam Probe:employee"]);
     const b = await t.call("GET", `/api/tenants/${B}/billing?month=2026-10`, { cookie: cookies.ownerB });
-    // 0023: no plan chosen → monthly plan (6,50 €)
-    expect(b.body).toMatchObject({ condition: "monthly", unitPriceCents: 650, billableCount: 1, amountCents: 650, interval: "monthly", trialEndsOn: null });
+    // 0023: months before terms_from (seed tenant = existing tenant) keep the default price
+    expect(b.body).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 1, amountCents: 500, interval: null, trialEndsOn: null });
   });
 
   it("history lists months back to the tenant's creation month", async () => {
     const r = await t.call("GET", `/api/tenants/${B}/billing/history?limit=3`, { cookie: cookies.ownerB });
     expect(r.status).toBe(200);
     expect(r.body.length).toBeGreaterThanOrEqual(1);
-    expect(r.body[0]).toEqual(expect.objectContaining({ status: "open", final: false, unitPriceCents: 650 }));
+    expect(r.body[0]).toEqual(expect.objectContaining({ status: "open", final: false, unitPriceCents: 500 }));
   });
 
   it("denies foreign tenants, employees and platform staff; validates the month", async () => {
@@ -60,9 +60,9 @@ describe("platform revenue (numbers only)", () => {
       expect(r.status).toBe(200);
       expect(r.body).toMatchObject({ month: "2026-10", defaultPriceCents: 500, paymentProvider: "none" });
       const rowB = r.body.rows.find((x: { tenantId: string }) => x.tenantId === B);
-      expect(rowB).toMatchObject({ tenantName: "Muster Pflegedienst GmbH", billableCount: 1, amountCents: 650, isDemo: true, status: "open",
-        condition: "monthly", interval: "monthly", trialEndsOn: null });
-      expect(r.body.totals).toMatchObject({ demoAmountCents: 650 });
+      expect(rowB).toMatchObject({ tenantName: "Muster Pflegedienst GmbH", billableCount: 1, amountCents: 500, isDemo: true, status: "open",
+        condition: "standard", interval: null, trialEndsOn: null });
+      expect(r.body.totals).toMatchObject({ demoAmountCents: 500 });
       const text = JSON.stringify(r.body);
       for (const name of ["Sam Probe", "Jo Demo", "Robin Leitung", "Charlie Test", "employeeId"]) expect(text).not.toContain(name);
     }
@@ -79,9 +79,9 @@ describe("platform revenue (numbers only)", () => {
     expect((await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 5.5, reason: "Test" } })).status).toBe(400);
     const ok = await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 600, reason: "Preisanpassung" } });
     expect(ok.body).toMatchObject({ defaultPriceCents: 600, monthlyPriceCents: 650 });
-    // tenant B is in the monthly plan: the 12-month price does not change its month
+    // months before the subscription model use the platform default price
     const b = await t.call("GET", `/api/tenants/${B}/billing?month=2026-10`, { cookie: cookies.ownerB });
-    expect(b.body).toMatchObject({ condition: "monthly", unitPriceCents: 650, amountCents: 650 });
+    expect(b.body).toMatchObject({ condition: "standard", unitPriceCents: 600, amountCents: 600 });
     const audit = await t.call("GET", "/api/platform/audit?limit=20", { cookie: cookies.support });
     const entry = audit.body.find((e: { action: string }) => e.action === "billing_settings.update");
     expect(entry).toMatchObject({ reason: "Preisanpassung" });

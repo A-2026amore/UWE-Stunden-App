@@ -2,7 +2,7 @@
  * Invoices (migration 0019): issuer settings (§ 14 UStG), draft without number,
  * unique and gapless numbers per year (also with parallel calls), immutability,
  * cancellation with its own number, RLS (owner sees own, platform staff all).
- * Tenant B (12-month subscription, 5,00 €) is moved back to June 2026 so that past months are billable.
+ * Tenant B (standard price) is moved back to June 2026 so that past months are billable.
  */
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -18,8 +18,6 @@ beforeAll(async () => {
   await db.admin.query("update public.tenants set created_at = '2026-06-01 00:00 Europe/Berlin' where id = $1", [B]);
   await db.admin.query("update public.employee_status_history set valid_from = '2026-06-01 00:00 Europe/Berlin' where tenant_id = $1", [B]);
   await db.admin.query("update public.tenant_status_history set valid_from = '2026-06-01 00:00 Europe/Berlin' where tenant_id = $1", [B]);
-  // Subscription (0023): tenant B has the 12-month subscription (5,00 €) in this file; the monthly plan is covered in subscriptions.test.ts.
-  await db.admin.query("update public.subscription_terms set billing_interval = 'annual', automatic = false where tenant_id = $1", [B]);
 });
 afterAll(async () => {
   await db?.close();
@@ -77,7 +75,7 @@ describe("issuing invoices", () => {
     expect(inv).toMatchObject({ kind: "invoice", number: `SW-${year}-000001`, seq: 1, month: "2026-06", net_cents: 420, vat_cents: 80, gross_cents: 500, vat_rate_confirmed: false });
     expect(inv.recipient).toMatchObject({ name: "Muster Pflegedienst GmbH (Testdaten)", street: "Musterallee 99", postalCode: "54321" });
     expect(inv.issuer).toMatchObject({ issuerName: COMPLETE.issuerName, taxNumber: COMPLETE.taxNumber, vatId: COMPLETE.vatId });
-    expect(inv.lines).toEqual([{ description: "Zeiterfassung – abrechenbare Mitarbeitende 06/2026 (12-Monats-Abo)", quantity: 1, unitPriceCents: 500, amountCents: 500 }]);
+    expect(inv.lines).toEqual([{ description: "Zeiterfassung – abrechenbare Mitarbeitende 06/2026", quantity: 1, unitPriceCents: 500, amountCents: 500 }]);
     const p = (await db.admin.query("select status, billable_count, amount_cents, note from public.billing_periods where tenant_id = $1 and month = '2026-06'", [B])).rows[0];
     expect(p).toEqual({ status: "invoiced", billable_count: 1, amount_cents: 500, note: `Rechnung SW-${year}-000001` });
     const audit = (await db.admin.query("select action, tenant_id from public.audit_log where entity = 'invoice'")).rows;

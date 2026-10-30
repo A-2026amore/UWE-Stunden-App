@@ -15,6 +15,9 @@ const cookies: Record<string, string> = {};
 beforeAll(async () => {
   t = await startTestServer();
   for (const who of ["ownerA", "managerA", "emp1A", "ownerB", "empB", "superAdmin", "support"] as const) cookies[who] = await t.login(who);
+  // Tenant B here like a customer that started after 0023 (no legacy months): monthly plan since 10/2026.
+  await t.db.admin.query("update public.tenant_subscriptions set terms_from = null where tenant_id = $1", [IDS.tenantB]);
+  await t.db.admin.query("update public.subscription_terms set starts_on = '2026-10-01' where tenant_id = $1", [IDS.tenantB]);
 });
 afterAll(async () => {
   await t?.close();
@@ -53,6 +56,7 @@ describe("subscription of an existing tenant", () => {
     const r = await t.call("POST", `/api/tenants/${B}/subscription/cancel`, { cookie: cookies.ownerB, body: { thenMonthly: true, reason: "Nur Test" } });
     expect(r.status).toBe(200);
     expect(r.body.next).toMatchObject({ interval: "monthly" });
+    expect(r.body.withdrawable).toMatchObject({ interval: "annual", thenMonthly: true });
     await new Promise((res) => setTimeout(res, 20));
     expect(t.mails).toHaveLength(1);
     expect(t.mails[0]).toMatchObject({ to: "inhaberin@muster-pflegedienst.example", subject: "Kündigungsbestätigung – Muster Pflegedienst GmbH" });
@@ -62,6 +66,16 @@ describe("subscription of an existing tenant", () => {
     expect(w.status).toBe(200);
     expect(w.body.next).toMatchObject({ interval: "annual", endsOn: null });
     expect((await t.call("POST", `/api/tenants/${B}/subscription/withdraw`, { cookie: cookies.ownerB, body: {} })).status).toBe(409);
+    expect(w.body.withdrawable).toBeNull();
+    // cancelling the planned switch (annual not started yet) undoes it: the monthly plan runs on
+    t.mails.length = 0;
+    const undo = await t.call("POST", `/api/tenants/${B}/subscription/cancel`, { cookie: cookies.ownerB, body: { thenMonthly: false } });
+    expect(undo.status).toBe(200);
+    expect(undo.body).toMatchObject({ current: { interval: "monthly", endsOn: null }, next: null, contractEndsOn: null, withdrawable: null });
+    await new Promise((res) => setTimeout(res, 20));
+    expect(t.mails).toEqual([expect.objectContaining({ to: "inhaberin@muster-pflegedienst.example", subject: "Tarifwechsel zurückgenommen – Muster Pflegedienst GmbH" })]);
+    expect(t.mails[0]!.text).toContain("Tarifwechsel zurückgenommen, Monatstarif läuft weiter.");
+    expect(t.mails[0]!.text).not.toContain("läuft bis einschließlich");
     const audit = await t.call("GET", `/api/tenants/${B}/audit`, { cookie: cookies.ownerB });
     expect(audit.body.map((e: { action: string }) => e.action)).toEqual(expect.arrayContaining(["subscription.choose", "subscription.cancel", "subscription.withdraw"]));
     const platform = await t.call("GET", "/api/platform/audit?limit=50", { cookie: cookies.support });
@@ -159,15 +173,17 @@ describe("billing job (run once)", () => {
   it("sends the trial reminder once and issues/mails the monthly invoice once", async () => {
     const today = (await t.db.admin.query("select private.berlin_today()::text as d")).rows[0].d as string;
     const tenant = (await t.db.admin.query("select id from public.tenants where slug = 'abo-neu'")).rows[0].id as string;
-    const trial = (await t.db.admin.query("select trial_ends_on::text as d from public.tenant_subscriptions where tenant_id = $1", [tenant])).rows[0].d as string;
-    const minus14 = (await t.db.admin.query("select ($1::date - 14)::text as d", [trial])).rows[0].d as string;
+    // the server job always works with today: let the trial of the new tenant end in 14 days
+    await t.db.admin.query("update public.tenant_subscriptions set trial_ends_on = $2::date + 14 where tenant_id = $1", [tenant, today]);
+    await t.db.admin.query("update public.subscription_terms set starts_on = date_trunc('month', $2::date + 14)::date where tenant_id = $1", [tenant, today]);
     const sent: Mail[] = [];
-    const r = await runBillingJobs(t.pool, (m) => sent.push(...m), { today: minus14 });
+    const r = await runBillingJobs(t.pool, (m) => sent.push(...m));
     expect(r.reminders).toBe(1);
     expect(sent[0]).toMatchObject({ to: "inhaber@abo-neu.example" });
     expect(sent[0]!.subject).toContain("Ihre kostenlose Testphase endet am");
-    expect(sent[0]!.text).toContain("Monatstarif (6,50 €");
-    expect((await runBillingJobs(t.pool, () => undefined, { today: minus14 })).reminders).toBe(0);
+    expect(sent[0]!.text).toContain("Ab dem Folgemonat wird der Monatstarif (6,50 € je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.) berechnet.");
+    expect((await runBillingJobs(t.pool, () => undefined)).reminders).toBe(0);
+    if (Number(today.slice(8, 10)) < 2) return; // monthly invoices start on the 2nd
 
     // monthly invoice: tenant B as a real customer since June with complete data
     await t.db.admin.query("update public.tenants set created_at = '2026-06-01 00:00 Europe/Berlin', is_demo = false where id = $1", [B]);
@@ -178,15 +194,14 @@ describe("billing job (run once)", () => {
       cookie: cookies.superAdmin,
       body: { issuerName: "Beispiel Software GmbH (Testdaten)", issuerStreet: "Musterstraße 1", issuerPostalCode: "52062", issuerCity: "Aachen", vatId: "DE123456789", reason: "Absender" },
     });
-    const second = `${today.slice(0, 7)}-02`;
     const mails: Mail[] = [];
-    const run = await runBillingJobs(t.pool, (m) => mails.push(...m), { today: second });
+    const run = await runBillingJobs(t.pool, (m) => mails.push(...m));
     expect(run.invoices.issued).toEqual([expect.objectContaining({ tenantId: B, grossCents: 650 })]);
     const inv = run.invoices.issued[0]!;
     expect(mails).toEqual([expect.objectContaining({ to: "inhaberin@muster-pflegedienst.example", subject: expect.stringMatching(new RegExp(`^Neue Rechnung ${inv.number} für \\S+ \\d{4}$`)) })]);
     expect(mails[0]!.text).toContain("6,50 €");
     expect(mails[0]!.text).toContain("Chef-Portal unter „Abrechnung“");
-    const again = await runBillingJobs(t.pool, () => undefined, { today: second });
+    const again = await runBillingJobs(t.pool, () => undefined);
     expect(again.invoices.issued).toEqual([]);
     const own = await t.call("GET", `/api/tenants/${B}/invoices`, { cookie: cookies.ownerB });
     expect(own.body.map((i: { number: string }) => i.number)).toEqual([inv.number]);

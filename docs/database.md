@@ -313,7 +313,10 @@ Europe/Berlin (`private.berlin_today()`).
   je +6 Monate (berechnet: Ende k = Start + (12 + 6k) Monate − 1 Tag), solange nicht bis Laufzeitende −
   `cancel_notice_days` gekündigt. Trigger beim Anlegen einer Firma: Monatstarif ab dem ersten zahlpflichtigen Monat;
   wird `tenants.created_at` korrigiert (Seed), folgen Testphase und Start, solange nur diese automatische Laufzeit besteht.
-- `private.billing_condition`: Sperre → Pilot → kostenlos → `trial` → keine Laufzeit `ended` (0 €) → Sonderpreis →
+- Bestandsfirmen (vor 0023): `tenant_subscriptions.terms_from` = Monatserster nach der Migration (Berlin), die
+  Monatstarif-Laufzeit beginnt dort. Monate davor rechnen nach der bisherigen Regel (Standardpreis, keine Laufzeit
+  nötig) – kein rückwirkender Monatstarif. Neue Firmen: `terms_from` leer. Die Seed-Firmen werden wie Bestandsfirmen behandelt.
+- `private.billing_condition`: Sperre → Pilot → kostenlos → (vor `terms_from`: bisherige Regel) → `trial` → keine Laufzeit `ended` (0 €) → Sonderpreis →
   `standard` (12-Monats-Abo) / `monthly` → Aktionsrabatt. Eingefrorene Monate und ausgestellte Rechnungen bleiben
   unverändert; Änderungen am Tarif wirken nur ab dem laufenden bzw. nächsten Monat. Rechnungszeile nennt
   „12-Monats-Abo“ bzw. „Monatstarif“.
@@ -321,8 +324,17 @@ Europe/Berlin (`private.berlin_today()`).
   Bestehende Firmen und Seed-/Testumgebungsfirmen: `bestand`/`testumgebung`. Trigger `private.contract_guard` auf
   `time_entries`, `employees`, `invitations`: Mitglieder der Firma können vor dem Vertragsschluss nichts anlegen
   (55000); Plattform, Operator-CLI und Wartung (kein Mitglied) sind nicht betroffen.
+- Kündigung eines geplanten, noch nicht begonnenen Wechsels (ohne „danach monatlich“): der Wechsel wird
+  zurückgenommen, die ersetzte Laufzeit läuft weiter (Audit `subscription.cancel` mit `undoneSwitch`).
+  `TenantSubscription.withdrawable`: die Kündigung, die „zurücknehmen“ aufheben würde.
+- Willkommenscode: ein neu gesetzter Code muss aktiv sein; der unveränderte gespeicherte Code darf inzwischen beendet sein.
 - `subscription_reminders`: je Firma, Art (`trial_end`, `annual_renewal`) und Stichtag genau eine Erinnerung;
-  `auth.claim_subscription_reminders(p_today)` (Rollen `app_auth`, `app_service`).
+  `auth.claim_subscription_reminders(p_today)` (Rollen `app_auth`, `app_service`). Testphase: nur mit
+  Vertragsschluss und einer (nicht gekündigten) Laufzeit nach der Testphase. Verlängerung: von
+  `add_months(Ende − Frist, −1)` bis `Ende − Frist`. Empfänger: aktive Inhaber (`private.owner_emails`, Konto-Adresse,
+  sonst Adresse im Personaldatensatz) – auch für die Kündigungsbestätigung (`tenant_subscription_mail_recipients`).
+- `p_today` (abweichender Stichtag) nur aus der Wartung (Rolle `app_service`) bzw. als Eigentümer ohne Rollenwechsel;
+  der Server-Job (`app_auth`) arbeitet immer mit heute (sonst 42501).
 - Monatsrechnungen: `private.set_billing_status` und `private.issue_invoice` enthalten den unveränderten Ablauf von
   `platform_set_billing_status`/`platform_issue_invoice` (die öffentlichen Funktionen prüfen den Super-Admin und rufen
   sie auf). `auth.issue_monthly_invoices(p_today)` (Rollen `app_auth`, `app_service`) erzeugt ab dem 2. die Rechnungen

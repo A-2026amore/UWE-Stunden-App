@@ -370,10 +370,13 @@ describe("demo repository – price model (billing)", () => {
     expect(hist.map((h) => h.month)).toEqual(["2026-10", "2026-09", "2026-08"]);
   });
 
-  it("standard customer without plan choice: monthly plan, 3 employees × 6,50 € = 19,50 € gross", async () => {
-    // Since 0023 existing tenants have a monthly term from the month of creation (no trial).
+  it("standard customer: 3 employees × 5,00 € = 15,00 € before the subscription model, monthly plan afterwards", async () => {
+    // Existing tenants (0023): the model starts with the month after the seed day (here 01.11.2026); earlier months keep 5,00 €.
     const { repo } = await as("leitung@muster-pflege.example");
-    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "monthly", unitPriceCents: 650, billableCount: 3, amountCents: 1950, interval: "monthly", trialEndsOn: null });
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 3, amountCents: 1500, interval: null, trialEndsOn: null });
+    expect((await repo.getTenantSubscription(DEMO_TENANT_IDS.pflege)).current).toMatchObject({ interval: "monthly", startsOn: "2026-11-01", endsOn: null });
+    vi.setSystemTime(new Date("2026-11-05T10:00:00"));
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-11")).toMatchObject({ condition: "monthly", unitPriceCents: 650, interval: "monthly" });
   });
 
   it("no foreign billing, no billing for employees", async () => {
@@ -411,22 +414,21 @@ describe("demo repository – price model (billing)", () => {
     const rev = await repo.getPlatformRevenue("2026-09");
     expect(rev.paymentProvider).toBe("none");
     expect(JSON.stringify(rev)).not.toMatch(/Anna|Mia|Emil/);
-    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1950, status: "open", interval: "monthly" });
-    expect(rev.totals).toMatchObject({ amountCents: 0, demoAmountCents: 1950 }); // both seed tenants are demo tenants
+    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1500, status: "open", interval: null });
+    expect(rev.totals).toMatchObject({ amountCents: 0, demoAmountCents: 1500 }); // both seed tenants are demo tenants
 
     await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-10", "invoiced")).rejects.toThrow("Monatsende");
     await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "waived")).rejects.toThrow("Grund");
-    expect(await repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "invoiced", "RE-1")).toMatchObject({ status: "invoiced", final: true, amountCents: 1950 });
+    expect(await repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "invoiced", "RE-1")).toMatchObject({ status: "invoiced", final: true, amountCents: 1500 });
 
     await repo.setDefaultPrice(600, "Preisanpassung Test");
     expect((await repo.getBillingSettings()).defaultPriceCents).toBe(600);
     const after = await repo.getPlatformRevenue("2026-09");
-    // The default price is the 12-month price: the monthly plan of the tenant is unchanged.
-    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1950);
+    expect(after.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1500); // frozen
+    // October is before the subscription model: the default price applies; the monthly price does not.
+    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1800);
     await repo.updateBillingSettings({ monthlyPriceCents: 700, reason: "Preisanpassung Test" });
-    expect(after.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1950); // frozen
-    expect((await repo.getPlatformRevenue("2026-09")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ amountCents: 1950, interval: "monthly" }); // frozen
-    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(2100);
+    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1800);
 
     await repo.setLicense(DEMO_TENANT_IDS.pflege, "standard", { employeePriceCents: 400, conditionNote: "Rabatt", conditionValidFrom: "2026-10-01" });
     expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ condition: "special", amountCents: 1200 });
@@ -466,9 +468,17 @@ describe("demo repository – subscription (0023)", () => {
     await expect(repo.chooseSubscription(PFLEGE, "monthly")).rejects.toThrow("nur zum Ende der Laufzeit");
     expect((await repo.getTenantBilling(PFLEGE, "2026-11"))).toMatchObject({ condition: "monthly", unitPriceCents: 650 });
 
+    // Cancelling the planned switch undoes it: the monthly plan runs on.
+    sub = await repo.cancelSubscription(PFLEGE, {});
+    expect(sub.current).toMatchObject({ interval: "monthly", endsOn: null });
+    expect(sub.next).toBeNull();
+    expect(sub.withdrawable).toBeNull();
+    sub = await repo.chooseSubscription(PFLEGE, "annual");
+    expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01" });
     // Annual not started yet: cancelling costs nothing (never runs); with "then monthly" the monthly plan simply continues.
     sub = await repo.cancelSubscription(PFLEGE, { thenMonthly: true, reason: "Test" });
     expect(sub.next).toMatchObject({ interval: "monthly", startsOn: "2026-12-01", endsOn: null });
+    expect(sub.withdrawable).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: "2026-11-30" });
     sub = await repo.withdrawCancellation(PFLEGE);
     expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: null, cancelledAt: null });
 
@@ -481,6 +491,8 @@ describe("demo repository – subscription (0023)", () => {
     expect(sub.current).toMatchObject({ interval: "annual", endsOn: "2027-11-30", thenMonthly: true });
     expect(sub.next).toMatchObject({ interval: "monthly", startsOn: "2027-12-01", endsOn: null });
     expect(sub.contractEndsOn).toBeNull();
+    expect(sub.withdrawable).toMatchObject({ interval: "annual", endsOn: "2027-11-30" });
+    await expect(other.cancelSubscription(PFLEGE, { reason: "x".repeat(1001) })).rejects.toThrow("1000");
     sub = await other.withdrawCancellation(PFLEGE);
     expect(sub.current).toMatchObject({ interval: "annual", endsOn: null, currentTermEndsOn: "2027-11-30" });
     expect(sub.next).toBeNull();
@@ -541,16 +553,20 @@ describe("demo repository – subscription (0023)", () => {
     await owner.signIn("inhaber@test-fahrdienst.example", DEMO_PASSWORD);
     await expect(owner.acceptContract(o.tenant.id, { entrepreneur: false, termsAccepted: true, interval: "monthly" } as never)).rejects.toThrow("Unternehmer");
     await expect(owner.acceptContract(o.tenant.id, { entrepreneur: true, termsAccepted: false, interval: "monthly" } as never)).rejects.toThrow("AGB");
-    // Employees of a tenant without contract cannot sign in yet.
-    await owner.inviteEmployee(o.tenant.id, { displayName: "Test Person", personnelNumber: "2", email: "person@test-fahrdienst.example", role: "employee" });
-    const employee = createDemoRepository(storage, { now: NOW, sessionKey: "employee" });
-    await expect(employee.signIn("person@test-fahrdienst.example", DEMO_PASSWORD)).rejects.toThrow("noch nicht freigeschaltet");
+    // Nothing can be used before the contract (like private.assert_contract).
+    const pending = "Die Firma ist noch nicht freigeschaltet: Der Inhaber muss zuerst den Nutzungsbedingungen zustimmen.";
+    const invite = { displayName: "Test Person", personnelNumber: "2", email: "person@test-fahrdienst.example", role: "employee" as const };
+    await expect(owner.inviteEmployee(o.tenant.id, invite)).rejects.toThrow(pending);
+    const me = (await owner.currentSession())!.employeeId!;
+    await expect(owner.createTimeEntry(me, { id: "t-1", date: "2026-11-19", start: "08:00", end: "12:00", pauseMinutes: 0, note: "" })).rejects.toThrow(pending);
+    await expect(owner.chooseSubscription(o.tenant.id, "annual")).rejects.toThrow(pending);
+    await expect(owner.cancelSubscription(o.tenant.id, {})).rejects.toThrow(pending);
     const sub = await owner.acceptContract(o.tenant.id, { entrepreneur: true, termsAccepted: true, interval: "annual" });
     expect(sub.contract).toMatchObject({ termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: "annual", acceptedByName: "Inhaber/in" });
     // Annual from the first paid month after the trial (like chooseSubscription).
     expect(sub.current).toMatchObject({ interval: "annual", startsOn: "2027-03-01" });
     await expect(owner.acceptContract(o.tenant.id, { entrepreneur: true, termsAccepted: true, interval: "monthly" })).rejects.toThrow("bereits");
     expect((await owner.listAudit(o.tenant.id, 20)).map((e) => e.action)).toContain("subscription.accept");
-    await employee.signIn("person@test-fahrdienst.example", DEMO_PASSWORD);
+    await owner.inviteEmployee(o.tenant.id, invite);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * Blocked customers (migration 0018): tenant status history and "not billed from the
  * month after the block" with month boundaries in Europe/Berlin.
- * Tenant B (monthly plan 6,50 €, no plan chosen – 0023) is moved back to June 2026; its status history is rewritten per case.
+ * Tenant B (standard price) is moved back to June 2026; its status history is rewritten per case.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IDS, pgError, setupTestDb, type TestDb } from "./support/harness";
@@ -60,7 +60,7 @@ describe("billing of blocked tenants", () => {
   it("block on the 10th: that month is billed, the following month is 0 € (suspended)", async () => {
     await history([["active", "2026-06-01 00:00 Europe/Berlin", "2026-08-10 09:00 Europe/Berlin"],
                    ["suspended", "2026-08-10 09:00 Europe/Berlin", null, "Offene Rechnung"]]);
-    expect(await cond("2026-08")).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond("2026-08")).toEqual({ unit_price_cents: 500, condition: "standard" });
     expect(await cond("2026-09")).toEqual({ unit_price_cents: 0, condition: "tenant_suspended" });
     const sep = await overview("2026-09");
     expect(sep).toMatchObject({ condition: "tenant_suspended", unit_price_cents: 0, amount_cents: 0, block_reason: "Offene Rechnung" });
@@ -72,22 +72,22 @@ describe("billing of blocked tenants", () => {
   it("month boundaries in Europe/Berlin: 30.09. 23:30 → October free; 01.10. 00:30 → October still billed", async () => {
     await history([["active", "2026-06-01 00:00 Europe/Berlin", "2026-09-30 23:30 Europe/Berlin"],
                    ["deactivated", "2026-09-30 23:30 Europe/Berlin", null]]);
-    expect((await cond("2026-09")).condition).toBe("monthly");
+    expect((await cond("2026-09")).condition).toBe("standard");
     expect(await cond("2026-10")).toEqual({ unit_price_cents: 0, condition: "tenant_deactivated" });
     await history([["active", "2026-06-01 00:00 Europe/Berlin", "2026-10-01 00:30 Europe/Berlin"],
                    ["deactivated", "2026-10-01 00:30 Europe/Berlin", null]]);
-    expect((await cond("2026-10")).condition).toBe("monthly");
+    expect((await cond("2026-10")).condition).toBe("standard");
   });
 
   it("re-activation during a month makes that month billable again; pending is billed as before", async () => {
     await history([["active", "2026-06-01 00:00 Europe/Berlin", "2026-07-03 12:00 Europe/Berlin"],
                    ["suspended", "2026-07-03 12:00 Europe/Berlin", "2026-09-15 12:00 Europe/Berlin"],
                    ["active", "2026-09-15 12:00 Europe/Berlin", null]]);
-    expect((await cond("2026-07")).condition).toBe("monthly");
+    expect((await cond("2026-07")).condition).toBe("standard");
     expect((await cond("2026-08")).condition).toBe("tenant_suspended");
-    expect((await cond("2026-09")).condition).toBe("monthly");
+    expect((await cond("2026-09")).condition).toBe("standard");
     await history([["pending", "2026-06-01 00:00 Europe/Berlin", null]]);
-    expect((await cond("2026-08")).condition).toBe("monthly");
+    expect((await cond("2026-08")).condition).toBe("standard");
   });
 
   it("the customer sees the block (status and date, no reason); frozen months keep the condition", async () => {

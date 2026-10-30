@@ -27,7 +27,7 @@ import type {
   ContractAcceptance, StatementEvent, SubscriptionInterval, SubscriptionTerm, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import {
-  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinDateOf, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
+  DEFAULT_EMPLOYEE_PRICE_CENTS, addMonths as addMonthsBilling, billableReason, billingAmount, billingConditionFor, berlinDateOf, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
   promoFor, tenantBlockFor, type PromoPeriod, type TenantStatusPeriod,
   type StatusPeriod,
 } from "../core/billing";
@@ -165,6 +165,8 @@ interface DemoSubscription {
   createdOn: ISODate;
   trialEndsOn: ISODate | null;
   terms: TermRow[];
+  /** Existing tenants (before 0023): first day of the subscription model; earlier months keep the old rule. Null for new tenants. */
+  termsFrom?: ISODate | null;
   /** Contract conclusion by the owner; null = not yet (new tenants). Missing in older stored demo databases = accepted. */
   contract?: ContractAcceptance | null;
 }
@@ -243,6 +245,9 @@ export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, Pr
 function tenantBlockedText(tenant: Tenant | undefined): string {
   return tenant?.status === "deactivated" ? "Der Firmenzugang ist deaktiviert." : "Der Firmenzugang ist derzeit gesperrt.";
 }
+
+/** Same message as the database (private.assert_contract, 0023). */
+const CONTRACT_PENDING = "Die Firma ist noch nicht freigeschaltet: Der Inhaber muss zuerst den Nutzungsbedingungen zustimmen.";
 
 /** Version marker of contracts concluded before migration 0023 (outside the app). */
 const EXISTING_CONTRACT = "bestand";
@@ -606,7 +611,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       const froms = [...(db.tenantStatusHistory ?? []).filter((h) => h.tenantId === t.id).map((h) => h.from),
         ...(db.statusHistory ?? []).filter((h) => h.tenantId === t.id).map((h) => h.from)].sort();
       const createdOn = berlinDateOf(froms[0] ?? db.seededAt);
-      subs.push({ tenantId: t.id, createdOn, trialEndsOn: null, terms: [newTerm("monthly", firstDayOf(monthOfDate(createdOn)))] });
+      // Like migration 0023 for existing tenants: the model starts with the month after "today" (seed day).
+      const termsFrom = firstDayOf(addMonthsBilling(monthOfDate(berlinDateOf(db.seededAt)), 1));
+      subs.push({ tenantId: t.id, createdOn, trialEndsOn: null, termsFrom, terms: [newTerm("monthly", termsFrom)] });
     }
     // Existing demo tenants: contract concluded outside the app ("bestand", like migration 0023).
     for (const x of subs) {
@@ -932,6 +939,10 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     return { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, ...st,
       welcomePromoCode: st.welcomePromoCodeId ? db.promoCodes?.find((c) => c.id === st.welcomePromoCodeId)?.code ?? null : null, currency: "EUR" };
   }
+  /** Like private.assert_contract (0023): changes only after the owner has concluded the contract. */
+  function assertContract(db: DemoDb, tenantId: UUID) {
+    if ((db.subscriptions ?? []).find((x) => x.tenantId === tenantId)?.contract === null) throw new Error(CONTRACT_PENDING);
+  }
   function subscriptionOf(db: DemoDb, tenantId: UUID): DemoSubscription {
     const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
     if (!sub) throw new AccessDeniedError();
@@ -941,7 +952,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
   function subscriptionForMonth(db: DemoDb, tenantId: UUID, month: ISOMonth) {
     const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
     if (!sub) return null;
-    return { trialEndsOn: sub.trialEndsOn, interval: termForMonth(sub.terms, month)?.interval ?? null, monthlyPriceCents: billingSettingsOf(db).monthlyPriceCents };
+    return { trialEndsOn: sub.trialEndsOn, interval: termForMonth(sub.terms, month)?.interval ?? null, monthlyPriceCents: billingSettingsOf(db).monthlyPriceCents,
+      termsFrom: sub.termsFrom ?? null };
   }
   function termOut(t: TermRow | null, today: ISODate): SubscriptionTerm | null {
     if (!t) return null;
@@ -956,7 +968,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       tenantId, trialEndsOn: sub.trialEndsOn, inTrial: !!sub.trialEndsOn && today <= sub.trialEndsOn,
       firstPaidMonth: firstPaidMonthFor(sub.createdOn, sub.trialEndsOn),
       current: termOut(view.current, today), next: termOut(view.next, today), contractEndsOn: view.contractEndsOn, ended: view.ended,
-      contract: sub.contract ?? null,
+      withdrawable: termOut(view.withdrawable, today), contract: sub.contract ?? null,
       annualPriceCents: st.defaultPriceCents, monthlyPriceCents: st.monthlyPriceCents, termMonths: TERM_MONTHS, renewalMonths: RENEWAL_MONTHS,
       cancelNoticeDays: st.cancelNoticeDays,
     };
@@ -1306,6 +1318,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async inviteEmployee(tenantId, input) {
       return tx((db, s) => {
         assertManager(s, tenantId);
+        assertContract(db, tenantId);
         const name = input.displayName.trim();
         const nr = input.personnelNumber.trim();
         const email = input.email ? normEmail(input.email) : null;
@@ -1332,6 +1345,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const emp = db.employees.find((e) => e.id === employeeId);
         if (!emp) throw new AccessDeniedError();
         assertManager(s, emp.tenantId);
+        assertContract(db, emp.tenantId);
         if (emp.role !== "employee" && s.role !== "owner") throw new AccessDeniedError("Nur Inhaber dürfen Leitungspersonen einladen.");
         if (emp.status !== "invited") throw new Error("Dieser Mitarbeiter hat bereits ein Benutzerkonto.");
         if (!emp.email) throw new Error("Für die Einladung wird eine E-Mail-Adresse benötigt.");
@@ -1421,6 +1435,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async createTimeEntry(employeeId, entry: NewTimeEntry) {
       return tx((db, s) => {
         const emp = assertEmployeeWrite(db, s, employeeId);
+        assertContract(db, emp.tenantId);
         const existing = db.entries.find((e) => e.id === entry.id);
         if (existing) {
           if (existing.employeeId !== employeeId) throw new ConflictError("Diese Eintrags-ID ist bereits vergeben.");
@@ -1952,7 +1967,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const createdOn = berlinToday();
         const trialEndsOn = trialEndsOnFor(createdOn, billingSettingsOf(db));
         (db.subscriptions ??= []).push({ tenantId: tenant.id, createdOn, trialEndsOn,
-          terms: [newTerm("monthly", firstDayOf(firstPaidMonthFor(createdOn, trialEndsOn)))], contract: null });
+          terms: [newTerm("monthly", firstDayOf(firstPaidMonthFor(createdOn, trialEndsOn)))], termsFrom: null, contract: null });
         const owner: Employee = { id: uuid(), tenantId: tenant.id, personnelNumber: "1", displayName: "Inhaber/in", email: ownerEmail, role: "owner", status: "invited", createdAt: new Date().toISOString() };
         db.employees.push(owner);
         recordStatus(db, owner);
@@ -2188,6 +2203,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async chooseSubscription(tenantId, interval) {
       return tx((db, s) => {
         assertOwner(s, tenantId, "Den Tarif kann nur der Inhaber ändern.");
+        assertContract(db, tenantId);
         if (interval !== "annual" && interval !== "monthly") throw new Error("Ungültiger Tarif.");
         const sub = subscriptionOf(db, tenantId);
         const before = subscriptionAudit(sub);
@@ -2199,8 +2215,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async cancelSubscription(tenantId, input) {
       return tx((db, s) => {
         assertOwner(s, tenantId, "Kündigen kann nur der Inhaber.");
+        assertContract(db, tenantId);
         const reason = input.reason?.trim() || null;
-        if (reason && reason.length > 500) throw new Error("Die Begründung darf höchstens 500 Zeichen lang sein.");
+        if (reason && reason.length > 1000) throw new Error("Die Begründung darf höchstens 1000 Zeichen lang sein.");
         const sub = subscriptionOf(db, tenantId);
         const before = subscriptionAudit(sub);
         applyTermChange(sub, planCancel(sub.terms, berlinToday(), billingSettingsOf(db).cancelNoticeDays, !!input.thenMonthly), reason);
@@ -2228,6 +2245,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async withdrawCancellation(tenantId) {
       return tx((db, s) => {
         assertOwner(s, tenantId, "Eine Kündigung kann nur der Inhaber zurücknehmen.");
+        assertContract(db, tenantId);
         const sub = subscriptionOf(db, tenantId);
         const before = subscriptionAudit(sub);
         applyTermChange(sub, planWithdraw(sub.terms, berlinToday()), null);

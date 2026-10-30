@@ -21,8 +21,10 @@
 --      (owner only), platform_billing_settings, platform_update_billing_settings (super admin),
 --      platform_welcome_promo_code (platform staff), auth.claim_subscription_reminders
 --      (server job as app_auth, and app_service): reminders once each.
---  (6) Existing tenants: trial only if their creation day lies in the window (the window is
---      null after this migration, so no trial); a monthly term from the month of creation.
+--  (6) Existing tenants: tenant_subscriptions.terms_from = first day of the month after the
+--      migration (Berlin); a monthly term from terms_from. Months before terms_from keep the previous
+--      rule (platform default price 'standard', no term needed) – nothing is billed retroactively at
+--      the monthly price. New tenants: terms_from null.
 
 -- ================================================================= helpers
 
@@ -87,6 +89,8 @@ $$;
 create table public.tenant_subscriptions (
   tenant_id      uuid primary key references public.tenants (id) on delete cascade,
   trial_ends_on  date,
+  -- Tenants that existed before 0023: first day of the subscription model (earlier months: old rule).
+  terms_from     date check (terms_from is null or extract(day from terms_from) = 1),
   created_at     timestamptz not null default now()
 );
 
@@ -160,7 +164,9 @@ begin
                   where t.tenant_id = new.id and t.automatic and t.ends_on is null and t.cancelled_at is null) then
     v_trial := private.trial_ends_for(v_created);
     update public.tenant_subscriptions s set trial_ends_on = v_trial where s.tenant_id = new.id;
-    update public.subscription_terms t set starts_on = private.first_paid_day(v_created, v_trial)
+    update public.subscription_terms t
+       set starts_on = greatest(private.first_paid_day(v_created, v_trial),
+                                coalesce((select s.terms_from from public.tenant_subscriptions s where s.tenant_id = new.id), '-infinity'::date))
      where t.tenant_id = new.id;
   end if;
   return null;
@@ -170,12 +176,12 @@ create trigger tenants_subscription_restart after update of created_at on public
   for each row when (old.created_at is distinct from new.created_at)
   execute function private.tenants_subscription_restart();
 
--- (6) Existing tenants: no trial (window is null), monthly from the month of creation.
-insert into public.tenant_subscriptions (tenant_id, trial_ends_on)
-select t.id, private.trial_ends_for((t.created_at at time zone 'Europe/Berlin')::date) from public.tenants t;
+-- (6) Existing tenants: no trial (window is null); the subscription model starts with the next month,
+-- a monthly term from then. Earlier months keep the previous rule (see private.billing_condition).
+insert into public.tenant_subscriptions (tenant_id, trial_ends_on, terms_from)
+select t.id, null, (date_trunc('month', private.berlin_today()) + interval '1 month')::date from public.tenants t;
 insert into public.subscription_terms (tenant_id, billing_interval, starts_on, automatic)
-select s.tenant_id, 'monthly', private.first_paid_day((t.created_at at time zone 'Europe/Berlin')::date, s.trial_ends_on), true
-  from public.tenant_subscriptions s join public.tenants t on t.id = s.tenant_id;
+select s.tenant_id, 'monthly', s.terms_from, true from public.tenant_subscriptions s;
 
 -- ================================================================= contract conclusion
 
@@ -321,6 +327,7 @@ declare
   v_current public.subscription_terms;
   v_next public.subscription_terms;
   v_last public.subscription_terms;
+  v_withdrawable public.subscription_terms;
 begin
   select * into v_s from public.tenant_subscriptions s where s.tenant_id = p_tenant;
   select * into v_set from public.billing_settings s where s.id;
@@ -338,6 +345,10 @@ begin
      order by t.starts_on limit 1;
   end if;
   v_last := case when v_next.id is not null then v_next else v_current end;
+  -- the cancellation a withdraw would undo (core planWithdraw / withdrawableTerm)
+  select * into v_withdrawable from public.subscription_terms t
+   where t.tenant_id = p_tenant and t.cancelled_at is not null and t.ends_on is not null and t.ends_on >= v_today
+   order by t.starts_on desc limit 1;
   return jsonb_build_object(
     'tenantId', p_tenant,
     'trialEndsOn', v_s.trial_ends_on,
@@ -347,6 +358,7 @@ begin
     'next', private.subscription_term_json(v_next, v_today),
     'contractEndsOn', v_last.ends_on,
     'ended', v_current.id is null,
+    'withdrawable', private.subscription_term_json(v_withdrawable, v_today),
     'contract', (select jsonb_build_object(
                    'acceptedAt', c.accepted_at,
                    'acceptedByName', (select e.display_name from public.employees e
@@ -378,6 +390,7 @@ declare
   v_applies boolean;
   v_block text;
   v_trial date;
+  v_terms_from date;
   v_interval text;
   v_price integer;
   v_condition text;
@@ -401,15 +414,20 @@ begin
     return query select 0, 'free'::text, v_lic.plan;
     return;
   end if;
-  select s.trial_ends_on into v_trial from public.tenant_subscriptions s where s.tenant_id = p_tenant;
-  if v_trial is not null and v_first <= v_trial then
-    return query select 0, 'trial'::text, v_lic.plan;
-    return;
-  end if;
-  v_interval := private.term_interval_for(p_tenant, p_month);
-  if v_interval is null then
-    return query select 0, 'ended'::text, v_lic.plan;
-    return;
+  select s.trial_ends_on, s.terms_from into v_trial, v_terms_from from public.tenant_subscriptions s where s.tenant_id = p_tenant;
+  if v_terms_from is not null and v_first < v_terms_from then
+    -- before the subscription model (tenant existed before 0023): previous rule, default price
+    v_interval := 'legacy';
+  else
+    if v_trial is not null and v_first <= v_trial then
+      return query select 0, 'trial'::text, v_lic.plan;
+      return;
+    end if;
+    v_interval := private.term_interval_for(p_tenant, p_month);
+    if v_interval is null then
+      return query select 0, 'ended'::text, v_lic.plan;
+      return;
+    end if;
   end if;
   if v_applies and v_lic.employee_price_cents is not null then
     v_price := v_lic.employee_price_cents;
@@ -754,6 +772,7 @@ declare
   v_paid date;
   v_before jsonb;
   v_open public.subscription_terms;
+  v_replaced public.subscription_terms;
   v_end date;
   v_then boolean := coalesce(p_then_monthly, false);
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
@@ -772,6 +791,22 @@ begin
   end if;
   if v_then and v_open.billing_interval <> 'annual' then
     raise exception '„Danach monatlich weiter“ gibt es nur beim 12-Monats-Abo.' using errcode = '22023';
+  end if;
+  -- A planned switch that has not started (core planCancel): cancelling undoes the switch; the
+  -- replaced term (ended the day before by the switch, not cancelled) runs on.
+  if v_open.starts_on > v_today and not v_then then
+    select * into v_replaced from public.subscription_terms t
+     where t.tenant_id = p_tenant and t.cancelled_at is null and t.ends_on = v_open.starts_on - 1 and t.ends_on >= t.starts_on;
+    if v_replaced.id is not null then
+      delete from public.subscription_terms t where t.id = v_open.id;
+      update public.subscription_terms t set ends_on = null where t.id = v_replaced.id;
+      perform private.write_audit(p_tenant, 'subscription.cancel', 'subscription', p_tenant::text,
+        v_before, private.subscription_json(p_tenant)
+          || jsonb_build_object('undoneSwitch', true, 'cancelledInterval', v_open.billing_interval,
+                                'continuesInterval', v_replaced.billing_interval),
+        coalesce(v_reason, 'Geplanter Tarifwechsel zurückgenommen'));
+      return private.subscription_json(p_tenant);
+    end if;
   end if;
   v_end := private.cancellation_end(v_open.billing_interval, v_open.starts_on, v_today,
     (select s.cancel_notice_days from public.billing_settings s where s.id));
@@ -928,7 +963,8 @@ begin
       exception when invalid_text_representation then
         v_code := null;
       end;
-      if v_code.id is null or v_code.ended_at is not null then
+      -- only a newly set code must be active; the unchanged stored code may have ended meanwhile
+      if v_code.id is null or (v_code.ended_at is not null and v_code.id is distinct from v_row.welcome_promo_code_id) then
         raise exception 'Der Willkommenscode ist unbekannt oder beendet.' using errcode = '22023';
       end if;
       v_row.welcome_promo_code_id := v_code.id;
@@ -977,6 +1013,42 @@ $$;
 
 -- ================================================================= reminders (server job)
 
+-- A day other than today is only accepted from maintenance (role app_service) or the owner/superuser
+-- (role not switched); the server job (app_auth) always works with today.
+create or replace function private.assert_maintenance_day(p_today date) returns void
+language plpgsql stable
+set search_path = ''
+as $$
+begin
+  if p_today is not null and current_setting('role') not in ('app_service', 'none') then
+    raise exception 'Ein abweichender Stichtag ist nur für Wartungsaufgaben erlaubt.' using errcode = '42501';
+  end if;
+end
+$$;
+
+-- E-mail addresses of the active owners (account address, else the address in the employee record).
+create or replace function private.owner_emails(p_tenant uuid) returns text[]
+language sql stable security definer
+set search_path = ''
+as $$
+  select coalesce(array_agg(distinct coalesce(u.email, em.email) order by coalesce(u.email, em.email)), '{}'::text[])
+    from public.employees em left join auth.users u on u.id = em.user_id
+   where em.tenant_id = p_tenant and em.role = 'owner' and em.status = 'active' and coalesce(u.email, em.email) is not null
+$$;
+
+-- Owner: recipients of the cancellation confirmation (all active owners of the own tenant).
+create or replace function public.tenant_subscription_mail_recipients(p_tenant uuid) returns text[]
+language plpgsql stable security definer
+set search_path = ''
+as $$
+begin
+  if not private.is_owner(p_tenant) then
+    raise exception 'Nur für den Inhaber.' using errcode = '42501';
+  end if;
+  return private.owner_emails(p_tenant);
+end
+$$;
+
 -- Claims the reminders that are due today (each one only once) and returns them with the
 -- e-mail addresses of the active owners. Called by the server job as app_auth (no user);
 -- p_today only for tests and maintenance (default: today in Berlin).
@@ -994,18 +1066,25 @@ declare
   v_today date := coalesce(p_today, private.berlin_today());
   v_set public.billing_settings;
 begin
+  perform private.assert_maintenance_day(p_today);
   select * into v_set from public.billing_settings s where s.id;
   return query
   with due as (
+    -- only with a concluded contract and a (not cancelled) term after the trial
     select s.tenant_id, 'trial_end'::text as kind, s.trial_ends_on as ref_date, s.trial_ends_on as cancel_by
       from public.tenant_subscriptions s
      where s.trial_ends_on is not null and v_today between s.trial_ends_on - 14 and s.trial_ends_on
+       and exists (select 1 from public.tenant_contracts c where c.tenant_id = s.tenant_id)
+       and exists (select 1 from public.subscription_terms t
+                    where t.tenant_id = s.tenant_id and t.cancelled_at is null and (t.ends_on is null or t.ends_on >= t.starts_on)
+                      and t.starts_on <= s.trial_ends_on + 1 and (t.ends_on is null or t.ends_on > s.trial_ends_on))
     union all
     select x.tenant_id, 'annual_renewal', x.term_end, x.term_end - v_set.cancel_notice_days
       from (select t.tenant_id, private.current_annual_end(t.starts_on, v_today) as term_end
               from public.subscription_terms t
              where t.billing_interval = 'annual' and t.ends_on is null and t.starts_on <= v_today) x
-     where v_today >= private.add_months(x.term_end, -1) and v_today <= x.term_end - v_set.cancel_notice_days
+     where v_today >= private.add_months(x.term_end - v_set.cancel_notice_days, -1)
+       and v_today <= x.term_end - v_set.cancel_notice_days
   ),
   eligible as (
     select d.* from due d join public.tenants t on t.id = d.tenant_id
@@ -1021,10 +1100,7 @@ begin
          case when c.kind = 'trial_end' then private.term_interval_for(c.tenant_id, to_char(c.ref_date + 1, 'YYYY-MM'))
               else 'annual' end,
          v_set.default_price_cents, v_set.monthly_price_cents,
-         coalesce((select array_agg(distinct coalesce(u.email, em.email) order by coalesce(u.email, em.email))
-                     from public.employees em left join auth.users u on u.id = em.user_id
-                    where em.tenant_id = c.tenant_id and em.role = 'owner' and em.status = 'active'
-                      and coalesce(u.email, em.email) is not null), '{}'::text[])
+         private.owner_emails(c.tenant_id)
     from claimed c
     join eligible e on e.tenant_id = c.tenant_id and e.kind = c.kind and e.ref_date = c.ref_date
     join public.tenants t on t.id = c.tenant_id
@@ -1226,6 +1302,7 @@ declare
   v_problem text;
   v_emails text[];
 begin
+  perform private.assert_maintenance_day(p_today);
   if extract(day from v_today) < 2 then
     return;
   end if;
@@ -1246,9 +1323,7 @@ begin
     exception when sqlstate '55000' or sqlstate '42501' or sqlstate '22023' then
       v_problem := sqlerrm;
     end;
-    select coalesce(array_agg(distinct coalesce(u.email, em.email)), '{}'::text[]) into v_emails
-      from public.employees em left join auth.users u on u.id = em.user_id
-     where em.tenant_id = r.id and em.role = 'owner' and em.status = 'active' and coalesce(u.email, em.email) is not null;
+    v_emails := private.owner_emails(r.id);
     return query select r.id, r.name, v_month, v_inv.id, v_inv.number, v_inv.gross_cents, v_problem,
                         case when v_inv.id is null then '{}'::text[] else v_emails end;
   end loop;
@@ -1310,7 +1385,10 @@ revoke all on function
   auth.claim_subscription_reminders(date),
   private.set_billing_status(uuid, text, text, text),
   private.issue_invoice(uuid, text, boolean),
-  auth.issue_monthly_invoices(date)
+  auth.issue_monthly_invoices(date),
+  private.assert_maintenance_day(date),
+  private.owner_emails(uuid),
+  public.tenant_subscription_mail_recipients(uuid)
 from public;
 
 grant execute on function
@@ -1322,7 +1400,8 @@ grant execute on function
   public.tenant_accept_contract(uuid, boolean, boolean, text, text, text),
   public.platform_billing_settings(),
   public.platform_update_billing_settings(jsonb, text),
-  public.platform_welcome_promo_code()
+  public.platform_welcome_promo_code(),
+  public.tenant_subscription_mail_recipients(uuid)
 to app_user;
 
 grant execute on function auth.claim_subscription_reminders(date), auth.issue_monthly_invoices(date) to app_auth, app_service;

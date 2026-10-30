@@ -3,11 +3,11 @@ import type { BillingLine, BillingMonthSummary, SubscriptionInterval, TenantSubs
 import {
   BILLABLE_REASON_LABEL, BILLING_CONDITION_LABEL, VAT_NOTE, formatEuro,
 } from "../../../core/billing";
-import { INTERVAL_LABEL, PROMO_TERMS_NOTE, addMonthsToDate, addDays, cancellationEnd, firstDayOf } from "../../../core/subscription";
+import { INTERVAL_LABEL, PROMO_TERMS_NOTE, addMonthsToDate, addDays } from "../../../core/subscription";
 import { Alert, Button, Card, Checkbox, Dialog, InputField, SelectField, StatTile, StatusPill, Table, TextareaField, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, currentMonth, dateTimeDE, formatDateDE, monthLabelDE } from "../../shared/format";
-import { SubscriptionFacts, annualStartMonth, berlinToday, cancelDeadline, openTerm, priceLine, withdrawableTerm } from "../../shared/subscription";
+import { SubscriptionFacts, berlinToday, cancelDeadline, cancelPlan, choiceStart, openTerm, priceLine } from "../../shared/subscription";
 import { useChef } from "../context";
 import { TenantInvoices } from "../TenantInvoices";
 
@@ -165,6 +165,9 @@ function PromoCard() {
   );
 }
 
+/** "Das 12-Monats-Abo" / "Der Monatstarif" */
+const theInterval = (i: SubscriptionInterval) => `${i === "annual" ? "Das" : "Der"} ${INTERVAL_LABEL[i]}`;
+
 /** Plan of the tenant (migration 0023): trial, plan, term, cancellation. Only the owner changes it. */
 function TariffCard({ sub, pilot }: { sub: TenantSubscription; pilot: boolean }) {
   const { repo, tenant, me, changed } = useChef();
@@ -178,10 +181,17 @@ function TariffCard({ sub, pilot }: { sub: TenantSubscription; pilot: boolean })
   const owner = me.role === "owner";
   const today = berlinToday();
   const open = openTerm(sub);
-  const withdrawable = withdrawableTerm(sub, today);
-  const cancelEnd = open ? cancellationEnd(open, today, sub.cancelNoticeDays) : null;
-  const neverRuns = !!open && today < open.startsOn;
-  const canSwitch = !!open && open.interval === "monthly" && !(sub.next && sub.next.interval === "annual");
+  const withdrawable = sub.withdrawable;
+  const annualStart = choiceStart(sub, "annual", today);
+  const canSwitch = !!open && open.interval === "monthly" && !!annualStart;
+  // A planned switch (monthly → annual, not started): cancelling undoes it (core planCancel).
+  const plannedSwitch = !!open && open.interval === "annual" && open.startsOn > today && !!sub.current && sub.current.id !== open.id
+    && sub.current.interval === "monthly" && !sub.current.cancelledAt && sub.current.endsOn === addDays(open.startsOn, -1);
+  const monthlyAfter = !!open && open.interval === "annual" && !plannedSwitch && thenMonthly;
+  const plan = cancelPlan(sub, today, monthlyAfter);
+  const planEnd = plan?.end[0]?.endsOn ?? null;
+  const endsContract = !!plan && !plan.add && plan.reopen.length === 0;
+  const neverRuns = !!open && today < open.startsOn && !plannedSwitch;
 
   const run = async (fn: () => Promise<unknown>, done: string) => {
     setBusy(true); setError(null);
@@ -191,45 +201,54 @@ function TariffCard({ sub, pilot }: { sub: TenantSubscription; pilot: boolean })
   };
 
   const toAnnual = async () => {
-    const start = firstDayOf(annualStartMonth(sub, today));
-    const end = addDays(addMonthsToDate(start, sub.termMonths), -1);
+    if (!annualStart) return;
+    const end = addDays(addMonthsToDate(annualStart, sub.termMonths), -1);
+    const monthlyUntil = sub.current?.interval === "monthly" && sub.current.startsOn < annualStart;
     const ok = await dialogs.confirm({
       title: "Zum 12-Monats-Abo wechseln?", confirmLabel: "Verbindlich wechseln",
       message: <>
-        <p>Das 12-Monats-Abo beginnt am <strong>{formatDateDE(start)}</strong> und läuft {sub.termMonths} Monate fest bis {formatDateDE(end)}.
+        <p>Das 12-Monats-Abo beginnt am <strong>{formatDateDE(annualStart)}</strong> und läuft {sub.termMonths} Monate fest bis {formatDateDE(end)}.
           Preis: {priceLine(sub, "annual")}, {VAT_NOTE}.</p>
         <p>Es verlängert sich jeweils um {sub.renewalMonths} Monate, wenn Sie nicht bis {formatDateDE(cancelDeadline(end, sub.cancelNoticeDays))} kündigen
           {sub.cancelNoticeDays ? ` (${sub.cancelNoticeDays} Tage vor Laufzeitende)` : " (letzter Tag der Laufzeit)"}.</p>
-        {start > firstDayOf(sub.firstPaidMonth) && <p>Bis dahin gilt der Monatstarif.</p>}
+        {monthlyUntil && <p>Bis dahin gilt der Monatstarif.</p>}
       </>,
     });
-    if (ok) await run(() => repo.chooseSubscription(tenant.id, "annual"), `12-Monats-Abo ab ${formatDateDE(start)} gewählt.`);
+    if (ok) await run(() => repo.chooseSubscription(tenant.id, "annual"), `12-Monats-Abo ab ${formatDateDE(annualStart)} gewählt.`);
   };
 
   const choose = async (interval: SubscriptionInterval) => {
+    const start = choiceStart(sub, interval, today);
+    if (!start) return;
     const ok = await dialogs.confirm({
       title: `${INTERVAL_LABEL[interval]} wählen?`, confirmLabel: "Kostenpflichtig wählen",
       message: interval === "annual"
-        ? `Das 12-Monats-Abo beginnt mit dem laufenden Monat und läuft ${sub.termMonths} Monate fest. Es verlängert sich jeweils um ${sub.renewalMonths} Monate, wenn Sie nicht bis zum Ende der Laufzeit kündigen. Preis: ${priceLine(sub, "annual")}.`
-        : `Der Monatstarif beginnt mit dem laufenden Monat und ist zum Monatsende kündbar. Preis: ${priceLine(sub, "monthly")}.`,
+        ? `Das 12-Monats-Abo beginnt am ${formatDateDE(start)} und läuft ${sub.termMonths} Monate fest. Es verlängert sich jeweils um ${sub.renewalMonths} Monate, wenn Sie nicht bis zum Ende der Laufzeit kündigen. Preis: ${priceLine(sub, "annual")}.`
+        : `Der Monatstarif beginnt am ${formatDateDE(start)} und ist zum Monatsende kündbar. Preis: ${priceLine(sub, "monthly")}.`,
     });
-    if (ok) await run(() => repo.chooseSubscription(tenant.id, interval), `${INTERVAL_LABEL[interval]} gewählt.`);
+    if (ok) await run(() => repo.chooseSubscription(tenant.id, interval), `${INTERVAL_LABEL[interval]} ab ${formatDateDE(start)} gewählt.`);
   };
 
   const submitCancel = async (e: Event) => {
     e.preventDefault();
-    const monthlyAfter = open?.interval === "annual" && thenMonthly;
-    const ok = await run(() => repo.cancelSubscription(tenant.id, { thenMonthly: monthlyAfter, reason: reason.trim() || null }),
-      neverRuns ? "Tarifwechsel gekündigt." : `Gekündigt zum ${formatDateDE(cancelEnd!)}${monthlyAfter ? ", danach Monatstarif" : ""}.`);
+    const done = plannedSwitch ? "Wechsel zum 12-Monats-Abo zurückgenommen."
+      : planEnd ? `Gekündigt zum ${formatDateDE(planEnd)}${monthlyAfter ? ", danach Monatstarif" : ""}.` : "Gekündigt.";
+    const ok = await run(() => repo.cancelSubscription(tenant.id, { thenMonthly: monthlyAfter, reason: reason.trim() || null }), done);
     if (ok) { setCancelling(false); setReason(""); }
   };
 
   const withdraw = async () => {
+    if (!withdrawable) return;
+    const started = withdrawable.startsOn <= today;
+    const dropped = sub.next && sub.next.id !== withdrawable.id && withdrawable.endsOn && sub.next.startsOn > withdrawable.endsOn ? sub.next : null;
     const ok = await dialogs.confirm({
       title: "Kündigung zurücknehmen?", confirmLabel: "Zurücknehmen",
-      message: withdrawable?.interval === "annual"
-        ? "Das 12-Monats-Abo läuft weiter und verlängert sich wie vereinbart. Ein geplanter Wechsel in den Monatstarif entfällt."
-        : "Der Tarif läuft unverändert weiter.",
+      message: <>
+        <p>{started
+          ? `${theInterval(withdrawable.interval)} endet nicht am ${formatDateDE(withdrawable.endsOn!)}, sondern läuft weiter${withdrawable.interval === "annual" ? " und verlängert sich wie vereinbart" : ""}.`
+          : `${theInterval(withdrawable.interval)} ab ${formatDateDE(withdrawable.startsOn)} gilt wieder.`}</p>
+        {dropped && <p>{dropped.interval === "annual" ? "Das geplante" : "Der geplante"} {INTERVAL_LABEL[dropped.interval]} ab {formatDateDE(dropped.startsOn)} entfällt.</p>}
+      </>,
     });
     if (ok) await run(() => repo.withdrawCancellation(tenant.id), "Kündigung zurückgenommen.");
   };
@@ -252,22 +271,26 @@ function TariffCard({ sub, pilot }: { sub: TenantSubscription; pilot: boolean })
       {owner && sub.ended && <p class="small muted">Der Vertrag ist beendet. Sie können einen neuen Tarif wählen.</p>}
       {!owner && <p class="xsmall muted" style={{ marginTop: "var(--space-3)" }}>Den Tarif ändert nur die Inhaberin oder der Inhaber.</p>}
       {error && <Alert tone="danger" live>{error}</Alert>}
-      {open && cancelEnd && (
-        <Dialog open={cancelling} title={`${INTERVAL_LABEL[open.interval]} kündigen?`} onClose={() => setCancelling(false)}
+      {open && (
+        <Dialog open={cancelling} title={plannedSwitch ? "Wechsel zum 12-Monats-Abo zurücknehmen?" : `${INTERVAL_LABEL[open.interval]} kündigen?`} onClose={() => setCancelling(false)}
           footer={<><Button variant="secondary" onClick={() => setCancelling(false)}>Abbrechen</Button>
             <Button variant="danger" type="submit" form="cancel-form" busy={busy}>Kündigen</Button></>}>
           <form id="cancel-form" class="stack" onSubmit={submitCancel} noValidate>
-            {neverRuns
-              ? <p>Der {INTERVAL_LABEL[open.interval]} beginnt erst am {formatDateDE(open.startsOn)}. Wenn Sie jetzt kündigen, beginnt er nicht und kostet nichts.</p>
-              : <p data-testid="cancel-end">Der Vertrag endet am <strong>{formatDateDE(cancelEnd)}</strong>. Bis dahin wird wie bisher berechnet.</p>}
-            {open.interval === "annual" && (
+            {plannedSwitch
+              ? <p data-testid="cancel-end">Der Wechsel zum 12-Monats-Abo wird zurückgenommen, der Monatstarif läuft weiter.</p>
+              : <>
+                  {neverRuns && <p>{theInterval(open.interval)} beginnt erst am {formatDateDE(open.startsOn)}. Wenn Sie jetzt kündigen, beginnt er nicht und kostet nichts.</p>}
+                  {planEnd && endsContract && <p data-testid="cancel-end">Der Vertrag endet am <strong>{formatDateDE(planEnd)}</strong>. Bis dahin wird wie bisher berechnet.</p>}
+                  {planEnd && !endsContract && !neverRuns && <p data-testid="cancel-end">{theInterval(open.interval)} endet am <strong>{formatDateDE(planEnd)}</strong>.</p>}
+                </>}
+            {open.interval === "annual" && !plannedSwitch && planEnd && (
               <Checkbox label="Danach im Monatstarif weiter" checked={thenMonthly} onChange={setThenMonthly}
-                hint={`Ab ${formatDateDE(addDays(cancelEnd, 1))}: ${priceLine(sub, "monthly")}, monatlich kündbar. Ohne Haken endet der Vertrag.`} />
+                hint={`Ab ${formatDateDE(addDays(planEnd, 1))}: ${priceLine(sub, "monthly")}, monatlich kündbar. Ohne Haken endet der Vertrag.`} />
             )}
-            {(open.interval === "monthly" || !thenMonthly) && !neverRuns && (
+            {endsContract && (
               <Alert tone="warning"><p>Danach besteht kein Vertrag mehr und es wird nichts berechnet. Sie können später wieder einen Tarif wählen.</p></Alert>
             )}
-            <TextareaField label="Grund (freiwillig)" optional value={reason} onValue={setReason} maxLength={500} />
+            <TextareaField label="Grund (freiwillig)" optional value={reason} onValue={setReason} maxLength={1000} />
             {error && <Alert tone="danger" live>{error}</Alert>}
           </form>
         </Dialog>

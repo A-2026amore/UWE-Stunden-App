@@ -256,10 +256,10 @@ Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …
 
 | Repository | HTTP | Wer |
 |---|---|---|
-| `getTenantSubscription` | `GET /api/tenants/:tenantId/subscription` → `TenantSubscription` (Testphase, aktuelle/nächste Laufzeit, Vertragsende, `contract`) | Inhaber, Leitung, Plattform |
+| `getTenantSubscription` | `GET /api/tenants/:tenantId/subscription` → `TenantSubscription` (Testphase, aktuelle/nächste Laufzeit, Vertragsende, `withdrawable`, `contract`) | Inhaber, Leitung, Plattform |
 | `acceptContract` | `POST /api/tenants/:tenantId/subscription/accept` `{entrepreneur: true, termsAccepted: true, interval}` → `TenantSubscription` · 400 Bestätigung fehlt · 409 bereits abgeschlossen. Speichert Zeitpunkt, Person und die Versionen `TERMS_VERSION`/`DPA_VERSION`; `annual` wählt das 12-Monats-Abo wie `choose` | Inhaber, einmalig |
 | `chooseSubscription` | `POST /api/tenants/:tenantId/subscription/choose` `{interval}` → `TenantSubscription` · 409 läuft bereits / Wechsel zum Monatstarif nur zum Laufzeitende / Firma nicht freigeschaltet | Inhaber |
-| `cancelSubscription` | `POST /api/tenants/:tenantId/subscription/cancel` `{thenMonthly?, reason?}` → `TenantSubscription`; Kündigungsbestätigung per E-Mail an alle aktiven Inhaber · 409 kein laufender Vertrag · 400 „danach monatlich“ nur beim 12-Monats-Abo | Inhaber |
+| `cancelSubscription` | `POST /api/tenants/:tenantId/subscription/cancel` `{thenMonthly?, reason?}` → `TenantSubscription`; Kündigungsbestätigung per E-Mail an alle aktiven Inhaber. Ein geplanter, noch nicht begonnener Wechsel wird stattdessen zurückgenommen (Mail „Tarifwechsel zurückgenommen, Monatstarif läuft weiter“) · 409 kein laufender Vertrag · 400 „danach monatlich“ nur beim 12-Monats-Abo | Inhaber |
 | `withdrawCancellation` | `POST /api/tenants/:tenantId/subscription/withdraw` `{}` → `TenantSubscription` · 409 keine Kündigung mehr zurücknehmbar | Inhaber |
 
 Bis zum Vertragsschluss lehnt die Datenbank Schreibzugriffe von Personen der Firma ab (Zeiteinträge, neue
@@ -271,8 +271,9 @@ einlösbar), enthält die Einladung des Inhabers den Code, den Weg zum Einlösen
 den Hinweis `PROMO_TERMS_NOTE`.
 
 **Abrechnungs-Job (stündlich, `startBillingJobs` in `server/src/main.ts`; einmalig: `cli.ts billing-jobs`, Tests: `runBillingJobs`)**
-- Erinnerungen (`auth.claim_subscription_reminders`, Rolle `app_auth`): 14 Tage vor Ende der Testphase und einen
-  Monat vor Ende der laufenden Laufzeit eines nicht gekündigten 12-Monats-Abos („verlängert sich um 6 Monate, wenn
+- Erinnerungen (`auth.claim_subscription_reminders`, Rolle `app_auth`, immer mit heute): 14 Tage vor Ende der Testphase
+  (nur mit Vertragsschluss und folgender Laufzeit) und einen Monat vor dem letzten Kündigungstag (Laufzeitende −
+  Kündigungsfrist) eines nicht gekündigten 12-Monats-Abos („verlängert sich um 6 Monate, wenn
   Sie nicht bis … kündigen“), je Firma, Art und Stichtag genau einmal, an alle aktiven Inhaber; keine Demo-/gesperrten Firmen.
 - Monatsrechnungen (`auth.issue_monthly_invoices`): ab dem 2. eines Monats (Berlin) die Rechnungen des Vormonats für
   jede Nicht-Demo-Firma mit Betrag > 0 € und ohne Rechnung für diesen Monat – derselbe Weg wie „Rechnung erzeugen“

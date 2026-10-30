@@ -40,8 +40,15 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
   Ohne Zeitraum gibt es keine Testphase.
 - **Willkommenscode:** Optional ein Aktionscode, der in der Einladung jedes neuen Mandanten steht, solange er
   einlösbar ist.
-- **Bestehende Kunden** (vor 0023): keine Testphase, Monatstarif ab dem Anlagemonat. Der Demo-Mandant
-  „Muster Pflegedienst“ wird daher mit 6,50 € berechnet.
+- **Bestehende Kunden** (vor 0023): keine Testphase. Bis zum Ende des Monats der Umstellung gilt die
+  bisherige Regel (Standardpreis 5,00 €, kein Vertrag nötig); ab dem Folgemonat (`termsFrom`) der Monatstarif,
+  sofern der Inhaber nichts anderes wählt. In der Demo (heute 20.11.2026) wird „Muster Pflegedienst“ daher bis
+  November mit 5,00 €, ab Dezember mit 6,50 € berechnet. Der Vertragsschluss gilt als erfolgt („bestand“).
+- **Kündigung eines geplanten Wechsels:** Ist das 12-Monats-Abo gewählt, hat aber noch nicht begonnen, nimmt
+  „Kündigen“ den Wechsel zurück; der Monatstarif läuft weiter.
+- **Vor dem Vertragsschluss** lehnen Plattform und Demo Änderungen ab (Tarif, Arbeitszeiten, Mitarbeitende,
+  Einladungen): „Die Firma ist noch nicht freigeschaltet: Der Inhaber muss zuerst den Nutzungsbedingungen
+  zustimmen.“
 - Reihenfolge der Preisregeln je Monat: Firma gesperrt → Pilot → kostenloses Konto → Testphase →
   kein Vertrag (0 €) → Sonderpreis → 12-Monats-Abo bzw. Monatstarif → Aktionsrabatt darauf.
 - Abgeschlossene Monate und ausgestellte Rechnungen ändern sich nie.
