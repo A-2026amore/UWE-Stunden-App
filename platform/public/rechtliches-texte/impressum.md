@@ -5,7 +5,7 @@
 > Rechtsgrundlage: § 5 Digitale-Dienste-Gesetz (DDG, seit 14.05.2024 anstelle von § 5 TMG); ggf. § 18 Abs. 2
 > Medienstaatsvertrag (MStV); § 35a GmbHG / § 37a HGB betreffen Geschäftsbriefe einschließlich E-Mails.
 >
-> **⚠ Grundsatzfrage:** Wer ist Anbieter von „Stundenwerk“? Die UWE – Krankentransporte GmbH selbst, eine neue
+> **⚠ Grundsatzfrage:** Wer ist Anbieter von „Schichtklar24“? Die UWE – Krankentransporte GmbH selbst, eine neue
 > Gesellschaft oder ein Einzelunternehmen (Marke „appzentrale24“)? Davon hängen Impressum, AGB, AVV, Haftung und
 > Steuer ab. Bis zur Entscheidung keine Veröffentlichung.
 
@@ -60,7 +60,7 @@ Streitbeilegungsverfahren vor einer Verbraucherschlichtungsstelle teilzunehmen.
 
 ## Markenhinweis
 
-„Stundenwerk“ ist ein Arbeitstitel. `[PRÜFEN: Markenrecherche (DPMA, EUIPO) vor Nutzung als Produktname.]`
+„Schichtklar24“ ist ein Arbeitstitel. `[PRÜFEN: Markenrecherche (DPMA, EUIPO) vor Nutzung als Produktname.]`
 
 ---
 

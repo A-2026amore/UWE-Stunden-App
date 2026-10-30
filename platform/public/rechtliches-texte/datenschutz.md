@@ -1,4 +1,4 @@
-# Datenschutzerklärung für Website und Dienst „Stundenwerk“
+# Datenschutzerklärung für Website und Dienst „Schichtklar24“
 
 > **ENTWURF – nicht anwaltlich geprüft.** KI-gestützter Entwurf vom 29.10.2026, keine Rechtsberatung.
 > Platzhalter `[OFFEN: …]`, offene Rechtsfragen **⚠ Rechtsfrage**. Vor Veröffentlichung mit dem tatsächlichen
@@ -116,7 +116,7 @@ Zwei-Faktor-Anmeldung und verschlüsselte Sicherungen. Einzelheiten: Dokument �
 
 ## 8. Transparenz nach Art. 28 Data Act
 
-Die IKT-Infrastruktur von Stundenwerk unterliegt dem Recht der Bundesrepublik Deutschland (Server: netcup GmbH,
+Die IKT-Infrastruktur von Schichtklar24 unterliegt dem Recht der Bundesrepublik Deutschland (Server: netcup GmbH,
 Deutschland; Sicherungen: Hetzner Online GmbH, `[Standort]`). Schutzmaßnahmen gegen unrechtmäßigen staatlichen
 Zugriff aus Drittländern: Verarbeitung ausschließlich in der EU, keine Dienstleister mit Sitz in Drittstaaten
 `[OFFEN: bestätigen]`, verschlüsselte Sicherungen mit Schlüssel beim Anbieter, Prüfung jedes behördlichen Ersuchens

@@ -10,7 +10,7 @@
  *    left and faint as watermark in the middle of every page, or the company
  *    name as typographic logo in the primary colour when there is no logo;
  *  - optional work-account section; worked hours are never replaced.
- *  - Layout (Stundenwerk design, 2026-10): info panel (person, personnel
+ *  - Layout (Schichtklar24 design, 2026-10): info panel (person, personnel
  *    number, period, status), table with coloured header and zebra rows,
  *    summary block, footer with creation date, product name and
  *    "Seite x von y". Row heights and page breaks are unchanged, so the
@@ -288,7 +288,7 @@ export interface StatementPdfArgs {
   test?: boolean;
   /** Creation date printed in the footer (default: now). */
   createdAt?: Date;
-  /** Product name printed in the footer (e.g. "Stundenwerk"); omitted when empty. */
+  /** Product name printed in the footer (e.g. "Schichtklar24"); omitted when empty. */
   productName?: string | null;
 }
 

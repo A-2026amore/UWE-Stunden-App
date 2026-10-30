@@ -30,7 +30,7 @@ function LegalPage({ doc }: { doc: LegalDoc }) {
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
-    document.title = `${meta.title} · Stundenwerk`;
+    document.title = `${meta.title} · Schichtklar24`;
     Promise.all(meta.files.map((f) => fetch(`../../rechtliches-texte/${f}`).then((r) => {
       if (!r.ok) throw new Error(String(r.status));
       return r.text();

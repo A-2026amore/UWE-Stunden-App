@@ -1,6 +1,6 @@
 # Architektur der Zeiterfassungsplattform
 
-Produktname: „Stundenwerk“ (vorläufig, vorbehaltlich Markenprüfung; eine Konstante in `platform/src/design/branding.ts`). Designsystem: siehe `docs/design.md`.
+Produktname: „Schichtklar24“ (vorläufig, vorbehaltlich Markenprüfung; eine Konstante in `platform/src/design/branding.ts`). Designsystem: siehe `docs/design.md`.
 UWE – Krankentransporte GmbH ist der erste Mandant, nicht das Produkt.
 
 ## 1. Zielbild

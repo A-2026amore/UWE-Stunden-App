@@ -44,8 +44,8 @@ describe("enrolment", () => {
     secret = r.body.secret;
     expect(secret).toMatch(/^[A-Z2-7]{32}$/);
     expect(base32Decode(secret)).toHaveLength(20);
-    expect(r.body).toMatchObject({ issuer: "Stundenwerk", account: EMAILS.emp1A });
-    expect(r.body.otpauthUri).toBe(`otpauth://totp/Stundenwerk:${encodeURIComponent(EMAILS.emp1A)}?secret=${secret}&issuer=Stundenwerk&algorithm=SHA1&digits=6&period=30`);
+    expect(r.body).toMatchObject({ issuer: "Schichtklar24", account: EMAILS.emp1A });
+    expect(r.body.otpauthUri).toBe(`otpauth://totp/Schichtklar24:${encodeURIComponent(EMAILS.emp1A)}?secret=${secret}&issuer=Schichtklar24&algorithm=SHA1&digits=6&period=30`);
     expect((await t.call("GET", "/api/auth/2fa", { cookie })).body).toMatchObject({ enabled: false, pending: true });
   });
 

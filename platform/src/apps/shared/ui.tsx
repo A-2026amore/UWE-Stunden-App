@@ -79,7 +79,7 @@ const AREA_PITCH: Record<AppArea | "link", { title: string; text: string; points
     ],
   },
   link: {
-    title: "Willkommen bei Stundenwerk.",
+    title: "Willkommen bei Schichtklar24.",
     text: PRODUCT_TAGLINE + ".",
     points: [
       { icon: "lock", text: "Sicheres Passwort festlegen" },

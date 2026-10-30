@@ -1,8 +1,8 @@
-# Designsystem „Stundenwerk“
+# Designsystem „Schichtklar24“
 
 Stand: 28.10.2026 · Branch `feature/design-stundenwerk`
 
-Produktname: **Stundenwerk** (vorläufig, vorbehaltlich Markenprüfung). Der Name steht an genau einer Stelle:
+Produktname: **Schichtklar24** (vorläufig, vorbehaltlich Markenprüfung). Der Name steht an genau einer Stelle:
 `PRODUCT_NAME` in `platform/src/design/branding.ts`. Der Zusatz „Arbeitstitel“ wird nicht mehr angezeigt.
 
 ## Grundsätze
@@ -20,7 +20,7 @@ Produktname: **Stundenwerk** (vorläufig, vorbehaltlich Markenprüfung). Der Nam
 | Tokens | `design/tokens.css` | Farben (hell/dunkel), Typografie, Abstände (4-px-Raster), Radien, Schatten, Bewegung |
 | Komponenten-CSS | `design/components.css` | Buttons, Karten, Kennzahlen, Tabellen (mobil als Karten), Dialoge (mobil als Bottom-Sheet; `wide` für Dialoge mit Tabellen, z. B. Verlauf eines Monatsnachweises), Navigation, Anmeldeseiten, Diagramme, Skeleton |
 | Komponenten | `design/components.tsx` | u. a. `StatTile` (mit Symbol/Link als Kennzahl-Kachel), `BarChart` (SVG), `Skeleton`, `Avatar`, `ThemeSwitch`, `Sidebar` mit Gruppen |
-| Logo | `design/logo.tsx`, `public/product-mark.svg` | eigenes Produktlogo (Uhr mit offenem Ring), inline SVG |
+| Logo | `design/logo.tsx`, `public/product-mark.svg` | Produktlogo „Haken-Uhr“ (Uhr auf dunkelblauer Kachel, Zeiger als türkiser Haken; Quelle `marke/logos` im Projektordner), inline SVG; App-Icons in `public/app/icons` |
 | Symbole | `design/icons.tsx` | 24-px-Strichsymbole, erweitert (Sonne, Mond, Euro, Karte, …) |
 | Farbschema | `design/theme.ts` | Hell/Dunkel/System, Speicherung lokal |
 | Schrift | `design/fonts/` | Inter (variabel, latin + latin-ext, woff2), Lizenz SIL OFL 1.1 in `OFL.txt` |
@@ -70,7 +70,7 @@ dunkel) und setzt sie als `--light-brand-*` bzw. `--dark-brand-*`. Regeln:
 `core/pdf.ts`: Kopf mit Firmenlogo/-name und Titel „STUNDENNACHWEIS“, Infofeld (Mitarbeiter/in,
 Personalnummer, Zeitraum, Status), Tabelle mit farbigem Kopf und Zebra-Streifen, Wochentag beim Datum,
 rechtsbündige Stunden, Summenblock (Gesamt, Einsätze, Arbeitstage, Pausen), Fußzeile mit Erstellungsdatum,
-„Erstellt mit Stundenwerk“ und „Seite x von y“. Zeilenhöhen und Seitenumbrüche sind unverändert: der Nachweis
+„Erstellt mit Schichtklar24“ und „Seite x von y“. Zeilenhöhen und Seitenumbrüche sind unverändert: der Nachweis
 bleibt mehrseitig und gut lesbar (Vergleichstest gegen den Altgenerator `uwe-pdf.js`).
 
 ## Prüfung

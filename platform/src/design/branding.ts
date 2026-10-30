@@ -1,14 +1,14 @@
 /**
  * White-label support: product identity constants and runtime tenant branding.
  *
- * Product name "Stundenwerk" (subject to a trademark check). Rename it in ONE
+ * Product name "Schichtklar24" (subject to a trademark check). Rename it in ONE
  * place: PRODUCT_NAME below. Tenant brands (e.g. UWE) are applied via CSS
  * variables – separately for the light and the dark colour scheme.
  */
 import type { Branding } from "../core/types";
 
 /** Product name – change here only. */
-export const PRODUCT_NAME = "Stundenwerk";
+export const PRODUCT_NAME = "Schichtklar24";
 export const PRODUCT_TAGLINE = "Zeiterfassung für Teams im Außendienst";
 /** Kept for existing imports; identical to PRODUCT_NAME (no "Arbeitstitel" suffix any more). */
 export const PRODUCT_FULL_NAME = PRODUCT_NAME;

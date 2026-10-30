@@ -360,7 +360,7 @@ export function createInvoicePdfBytes(args: InvoicePdfArgs): Uint8Array {
   }
   objects[2] = "<< /Type /Pages /Kids [" + refs.join(" ") + "] /Count " + pages.length + " >>";
   const info = n++;
-  objects[info] = "<< /Title " + pdfStr(`${title} ${number}`) + " /Producer (Stundenwerk) >>";
+  objects[info] = "<< /Title " + pdfStr(`${title} ${number}`) + " /Producer (Schichtklar24) >>";
   let out = "%PDF-1.4\n%\xE2\xE3\xCF\xD3\n";
   const offsets: number[] = [0];
   for (let id = 1; id < n; id++) {

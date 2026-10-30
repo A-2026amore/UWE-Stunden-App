@@ -26,7 +26,7 @@ afterAll(async () => {
 const sa = <T>(fn: (q: pg.Client) => Promise<T>, commit = true) => db.as(U.superAdmin, fn as never, { commit }) as Promise<T>;
 
 const COMPLETE = {
-  issuerName: "Stundenwerk Beispiel GmbH (Testdaten)", issuerStreet: "Musterstraße 1", issuerPostalCode: "52062",
+  issuerName: "Schichtklar24 Beispiel GmbH (Testdaten)", issuerStreet: "Musterstraße 1", issuerPostalCode: "52062",
   issuerCity: "Aachen", taxNumber: "201/123/45678", vatId: "DE123456789", paymentDetails: "Überweisung (Testdaten)",
 };
 

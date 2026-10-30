@@ -29,7 +29,7 @@ const uweTenant: StatementPdfArgs["tenant"] = {
 describe("pdf", () => {
   it("60 entries → multi-page PDF with %PDF header, repeated table header and page numbers", async () => {
     const entries = makeEntries(60);
-    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30), productName: "Stundenwerk" });
+    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30), productName: "Schichtklar24" });
     expect(blob.type).toBe("application/pdf");
     const text = latin1(new Uint8Array(await blob.arrayBuffer()));
     expect(text.startsWith("%PDF-1.4")).toBe(true);
@@ -42,7 +42,7 @@ describe("pdf", () => {
     expect(text.split("(STATUS)").length - 1).toBe(pages); // info panel on every page
     expect(text).toContain("(Eingereicht)");
     expect(text).toContain("(Erstellt: 30.11.2026)");
-    expect(text.split("(Erstellt mit Stundenwerk)").length - 1).toBe(pages);
+    expect(text.split("(Erstellt mit Schichtklar24)").length - 1).toBe(pages);
     expect(text).toContain("(November 2026)");
     expect(text).toContain("0.000 0.663 0.620 rg"); // UWE vector logo colour
     expect(text).toContain("/GSWatermark gs");

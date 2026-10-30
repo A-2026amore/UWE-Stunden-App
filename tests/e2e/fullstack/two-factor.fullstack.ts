@@ -19,7 +19,7 @@ test("employee enables 2FA in the settings and signs in with code and recovery c
   await card.getByRole("button", { name: "Zwei-Faktor-Anmeldung einrichten" }).click();
 
   // QR code (own encoder, SVG) and the secret in groups of four.
-  await expect(card.getByRole("img", { name: /QR-Code für die Authenticator-App \(Stundenwerk, fahrer1@/ })).toBeVisible();
+  await expect(card.getByRole("img", { name: /QR-Code für die Authenticator-App \(Schichtklar24, fahrer1@/ })).toBeVisible();
   const grouped = await card.getByTestId("totp-secret").innerText();
   expect(grouped).toMatch(/^([A-Z2-7]{4} ){7}[A-Z2-7]{4}$/);
   const secret = grouped.replace(/\s/g, "");

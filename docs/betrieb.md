@@ -81,7 +81,7 @@ Skript ist eine zusätzliche, prüfbare Sicherung und ändert keine Server-Backu
 
 1. Schlüssel: empfohlen ist ein GPG-Schlüsselpaar, dessen **privater** Schlüssel nur offline beim Inhaber liegt
    (Server kann dann verschlüsseln, aber nicht entschlüsseln):
-   `gpg --quick-gen-key "Stundenwerk Backup <backup@…>" ed25519 default never` (auf einem sicheren Rechner),
+   `gpg --quick-gen-key "Schichtklar24 Backup <backup@…>" ed25519 default never` (auf einem sicheren Rechner),
    `gpg --export --armor <Fingerabdruck> > backup-public.asc`, auf dem Server `gpg --import backup-public.asc`.
    Alternative: Passphrase-Datei (`openssl rand -hex 32 > /root/.stunden-backup-pass; chmod 600 …`), Passphrase
    zusätzlich offline aufbewahren.
@@ -164,7 +164,7 @@ node --experimental-strip-types --disable-warning=ExperimentalWarning \
 |---|---|---|---|
 | `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel (nur ohne `NODE_ENV=production`) | 32 Byte, Base64 oder 64 Hex-Zeichen. Verschlüsselt die TOTP-Geheimnisse (AES-256-GCM). Ohne Schlüssel startet die API in Produktion nicht. |
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel, kommagetrennt – nur zum Entschlüsseln während einer Rotation. |
-| `TOTP_ISSUER` | – | `Stundenwerk` | Name in der Authenticator-App (1–40 Zeichen, kein Doppelpunkt). |
+| `TOTP_ISSUER` | – | `Schichtklar24` | Name in der Authenticator-App (1–40 Zeichen, kein Doppelpunkt). |
 | `PAYMENT_PROVIDER` | – | `none` | Nur `none` erlaubt (Preismodell: manuelle Abrechnung, `docs/preismodell.md`). |
 | `APP_COMMIT` | – | leer | Git-Commit des laufenden Builds (7–40 Hex-Zeichen), nur zur Anzeige im Super-Admin unter „Systemstatus“. |
 | `BACKUP_STATUS_FILE` | – | leer | Datei, in die der nächtliche Sicherungsjob nach **erfolgreicher** Sicherung einen ISO-Zeitstempel schreibt (oder die er nur `touch`t). „Systemstatus“ zeigt daraus „Letzte Sicherung“; ohne Variable: „nicht bekannt“. Ersetzt keinen Wiederherstellungstest. |

@@ -129,8 +129,8 @@ describe("codes and provisioning", () => {
   });
 
   it("builds the otpauth URI and groups the secret", () => {
-    const uri = otpauthUri({ issuer: "Stundenwerk", account: "chef+test@demo.example", secret: "JBSWY3DPEHPK3PXP" });
-    expect(uri).toBe("otpauth://totp/Stundenwerk:chef%2Btest%40demo.example?secret=JBSWY3DPEHPK3PXP&issuer=Stundenwerk&algorithm=SHA1&digits=6&period=30");
+    const uri = otpauthUri({ issuer: "Schichtklar24", account: "chef+test@demo.example", secret: "JBSWY3DPEHPK3PXP" });
+    expect(uri).toBe("otpauth://totp/Schichtklar24:chef%2Btest%40demo.example?secret=JBSWY3DPEHPK3PXP&issuer=Schichtklar24&algorithm=SHA1&digits=6&period=30");
     expect(groupSecret("JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")).toBe("JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP");
   });
 

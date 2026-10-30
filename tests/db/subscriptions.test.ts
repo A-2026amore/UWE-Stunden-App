@@ -455,7 +455,7 @@ describe("new tenant: trial, contract conclusion, reminders", () => {
 
 describe("automatic monthly invoices", () => {
   const COMPLETE = {
-    issuerName: "Stundenwerk Beispiel GmbH (Testdaten)", issuerStreet: "Musterstraße 1", issuerPostalCode: "52062",
+    issuerName: "Schichtklar24 Beispiel GmbH (Testdaten)", issuerStreet: "Musterstraße 1", issuerPostalCode: "52062",
     issuerCity: "Aachen", taxNumber: "201/123/45678",
   };
   // a different day only from maintenance (owner connection here)

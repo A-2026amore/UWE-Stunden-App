@@ -5,7 +5,7 @@ import { chromium, devices, webkit } from "@playwright/test";
 
 const URL = process.env.URL ?? "https://stunden-test.appzentrale24.de";
 const PAGES = [
-  { path: "/", expect: /Stundenwerk/ },
+  { path: "/", expect: /Schichtklar24|Stundenwerk/ },
   { path: "/app/", expect: /Anmelden/ },
   { path: "/chef/", expect: /Anmelden/ },
   { path: "/admin/", expect: /Anmelden/ },

@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { ADMIN, CHEF, confirmDialog, freeze, go, login } from "./helpers";
 
 // Demo (frozen today 20.11.2026): Muster Pflegedienst GmbH, October 2026 = 3 × 5,00 € = 15,00 € brutto (12,61 € netto + 2,39 € USt.); before the subscription model (0023) the old standard price applies.
-// The demo invoice settings are fictional and complete ("Stundenwerk Demo GmbH (Testdaten)").
+// The demo invoice settings are fictional and complete ("Schichtklar24 Demo GmbH (Testdaten)").
 
 test.beforeEach(async ({ page }) => {
   await freeze(page);

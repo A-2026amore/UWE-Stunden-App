@@ -20,7 +20,7 @@ dem Kunden `[Firma, Anschrift]` – nachfolgend **„Verantwortlicher“** –
 ## § 1 Gegenstand und Dauer
 
 1. Der Auftragsverarbeiter verarbeitet personenbezogene Daten im Auftrag des Verantwortlichen im Rahmen des
-   Hauptvertrags über die Nutzung der Software „Stundenwerk“ (AGB samt Anlagen).
+   Hauptvertrags über die Nutzung der Software „Schichtklar24“ (AGB samt Anlagen).
 2. Die Dauer dieses AVV entspricht der Laufzeit des Hauptvertrags einschließlich des Abrufzeitraums nach
    Vertragsende und der Löschung nach § 11.
 3. Bei Widersprüchen geht dieser AVV in Fragen des Datenschutzes dem Hauptvertrag vor.

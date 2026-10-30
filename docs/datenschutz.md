@@ -13,7 +13,7 @@ API: [`api.md`](api.md), Datenbank: [`database.md`](database.md), Betrieb und Ba
 | Wer | Rolle nach DSGVO (Annahme, zu prüfen) |
 |---|---|
 | Kundenfirma (Mandant, z. B. ein Krankentransport- oder Pflegedienst) | **Verantwortlicher** für die Arbeitszeitdaten ihrer Beschäftigten |
-| Plattformbetreiber (Stundenwerk / appzentrale24) | **Auftragsverarbeiter** der Kundenfirmen; Verantwortlicher nur für eigene Vertrags- und Abrechnungsdaten |
+| Plattformbetreiber (Schichtklar24 / appzentrale24) | **Auftragsverarbeiter** der Kundenfirmen; Verantwortlicher nur für eigene Vertrags- und Abrechnungsdaten |
 | Rechenzentrum/Server (netcup), Backup-Speicher (Hetzner Storage Box), ggf. E-Mail-Versand (SMTP-Anbieter) | **Unterauftragsverarbeiter** des Betreibers |
 | UWE – Krankentransporte GmbH bei Eigennutzung | Verantwortlicher; Betreiber und Kunde sind dann dieselbe Stelle oder eng verbunden (zu klären) |
 

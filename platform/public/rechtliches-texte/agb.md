@@ -1,16 +1,16 @@
-# Allgemeine Geschäftsbedingungen für die Nutzung von „Stundenwerk“ (B2B-SaaS)
+# Allgemeine Geschäftsbedingungen für die Nutzung von „Schichtklar24“ (B2B-SaaS)
 
 > **ENTWURF – nicht anwaltlich geprüft.** Erstellt am 28./29.10.2026 mit KI-Unterstützung. Dieser Text ist keine
 > Rechtsberatung und darf erst nach Prüfung durch eine Rechtsanwältin oder einen Rechtsanwalt verwendet werden.
 > Platzhalter stehen in `[OFFEN: …]`, offene Rechtsfragen sind mit **⚠ Rechtsfrage** markiert.
-> Der Produktname „Stundenwerk“ ist vorläufig (Markenrecherche beim DPMA/EUIPO steht aus).
+> Der Produktname „Schichtklar24“ ist vorläufig (Markenrecherche beim DPMA/EUIPO steht aus).
 
 Stand: Entwurf 0.9.3 vom 30.10.2026 (Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif
 6,50 EUR, Verlängerung um 6 Monate, nur Unternehmer; davor 0.9.2 vom 30.10.2026 und 0.9.1 vom 29.10.2026)
 
 ## § 1 Geltungsbereich, Vertragspartner
 
-1. Diese Allgemeinen Geschäftsbedingungen (AGB) gelten für alle Verträge über die Nutzung der Software „Stundenwerk“
+1. Diese Allgemeinen Geschäftsbedingungen (AGB) gelten für alle Verträge über die Nutzung der Software „Schichtklar24“
    (nachfolgend „Dienst“) zwischen
    `[OFFEN: Firma, Rechtsform, Anschrift des Anbieters – siehe Impressum]` (nachfolgend „Anbieter“) und dem Kunden.
 2. **Nur für Unternehmen.** Der Dienst richtet sich **ausschließlich an Unternehmer** im Sinne von § 14 BGB
@@ -268,5 +268,5 @@ auch zugunsten der gesetzlichen Vertreter, Mitarbeitenden und Erfüllungsgehilfe
 **Offene Punkte dieses Dokuments**
 - `[OFFEN]` Anbieter-Firma, Rechtsform, Sitz/Gerichtsstand (siehe Impressum).
 - Anlage C (Leistungsbeschreibung) erstellen.
-- Markenrecherche „Stundenwerk“ vor Veröffentlichung.
+- Markenrecherche „Schichtklar24“ vor Veröffentlichung.
 - Alle **⚠ Rechtsfragen** anwaltlich klären.

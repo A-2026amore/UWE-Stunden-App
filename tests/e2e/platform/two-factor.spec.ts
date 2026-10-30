@@ -25,7 +25,7 @@ test("demo: employee sets up 2FA, signs in with the demo code and once with a re
   await go(page, "#/einstellungen");
   const card = page.locator("#zwei-faktor");
   await card.getByRole("button", { name: "Zwei-Faktor-Anmeldung einrichten" }).click();
-  await expect(card.getByRole("img", { name: /QR-Code für die Authenticator-App \(Stundenwerk Demo, anna@demo-kt\.example\)/ })).toBeVisible();
+  await expect(card.getByRole("img", { name: /QR-Code für die Authenticator-App \(Schichtklar24 Demo, anna@demo-kt\.example\)/ })).toBeVisible();
   const secret = (await card.getByTestId("totp-secret").innerText()).replace(/\s/g, "");
   // What an authenticator app shows at the (frozen) current time.
   const code = hotp(base32Decode(secret), timeStep(NOW.getTime()));

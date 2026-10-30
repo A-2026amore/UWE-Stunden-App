@@ -598,7 +598,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       from: (db.statusHistory ?? []).filter((h) => h.tenantId === t.id).map((h) => h.from).sort()[0] ?? db.seededAt, to: null,
     }));
     db.invoiceSettings ??= {
-      issuerName: "Stundenwerk Demo GmbH (Testdaten)", issuerStreet: "Beispielstraße 1", issuerPostalCode: "12345", issuerCity: "Musterstadt",
+      issuerName: "Schichtklar24 Demo GmbH (Testdaten)", issuerStreet: "Beispielstraße 1", issuerPostalCode: "12345", issuerCity: "Musterstadt",
       issuerCountry: "Deutschland", issuerEmail: "rechnung@plattform.example", issuerPhone: null, taxNumber: "000/000/00000 (Demo)", vatId: null,
       paymentDetails: "Demo: keine echte Bankverbindung.", vatRatePercent: DEFAULT_VAT_RATE_PERCENT, vatRateConfirmed: false,
       paymentTermsDays: DEFAULT_PAYMENT_TERMS_DAYS, numberPrefix: DEFAULT_INVOICE_PREFIX, updatedAt: null,
@@ -1166,7 +1166,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       db.twoFactor = db.twoFactor.filter((f) => f.userId !== s.userId);
       db.twoFactor.push({ userId: s.userId, secret, createdAt: new Date().toISOString(), enrolledAt: null, lastUsedStep: null, recoveryCodes: [] });
       save(db);
-      const issuer = "Stundenwerk Demo";
+      const issuer = "Schichtklar24 Demo";
       return { secret, otpauthUri: otpauthUri({ issuer, account: s.email, secret }), issuer, account: s.email };
     },
     async confirmTwoFactorSetup(code) {

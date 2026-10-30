@@ -103,7 +103,7 @@ davon ab.
   ca. 150–250 MB statt < 1 MB.
 - **Alt-App UWE auf GitHub Pages:** Die Mitarbeitenden speichern ihre Stunden im Browser **unter der Adresse
   `a-2026amore.github.io`**. Ein Umzug auf eine eigene Adresse würde diese Daten auf den Geräten nicht mitnehmen.
-  Empfehlung: Alt-App bis zum Wechsel auf Stundenwerk dort lassen und danach abschalten – nicht vorher umziehen.
+  Empfehlung: Alt-App bis zum Wechsel auf Schichtklar24 dort lassen und danach abschalten – nicht vorher umziehen.
 - **Claude-Entwicklung** bleibt im GitHub-Repository (siehe 1). Empfehlung: Repository auf **privat** stellen,
   sobald die Alt-App nicht mehr über GitHub Pages läuft (Pages für private Repositories ist kostenpflichtig).
 

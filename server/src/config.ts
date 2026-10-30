@@ -138,7 +138,7 @@ function loadTwoFactor(env: NodeJS.ProcessEnv, production: boolean): TwoFactorCo
     const k = parseTotpKey(part, "TOTP_ENCRYPTION_KEY_PREVIOUS");
     if (!keys.some((x) => x.id === k.id)) keys.push(k);
   }
-  const issuer = (env.TOTP_ISSUER ?? "Stundenwerk").trim();
+  const issuer = (env.TOTP_ISSUER ?? "Schichtklar24").trim();
   if (!/^[^:]{1,40}$/.test(issuer)) throw new Error("TOTP_ISSUER: 1–40 Zeichen, ohne Doppelpunkt.");
   return { keys, developmentKey, issuer };
 }

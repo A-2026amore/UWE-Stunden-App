@@ -109,7 +109,7 @@ Exit-Codes: 0 erledigt, 1 abgelehnt (Grund auf stderr, nichts geändert), 2 Aufr
 | `RATE_LIMIT_2FA_PER_ACCOUNT` / `RATE_LIMIT_2FA_PER_IP` | – | `5` / `50` | Falsche Zwei-Faktor-Codes je Konto bzw. IP. |
 | `TOTP_ENCRYPTION_KEY` | in Produktion | Entwicklungsschlüssel | 32 Byte (Base64 oder 64 Hex), verschlüsselt die TOTP-Geheimnisse. Erzeugen: `openssl rand -base64 32`. Getrennt von DB-Backups sichern; Rotation: `docs/betrieb.md` Abschnitt 6.1. |
 | `TOTP_ENCRYPTION_KEY_PREVIOUS` | – | leer | Frühere Schlüssel (kommagetrennt), nur zum Entschlüsseln während einer Rotation. |
-| `TOTP_ISSUER` | – | `Stundenwerk` | Anzeigename in der Authenticator-App. |
+| `TOTP_ISSUER` | – | `Schichtklar24` | Anzeigename in der Authenticator-App. |
 | `PAYMENT_PROVIDER` | – | `none` | Zahlungsdienstleister. Nur `none` (keine Abbuchungen, keine externen Aufrufe, `src/payment.ts`); jeder andere Wert verhindert den Start. |
 | `APP_COMMIT` | – | – | Commit des Builds (7–40 Hex-Zeichen) für `GET /api/platform/system`. |
 | `BACKUP_STATUS_FILE` | – | – | Zeitstempel-Datei der letzten erfolgreichen Sicherung (Inhalt ISO-Zeit oder Änderungszeit) für `GET /api/platform/system`; fehlt sie: „nicht bekannt“. |

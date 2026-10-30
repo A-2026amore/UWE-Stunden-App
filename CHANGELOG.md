@@ -227,6 +227,17 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Geändert
+- Produktname „Stundenwerk“ → **„Schichtklar24“** (Entscheidung 30.10.2026; „Stundenwerk“ ist bereits von einer
+  anderen Zeiterfassung belegt, Domain schichtklar24.de gesichert). Geändert ist alles Sichtbare: Name in den drei
+  Apps und auf der Startseite, PDF-Fußzeile „Erstellt mit Schichtklar24“, Rechnungs-PDF, Rechtstexte, Icons,
+  Standard-Anzeigename in der Authenticator-App (`TOTP_ISSUER`, bestehende Einträge funktionieren weiter).
+  Bewusst unverändert: interne Schlüssel und Formate (`stundenwerk_*` im Browser-Speicher, Exportformat
+  `stundenwerk.*.v1`, Backup-Format), Paketnamen und Signatur-Namespace (`refs/stundenwerk/paket`,
+  `stundenwerk-paket`) sowie Container- und Dienstnamen auf dem Server – sonst gingen gespeicherte Daten verloren
+  oder der Paket-Weg müsste neu eingerichtet werden. Markenanmeldung steht noch aus.
+- Neues Produktlogo „Haken-Uhr“ (Entscheidung 30.10.2026): Uhr auf dunkelblauer Kachel (#0B2545), die Zeiger
+  bilden einen türkisen Haken (#13A89E). Ersetzt das alte Logo in der Kopfzeile, auf den Anmeldeseiten, im Favicon
+  und in den App-Icons (180/192/512 px, maskable). Die Farben der Oberfläche (Indigo) sind unverändert.
 - Stundennachweis-PDF: Ein hochgeladenes Firmenlogo erscheint zusätzlich groß und blass als Wasserzeichen in der
   Mitte jeder Seite (wie der UWE-Flügel); Zahlen und Text bleiben gut lesbar. Neben einem hochgeladenen Logo steht
   der Firmenname nicht mehr ein zweites Mal (Fußzeile nennt die Firma weiterhin).
