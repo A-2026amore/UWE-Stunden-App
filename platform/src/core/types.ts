@@ -236,6 +236,8 @@ export interface TenantSubscription {
   contractEndsOn: ISODate | null;
   /** No term covers today or later: the contract has ended. */
   ended: boolean;
+  /** The cancelled term a withdraw would reopen (also one that never started), else null. */
+  withdrawable: SubscriptionTerm | null;
   /** Null until the owner has concluded the contract; the tenant cannot be used before. */
   contract: ContractAcceptance | null;
   annualPriceCents: number;

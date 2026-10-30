@@ -205,6 +205,11 @@ export interface SubscriptionForMonth {
   /** Interval of the term covering the month, null = no term (ended / not started). */
   interval: SubscriptionInterval | null;
   monthlyPriceCents: number;
+  /**
+   * First day of the subscription model for tenants that existed before migration 0023: earlier months
+   * keep the previous rule (platform default price, no term needed). Null for new tenants.
+   */
+  termsFrom?: ISODate | null;
 }
 
 /**
@@ -223,6 +228,7 @@ export function billingConditionFor(license: LicenseCondition | null, defaultPri
   const applies = !!active && (active.conditionValidFrom === null || active.conditionValidFrom <= b.lastDay)
     && (active.conditionValidUntil === null || active.conditionValidUntil >= b.firstDay);
   if (applies && active.freeOfCharge) return { condition: "free", unitPriceCents: 0 };
+  if (subscription?.termsFrom && b.firstDay < subscription.termsFrom) subscription = null;
   if (subscription) {
     if (subscription.trialEndsOn && b.firstDay <= subscription.trialEndsOn) return { condition: "trial", unitPriceCents: 0 };
     if (!subscription.interval) return { condition: "ended", unitPriceCents: 0 };

@@ -175,6 +175,14 @@ export interface SubscriptionView {
   currentTermEndsOn: ISODate | null;
   contractEndsOn: ISODate | null;
   ended: boolean;
+  /** The cancellation a withdraw would undo (same rule as planWithdraw), else null. */
+  withdrawable: TermRow | null;
+}
+
+function withdrawableTerm(terms: readonly TermRow[], today: ISODate): TermRow | null {
+  return terms
+    .filter((t) => t.cancelledAt !== null && t.endsOn !== null && t.endsOn >= today)
+    .sort((a, b) => b.startsOn.localeCompare(a.startsOn))[0] ?? null;
 }
 
 /** What the tenant has as of `today`. */
@@ -187,6 +195,7 @@ export function subscriptionView(terms: readonly TermRow[], today: ISODate): Sub
     currentTermEndsOn: current && current.interval === "annual" && current.endsOn === null ? currentAnnualEnd(current.startsOn, today) : null,
     contractEndsOn: last && last.endsOn !== null ? last.endsOn : null,
     ended: current === null,
+    withdrawable: withdrawableTerm(terms, today),
   };
 }
 
@@ -241,6 +250,12 @@ export function planCancel(terms: readonly TermRow[], today: ISODate, noticeDays
   const open = fromDay(terms, today).find((t) => t.endsOn === null) ?? null;
   if (!open) throw new Error("Es gibt keinen laufenden Vertrag, der gekündigt werden kann.");
   if (thenMonthly && open.interval !== "annual") throw new Error("„Danach monatlich weiter“ gibt es nur beim 12-Monats-Abo.");
+  if (open.startsOn > today && !thenMonthly) {
+    // A planned switch (monthly → annual) that has not started: cancelling it undoes the switch,
+    // the replaced term runs on (it can be cancelled on its own).
+    const replaced = terms.find((t) => t.cancelledAt === null && t.endsOn === addDays(open.startsOn, -1) && active(t));
+    if (replaced) return { remove: [open.id], end: [], reopen: [replaced.id], add: null };
+  }
   const endsOn = cancellationEnd(open, today, noticeDays);
   const change: TermChange = { remove: [], end: [{ id: open.id, endsOn, cancelled: true, thenMonthly }], reopen: [], add: null };
   if (thenMonthly) change.add = { interval: "monthly", startsOn: addDays(endsOn, 1) };
@@ -252,9 +267,7 @@ export function planCancel(terms: readonly TermRow[], today: ISODate, noticeDays
  * started: before its start). The term runs on; terms planned after it are removed.
  */
 export function planWithdraw(terms: readonly TermRow[], today: ISODate): TermChange {
-  const cancelled = terms
-    .filter((t) => t.cancelledAt !== null && t.endsOn !== null && t.endsOn >= today)
-    .sort((a, b) => b.startsOn.localeCompare(a.startsOn))[0];
+  const cancelled = withdrawableTerm(terms, today);
   if (!cancelled) throw new Error("Es gibt keine Kündigung, die noch zurückgenommen werden kann.");
   // Terms after its end (also the follow-up of a term that never started: same first day).
   const follower = terms.filter((t) => t.id !== cancelled.id && t.startsOn > cancelled.endsOn!).map((t) => t.id);

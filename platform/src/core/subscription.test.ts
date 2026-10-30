@@ -146,3 +146,23 @@ describe("price per month with subscription", () => {
     expect(billingConditionFor(special, 500, "2027-03", { status: "suspended", since: "2027-01-01T00:00:00Z" }, null, sub("monthly"))).toEqual({ condition: "tenant_suspended", unitPriceCents: 0 });
   });
 });
+
+describe("review fixes", () => {
+  it("cancelling a planned switch undoes it: the monthly term runs on", () => {
+    const monthly = term({ id: "m", interval: "monthly", startsOn: "2027-03-01", endsOn: "2027-10-31" });
+    const annual = term({ id: "a", interval: "annual", startsOn: "2027-11-01" });
+    expect(planCancel([monthly, annual], "2027-10-30", 0, false)).toEqual({ remove: ["a"], end: [], reopen: ["m"], add: null });
+  });
+  it("view names the cancellation a withdraw would undo, also a never-started follow-up", () => {
+    const annual = term({ id: "a", interval: "annual", startsOn: "2027-03-01", endsOn: "2028-02-29", cancelledAt: "2027-05-01T00:00:00Z", thenMonthly: true });
+    const follow = term({ id: "f", interval: "monthly", startsOn: "2028-03-01", endsOn: "2028-02-29", cancelledAt: "2027-06-01T00:00:00Z" });
+    const v = subscriptionView([annual, follow], "2027-07-01");
+    expect(v.withdrawable?.id).toBe("f");
+    expect(v.contractEndsOn).toBe("2028-02-29");
+  });
+  it("months before termsFrom keep the previous rule (existing tenants)", () => {
+    const sub = { trialEndsOn: null, interval: null, monthlyPriceCents: 650, termsFrom: "2026-11-01" };
+    expect(billingConditionFor(null, 500, "2026-10", null, null, sub)).toEqual({ condition: "standard", unitPriceCents: 500 });
+    expect(billingConditionFor(null, 500, "2026-11", null, null, { ...sub, interval: "monthly" })).toEqual({ condition: "monthly", unitPriceCents: 650 });
+  });
+});
