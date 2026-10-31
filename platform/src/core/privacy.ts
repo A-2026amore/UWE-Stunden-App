@@ -71,6 +71,11 @@ export interface ExportRecords {
   }>;
   invitations: Array<{ email: string; createdAt: string; expiresAt: string; acceptedAt: string | null; revokedAt: string | null }>;
   billingMonths: Array<{ month: string; reason: string }>;
+  /** Contract data (0025); missing in exports from before. */
+  employmentContracts?: Array<{
+    validFrom: string; employmentType: string; hourlyWageCents: number | null; monthlyTargetMinutes: number | null;
+    carryOverMinutes: number; updatedAt: string;
+  }>;
 }
 
 export interface PersonalDataExport extends ExportRecords {
@@ -160,6 +165,10 @@ export function personalDataCsv(d: PersonalDataExport): string {
   section(lines, "Arbeitszeiten", ENTRY_HEADER, entryRows(d.timeEntries));
   section(lines, "Arbeitszeitkonto (Übertragungen)", ["Monat", "Stunden", "Status", "Geprüft am", "Notiz der Leitung"],
     d.allocations.map((a) => [a.month, formatHours(a.minutes), a.status, formatTimestampDE(a.reviewedAt), a.reviewNote ?? ""]));
+  section(lines, "Arbeitsvertrag (Angaben der Firma)", ["Gültig ab", "Art", "Stundenlohn (€)", "Soll-Stunden/Monat", "Übertrag (Std.)"],
+    (d.employmentContracts ?? []).map((c) => [c.validFrom, c.employmentType,
+      c.hourlyWageCents === null ? "" : (c.hourlyWageCents / 100).toFixed(2).replace(".", ","),
+      c.monthlyTargetMinutes === null ? "offen" : formatHours(c.monthlyTargetMinutes), formatHours(c.carryOverMinutes)]));
   section(lines, "Monatsabschlüsse", ["Monat", "Status", "Eingereicht", "Geprüft", "Geleistet (Std.)", "Übertragen (Std.)", "Abrechnung (Std.)", "Notiz"],
     d.statements.map((s) => [s.month, s.status, formatTimestampDE(s.submittedAt), formatTimestampDE(s.reviewedAt),
       formatHours(s.workedMinutes), formatHours(s.allocatedMinutes), formatHours(s.billingMinutes), s.reviewNote ?? ""]));

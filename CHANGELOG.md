@@ -5,6 +5,17 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Arbeitsvertrag je Mitarbeiter mit Soll/Ist und Arbeitszeitkonto (31.10.2026, Migration
+  `0025_employment_contracts.sql`, Logik `platform/src/core/employment.ts`):
+  - Chef-Portal → Mitarbeiter → Einladen/Bearbeiten: Art (Minijob, Teilzeit, Vollzeit, Sonstiges), Stundenlohn,
+    Soll-Stunden pro Monat oder „offen – ohne Stundenlimit“, „gilt ab“-Monat und optionaler Übertrag. Frühere
+    Monate behalten ihre Werte (Versionen). Bei Minijob schlägt die App die höchste Stundenzahl unter der
+    Minijob-Grenze vor (z. B. 14,00 € → 43 Std.); Hinweis bei Lohn unter Mindestlohn.
+  - Dashboard: Tabelle „Soll / Ist laut Arbeitsvertrag“ mit Differenz (auch in Euro), Vormonat, Stand des
+    Arbeitszeitkontos und Warnung „über Minijob-Grenze“. Mehrstunden gehen sofort ins Konto, Minderstunden am
+    Monatsende. Ist = abrechenbare Stunden (nach Übertragungen ins Schuljahres-/Jahreskonto).
+  - Mitarbeiter-App: Karte „Mein Arbeitsvertrag“ auf Start und Konto (Soll, Ist, Stand; ohne Stundenlohn).
+  - Rechte: Leitung schreibt; Leitungspersonen und die eigenen Daten nur der Inhaber; Audit; Datenexport.
 - Übernahme aus der alten UWE-App nur noch für freigeschaltete Firmen (30.10.2026, Migration
   `0024_legacy_import_setting.sql`): Die Karte „Daten aus der bisherigen UWE-App übernehmen“ im Profil der
   Mitarbeiter-App (und der direkte Link `#/einstellungen/import`) erscheint nur, wenn der Super-Admin sie für den

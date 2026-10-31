@@ -584,3 +584,60 @@ describe("demo repository – subscription (0023)", () => {
     await owner.inviteEmployee(o.tenant.id, invite);
   });
 });
+
+describe("demo repository – employment contracts (0025)", () => {
+  const CHEF_KT = "30000000-0000-4000-8000-000000000100";
+  const DISPO = "30000000-0000-4000-8000-000000000107";
+
+  it("seeds example contracts from the previous month; leadership reads the tenant, the person only their own", async () => {
+    const storage = memoryStorage();
+    const repo = createDemoRepository(storage, { now: NOW });
+    await repo.signIn("chef@demo-kt.example", DEMO_PASSWORD);
+    const all = await repo.listEmploymentContracts(DEMO_TENANT_IDS.kt);
+    expect(all.find((c) => c.employeeId === ANNA)).toMatchObject({ validFrom: "2026-09", employmentType: "teilzeit", hourlyWageCents: 1450, monthlyTargetMinutes: 120 * 60 });
+    expect(all.every((c) => c.tenantId === DEMO_TENANT_IDS.kt)).toBe(true);
+    await expect(repo.listEmploymentContracts(DEMO_TENANT_IDS.pflege)).rejects.toBeInstanceOf(AccessDeniedError);
+
+    await repo.signIn("anna@demo-kt.example", DEMO_PASSWORD);
+    expect((await repo.listEmployeeContracts(ANNA)).map((c) => c.employmentType)).toEqual(["teilzeit"]);
+    await expect(repo.listEmployeeContracts(BEN)).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(repo.listEmploymentContracts(DEMO_TENANT_IDS.kt)).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(repo.setEmploymentContract(ANNA, { validFrom: "2026-10", employmentType: "vollzeit", hourlyWageCents: 9999, monthlyTargetMinutes: null, carryOverMinutes: 0 }))
+      .rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("leadership saves and deletes versions (validated, audited); managers not for leadership persons or themselves", async () => {
+    const storage = memoryStorage();
+    const repo = createDemoRepository(storage, { now: NOW });
+    await repo.signIn("chef@demo-kt.example", DEMO_PASSWORD);
+    await expect(repo.setEmploymentContract(BEN, { validFrom: "2026-11", employmentType: "teilzeit", hourlyWageCents: 0, monthlyTargetMinutes: 4800, carryOverMinutes: 0 }))
+      .rejects.toThrow(/Stundenlohn/);
+    const saved = await repo.setEmploymentContract(BEN, { validFrom: "2026-11", employmentType: "vollzeit", hourlyWageCents: 1700, monthlyTargetMinutes: 160 * 60, carryOverMinutes: -120 });
+    expect(saved).toMatchObject({ employeeId: BEN, tenantId: DEMO_TENANT_IDS.kt, validFrom: "2026-11", carryOverMinutes: -120 });
+    expect((await repo.listEmployeeContracts(BEN)).map((c) => c.validFrom)).toEqual(["2026-09", "2026-11"]);
+    await repo.setEmploymentContract(BEN, { validFrom: "2026-11", employmentType: "vollzeit", hourlyWageCents: 1750, monthlyTargetMinutes: 160 * 60, carryOverMinutes: 0 });
+    expect((await repo.listEmployeeContracts(BEN)).at(-1)?.hourlyWageCents).toBe(1750);
+    await repo.deleteEmploymentContract(BEN, "2026-11");
+    await expect(repo.deleteEmploymentContract(BEN, "2026-11")).rejects.toThrow(/keine Vertragsdaten/);
+    expect((await repo.listEmployeeContracts(BEN)).map((c) => c.validFrom)).toEqual(["2026-09"]);
+    const audit = await repo.listAudit(DEMO_TENANT_IDS.kt);
+    expect(audit.filter((a) => a.entity === "employment_contract").map((a) => a.action).sort())
+      .toEqual(["employment_contract.delete", "employment_contract.insert", "employment_contract.update"]);
+    // the owner may record leadership persons and themself
+    await repo.setEmploymentContract(CHEF_KT, { validFrom: "2026-10", employmentType: "offen", hourlyWageCents: null, monthlyTargetMinutes: null, carryOverMinutes: 0 });
+
+    await repo.signIn("dispo@demo-kt.example", DEMO_PASSWORD);
+    await expect(repo.setEmploymentContract(DISPO, { validFrom: "2026-10", employmentType: "vollzeit", hourlyWageCents: 3000, monthlyTargetMinutes: 9600, carryOverMinutes: 0 }))
+      .rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(repo.setEmploymentContract(CHEF_KT, { validFrom: "2026-10", employmentType: "vollzeit", hourlyWageCents: 3000, monthlyTargetMinutes: 9600, carryOverMinutes: 0 }))
+      .rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(repo.setEmploymentContract(ANNA, { validFrom: "2026-10", employmentType: "minijob", hourlyWageCents: 1400, monthlyTargetMinutes: 40 * 60, carryOverMinutes: 0 }))
+      .resolves.toMatchObject({ validFrom: "2026-10" });
+  });
+
+  it("the personal data export contains the contract versions", async () => {
+    const { repo } = await as("anna@demo-kt.example");
+    const data = await repo.exportPersonalData(ANNA);
+    expect(data.employmentContracts).toEqual([expect.objectContaining({ validFrom: "2026-09", employmentType: "teilzeit", monthlyTargetMinutes: 7200 })]);
+  });
+});

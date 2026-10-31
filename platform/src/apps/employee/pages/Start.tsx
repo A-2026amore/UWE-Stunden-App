@@ -6,6 +6,7 @@ import { currentMonth, dayLabel, hoursLabel, monthLabelDE, signedHours, todayISO
 import { shiftMonth } from "../../../data/demo";
 import { useEmployee } from "../context";
 import { InstallBanner } from "../InstallHint";
+import { EmploymentInfoCard, useEmploymentAccount } from "../EmploymentInfo";
 
 export const STATEMENT_WORD: Record<string, string> = { draft: "offen", submitted: "eingereicht", approved: "freigegeben", returned: "zurückgegeben", reopened: "wieder geöffnet" };
 
@@ -25,6 +26,7 @@ export function StartPage() {
     ]);
     return { entries, allocations, statement, prevStatement };
   }, [version]);
+  const employment = useEmploymentAccount();
 
   const firstName = me.displayName.split(" ")[0];
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
@@ -59,6 +61,8 @@ export function StartPage() {
       </Card>
 
       <InstallBanner />
+
+      <EmploymentInfoCard account={employment} compact />
 
       <Card title={monthLabelDE(month)} actions={<StatusPill status={statement?.status ?? "draft"} label={`Nachweis ${STATEMENT_WORD[statement?.status ?? "draft"]}`} />}>
         <div class="grid-2">

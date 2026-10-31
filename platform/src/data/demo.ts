@@ -23,7 +23,7 @@
  */
 import type {
   AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, Branding, CompanyContact, CorrectionRequest,
-  Employee, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, PromoCode, PromoRedemption, Tenant,
+  Employee, EmploymentContract, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, PromoCode, PromoRedemption, Tenant,
   ContractAcceptance, StatementEvent, SubscriptionInterval, SubscriptionTerm, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import {
@@ -43,9 +43,10 @@ import {
 import { retentionEndsAt, type ExportPerson, type ExportRecords, type ExportTimeEntry, type PersonalDataExport, type TenantDataExport } from "../core/privacy";
 import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validateBreakPolicy } from "../core/breaks";
 import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
+import { validateEmploymentInput } from "../core/employment";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
+  type BillingApi, type EmploymentApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type NewTimeEntry, type PrivacyApi, type Repository,
   type Session, type SystemOverview, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
 } from "./repository";
 import {
@@ -215,10 +216,12 @@ interface DemoDb {
   /** Added with subscriptions (0023). */
   billingSettings?: DemoBillingSettings;
   subscriptions?: DemoSubscription[];
+  /** Added with employment contracts (0025). */
+  employmentContracts?: EmploymentContract[];
 }
 
 /** Demo-only extensions used by the start page, admin portal and tests. */
-export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi {
+export interface DemoRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi, EmploymentApi {
   /**
    * Demo only: current 6-digit code of the account that is signing in
    * (second step) or signed in – so 2FA can be tried without an app.
@@ -623,6 +626,22 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     for (const x of subs) {
       if (x.contract === undefined) x.contract = { acceptedAt: db.seededAt, acceptedByName: null, termsVersion: EXISTING_CONTRACT, dpaVersion: EXISTING_CONTRACT, interval: "monthly" };
     }
+    // Employment contracts (0025): example data from the month before the seed day (also for stored demo databases).
+    if (db.employmentContracts === undefined) {
+      const from = addMonthsBilling(localISODate(new Date(db.seededAt)).slice(0, 7), -1);
+      const c = (employeeId: string, tenantId: UUID, employmentType: EmploymentContract["employmentType"], wage: number | null, targetHours: number | null): EmploymentContract =>
+        ({ employeeId, tenantId, validFrom: from, employmentType, hourlyWageCents: wage, monthlyTargetMinutes: targetHours === null ? null : targetHours * 60, carryOverMinutes: 0, updatedAt: db.seededAt });
+      const kt = DEMO_TENANT_IDS.kt;
+      const pf = DEMO_TENANT_IDS.pflege;
+      db.employmentContracts = [
+        c("30000000-0000-4000-8000-000000000101", kt, "teilzeit", 1450, 120),
+        c("30000000-0000-4000-8000-000000000102", kt, "minijob", 1400, 43),
+        c("30000000-0000-4000-8000-000000000103", kt, "vollzeit", 1600, 160),
+        c("30000000-0000-4000-8000-000000000104", kt, "offen", 1450, null),
+        c("30000000-0000-4000-8000-000000000201", pf, "minijob", 1400, 43),
+        c("30000000-0000-4000-8000-000000000202", pf, "teilzeit", 1500, 100),
+      ].filter((x) => db.employees.some((e) => e.id === x.employeeId));
+    }
     for (const l of db.licenses) {
       l.employeePriceCents ??= null;
       l.freeOfCharge ??= l.plan === "pilot_free";
@@ -767,6 +786,18 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     if (s.platformRole !== "super_admin" && !(s.platformRole === "support" && !write)) {
       throw new AccessDeniedError("Nur für Plattform-Administratoren.");
     }
+  }
+
+  /** Like private.assert_employment_contract_write (0025): leadership; leadership persons and oneself only the owner. */
+  function assertEmploymentWrite(db: DemoDb, s: Session, employeeId: UUID): Employee {
+    const emp = db.employees.find((e) => e.id === employeeId);
+    if (!emp) throw new AccessDeniedError();
+    if (s.tenantId !== emp.tenantId || !isManager(s)) throw new AccessDeniedError("Vertragsdaten dürfen nur Vorgesetzte der Firma ändern.");
+    if ((emp.role !== "employee" || emp.id === s.employeeId) && s.role !== "owner") {
+      throw new AccessDeniedError("Die Vertragsdaten von Leitungspersonen und die eigenen ändert nur der Inhaber.");
+    }
+    if (emp.anonymizedAt) throw new AccessDeniedError(ANONYMIZED_FINAL);
+    return emp;
   }
 
   function addAudit(db: DemoDb, s: Session | null, e: Omit<AuditEvent, "id" | "createdAt" | "actorId">) {
@@ -1068,6 +1099,9 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       })),
       invitations: [],
       billingMonths: [],
+      employmentContracts: (db.employmentContracts ?? []).filter((c) => c.employeeId === e.id).sort((a, b) => a.validFrom.localeCompare(b.validFrom))
+        .map((c) => ({ validFrom: c.validFrom, employmentType: c.employmentType, hourlyWageCents: c.hourlyWageCents,
+          monthlyTargetMinutes: c.monthlyTargetMinutes, carryOverMinutes: c.carryOverMinutes, updatedAt: c.updatedAt })),
     };
   }
   const REDACT_KEYS = new Set(["displayName", "display_name", "email", "personnelNumber", "personnel_number", "note", "reason", "reviewNote", "decisionNote"]);
@@ -1502,6 +1536,51 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         addAudit(db, s, { tenantId: entry.tenantId, action: "time_entry.deleted", entity: "time_entry", entityId: entry.id, before, after: { deletedAt: entry.deletedAt }, reason: r });
         return null;
       });
+    },
+
+    // ------------------------------------------------ employment contracts (0025)
+    async listEmploymentContracts(tenantId) {
+      return read((db, s) => {
+        if (s.platformRole && !s.tenantId) {
+          if (!hasSupportGrant(db, tenantId)) throw new AccessDeniedError("Kein Supportzugriff: Der Mandant hat keine Freigabe erteilt.");
+        } else {
+          assertManager(s, tenantId);
+        }
+        return (db.employmentContracts ?? []).filter((c) => c.tenantId === tenantId)
+          .sort((a, b) => a.employeeId.localeCompare(b.employeeId) || a.validFrom.localeCompare(b.validFrom));
+      });
+    },
+    async listEmployeeContracts(employeeId) {
+      return read((db, s) => {
+        assertEmployeeRead(db, s, employeeId);
+        return (db.employmentContracts ?? []).filter((c) => c.employeeId === employeeId).sort((a, b) => a.validFrom.localeCompare(b.validFrom));
+      });
+    },
+    async setEmploymentContract(employeeId, input) {
+      return tx((db, s) => {
+        const emp = assertEmploymentWrite(db, s, employeeId);
+        const v = validateEmploymentInput(input);
+        const list = (db.employmentContracts ??= []);
+        const existing = list.find((c) => c.employeeId === employeeId && c.validFrom === v.validFrom);
+        const before = existing ? clone(existing) : null;
+        const row: EmploymentContract = { employeeId, tenantId: emp.tenantId, ...v, updatedAt: new Date().toISOString() };
+        if (existing) Object.assign(existing, row); else list.push(row);
+        addAudit(db, s, { tenantId: emp.tenantId, action: `employment_contract.${existing ? "update" : "insert"}`, entity: "employment_contract",
+          entityId: `${employeeId}:${v.validFrom}`, before, after: clone(row), reason: null });
+        return row;
+      });
+    },
+    async deleteEmploymentContract(employeeId, validFrom) {
+      return tx((db, s) => {
+        const emp = assertEmploymentWrite(db, s, employeeId);
+        const list = (db.employmentContracts ??= []);
+        const i = list.findIndex((c) => c.employeeId === employeeId && c.validFrom === validFrom);
+        if (i < 0) throw new Error("Für diesen Monat sind keine Vertragsdaten gespeichert.");
+        const [old] = list.splice(i, 1);
+        addAudit(db, s, { tenantId: emp.tenantId, action: "employment_contract.delete", entity: "employment_contract",
+          entityId: `${employeeId}:${validFrom}`, before: clone(old!), after: null, reason: null });
+        return null;
+      }).then(() => undefined);
     },
 
     // ------------------------------------------------ work account

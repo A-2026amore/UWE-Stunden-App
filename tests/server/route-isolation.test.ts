@@ -98,6 +98,13 @@ const ROUTE_RULES: Record<string, Rule> = {
   "GET /api/employees/:employeeId/allocations": { scope: "tenant", allowed: ["managerA"] },
   "PUT /api/employees/:employeeId/allocations/:month": { scope: "tenant", allowed: ["managerA"], body: { minutes: 60 } },
   "POST /api/employees/:employeeId/allocations/:month/review": { scope: "tenant", allowed: ["managerA"], body: { decision: "approved" } },
+  "GET /api/tenants/:tenantId/employment-contracts": { scope: "tenant", allowed: ["managerA"] },
+  "GET /api/employees/:employeeId/employment-contracts": { scope: "tenant", allowed: ["managerA"] },
+  "PUT /api/employees/:employeeId/employment-contracts/:month": {
+    scope: "tenant", allowed: ["managerA"], params: { month: "2026-10" },
+    body: { employmentType: "minijob", hourlyWageCents: 1400, monthlyTargetMinutes: 2580, carryOverMinutes: 0 },
+  },
+  "DELETE /api/employees/:employeeId/employment-contracts/:month": { scope: "tenant", allowed: ["managerA"], params: { month: "2026-10" } },
   "GET /api/tenants/:tenantId/statements": { scope: "tenant", allowed: ["managerA"], query: "month=2026-09" },
   "GET /api/employees/:employeeId/statements/:month": { scope: "tenant", allowed: ["managerA"], params: { month: "2026-09" } },
   "POST /api/employees/:employeeId/statements/:month/submit": { scope: "tenant", allowed: ["managerA"], body: {} },

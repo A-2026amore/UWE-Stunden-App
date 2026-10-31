@@ -9,6 +9,7 @@ import { errorText, useAsync } from "../../shared/hooks";
 import { formatDateDE, hoursLabel, monthLabelDE, signedHours } from "../../shared/format";
 import { useEmployee } from "../context";
 import { MonthPicker } from "../../shared/MonthPicker";
+import { EmploymentInfoCard, useEmploymentAccount } from "../EmploymentInfo";
 
 export function AccountPage() {
   const { repo, me, tenant, month, setMonth, version, changed } = useEmployee();
@@ -26,6 +27,7 @@ export function AccountPage() {
     return { allocations, entriesByMonth, statement };
   }, [month, version]);
 
+  const employment = useEmploymentAccount();
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -45,7 +47,8 @@ export function AccountPage() {
     return (
       <div class="stack">
         <h1 class="page-title">Arbeitszeitkonto</h1>
-        <Card><EmptyState icon="wallet" title="Kein Arbeitszeitkonto aktiviert">Für dein Unternehmen ist derzeit kein Arbeitszeitkonto eingerichtet. Deine Monatsstunden werden vollständig abgerechnet.</EmptyState></Card>
+        <EmploymentInfoCard account={employment} />
+        {!employment?.hasAccount && <Card><EmptyState icon="wallet" title="Kein Arbeitszeitkonto aktiviert">Für dein Unternehmen ist derzeit kein Arbeitszeitkonto eingerichtet. Deine Monatsstunden werden vollständig abgerechnet.</EmptyState></Card>}
       </div>
     );
   }
@@ -101,6 +104,7 @@ export function AccountPage() {
   return (
     <div class="stack">
       <h1 class="page-title">Arbeitszeitkonto</h1>
+      <EmploymentInfoCard account={employment} />
       <Card accent>
         <div class="stack">
           <p class="muted small mb-0">

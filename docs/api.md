@@ -57,6 +57,7 @@ Unbekannte Schlüssel werden abgelehnt (`22023`). Zeiteinträge werden immer üb
 | `delete_time_entry(employee_id, id, expected_version, reason?) → time_entries` (Soft-Delete) | invoker | `deleteTimeEntry` |
 | `correct_time_entry(employee_id, id, patch(+deleted), expected_version, reason)` – Leitung, auch gesperrte Monate, Begründung ≥ 5 Zeichen | definer | Korrektur im Chef-Portal |
 | `set_allocation(employee_id, month, minutes) → work_account_allocations` (Status `proposed`) | invoker | `setAllocation` |
+| `set_employment_contract(employee_id, valid_from, employment_type, hourly_wage_cents, monthly_target_minutes, carry_over_minutes)` · `delete_employment_contract(employee_id, valid_from)` | definer (seit 0025), Leitung | `setEmploymentContract` / `deleteEmploymentContract` |
 | `review_allocation(employee_id, month, 'approved'/'rejected', reason?)` – Ablehnung mit Begründung | definer | `reviewAllocation` |
 | `submit_statement(employee_id, month)` | definer | `submitStatement` |
 | `approve_statement(statement_id)` | definer | `approveStatement` |
@@ -192,6 +193,7 @@ Nachweis (`proof`) ist **genau eines** von `{code: "123456"}` (6 Ziffern, Leerze
 | `updateTimeEntry` | `PATCH /api/employees/:id/time-entries/:entryId` oder `PATCH /api/time-entries/:entryId` – `{patch, expectedVersion, reason?}` |
 | `deleteTimeEntry` | `DELETE` (gleiche Pfade) – `{expectedVersion, reason?}` (Soft-Delete) |
 | `listAllocations` / `setAllocation` | `GET /api/employees/:id/allocations` · `PUT /api/employees/:id/allocations/:month` `{minutes}` |
+| `listEmploymentContracts` / `listEmployeeContracts` / `setEmploymentContract` / `deleteEmploymentContract` | `GET /api/tenants/:id/employment-contracts` (Leitung) · `GET /api/employees/:id/employment-contracts` (Person selbst, Leitung) · `PUT /api/employees/:id/employment-contracts/:month` `{employmentType, hourlyWageCents, monthlyTargetMinutes, carryOverMinutes}` (`null` = kein Lohn bzw. Soll offen) · `DELETE /api/employees/:id/employment-contracts/:month` → 204 (seit 0025) |
 | `reviewAllocation` | `POST /api/employees/:id/allocations/:month/review` `{decision, reason}` |
 | `listStatements` / `getStatement` | `GET /api/tenants/:tenantId/statements?month=` · `GET /api/employees/:id/statements/:month` – freigegebene Abschlüsse mit `correctedAfterApproval: {count, lastAt}` (sonst `null`), siehe N1 in `docs/database.md` |
 | `listCorrectionRequests` | `GET /api/tenants/:tenantId/correction-requests?employeeId=&status=` (RLS: Mitarbeitende nur eigene, Leitung den Mandanten, Plattform nur mit Freigabe; max. 500, neueste zuerst). `CorrectionRequest` enthält `before`/`proposed` (`{date,start,end,pauseMinutes,note}`), `status`, `decisionNote`, `decidedByName` (nur sichtbar, wenn die Person für den Aufrufer sichtbar ist) |

@@ -16,7 +16,7 @@ const U = IDS.users;
 const E = IDS.employees;
 
 const TENANT_TABLES = ["tenants", "licenses", "employees", "support_access_grants", "invitations", "time_entries",
-  "time_entry_revisions", "work_account_allocations", "monthly_statements", "audit_log"];
+  "time_entry_revisions", "work_account_allocations", "monthly_statements", "employment_contracts", "audit_log"];
 
 async function visibleRows(user: string, tenant: string): Promise<Record<string, number>> {
   return db.as(user, async (q) => {

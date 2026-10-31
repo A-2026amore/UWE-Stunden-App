@@ -16,12 +16,13 @@
  */
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
-  Employee, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
+  Employee, EmploymentContract, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
   NewPromoCode, PromoCode, PromoRedemption, SubscriptionInterval, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings, InvoiceSettingsPatch } from "../core/invoice";
 import type { StatementEvent } from "../core/types";
+import type { EmploymentInput } from "../core/employment";
 
 export class AccessDeniedError extends Error {
   constructor(message = "Kein Zugriff auf diese Daten.") {
@@ -376,4 +377,20 @@ export interface SubscriptionApi {
    * versions (TERMS_VERSION, DPA_VERSION); "annual" applies the plan choice like chooseSubscription.
    */
   acceptContract(tenantId: UUID, input: { entrepreneur: true; termsAccepted: true; interval: SubscriptionInterval }): Promise<TenantSubscription>;
+}
+
+/**
+ * Employment contract data (migration 0025, core/employment.ts): kind of contract, hourly wage,
+ * target hours per month. Leadership reads the tenant and writes (contracts of leadership persons
+ * and the own one only the owner); the person reads their own versions. Every change is audited.
+ */
+export interface EmploymentApi {
+  /** Leadership (and support with grant): all versions of the tenant, by employee and month. */
+  listEmploymentContracts(tenantId: UUID): Promise<EmploymentContract[]>;
+  /** The person themself or leadership: versions of one employee (oldest first). */
+  listEmployeeContracts(employeeId: UUID): Promise<EmploymentContract[]>;
+  /** Leadership: creates or replaces the version starting in input.validFrom. */
+  setEmploymentContract(employeeId: UUID, input: EmploymentInput): Promise<EmploymentContract>;
+  /** Leadership: removes the version starting in that month. */
+  deleteEmploymentContract(employeeId: UUID, validFrom: ISOMonth): Promise<void>;
 }

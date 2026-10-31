@@ -1,6 +1,6 @@
 /** Database rows (snake_case) → domain objects of platform/src/core/types.ts. */
 import type {
-  AuditEvent, BillingMonthSummary, CorrectionRequest, Employee, EntryValues, License, MonthAllocation, MonthlyStatement,
+  AuditEvent, BillingMonthSummary, CorrectionRequest, Employee, EmploymentContract, EntryValues, License, MonthAllocation, MonthlyStatement,
   PlatformRevenueRow, Tenant, TimeEntry, TimeEntryRevision,
 } from "../../platform/src/core/types.ts";
 
@@ -127,6 +127,19 @@ export function toAllocation(r: Row): MonthAllocation {
     month: String(r.month),
     minutes: Number(r.minutes),
     status: r.status as MonthAllocation["status"],
+  };
+}
+
+export function toEmploymentContract(r: Row): EmploymentContract {
+  return {
+    employeeId: String(r.employee_id),
+    tenantId: String(r.tenant_id),
+    validFrom: String(r.valid_from),
+    employmentType: r.employment_type as EmploymentContract["employmentType"],
+    hourlyWageCents: r.hourly_wage_cents == null ? null : Number(r.hourly_wage_cents),
+    monthlyTargetMinutes: r.monthly_target_minutes == null ? null : Number(r.monthly_target_minutes),
+    carryOverMinutes: Number(r.carry_over_minutes ?? 0),
+    updatedAt: iso(r.updated_at),
   };
 }
 

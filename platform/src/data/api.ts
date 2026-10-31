@@ -23,7 +23,7 @@
  * `Content-Type: application/json` as required by the server's CSRF check.
  */
 import type {
-  AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, ISOMonth, License,
+  AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, EmploymentContract, ISOMonth, License,
   LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, PromoCode, PromoRedemption, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
   TenantSubscription, TimeEntryRevision, UUID,
 } from "../core/types";
@@ -32,7 +32,7 @@ import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
 import type { StatementEvent } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
+  type BillingApi, type EmploymentApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
   type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type SystemOverview, type TenantOverview,
   type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
@@ -94,7 +94,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi, EmploymentApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -309,6 +309,19 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     },
 
     // ---- work account
+    listEmploymentContracts(tenantId) {
+      return request<EmploymentContract[]>("GET", `/api/tenants/${enc(tenantId)}/employment-contracts`);
+    },
+    listEmployeeContracts(employeeId) {
+      return request<EmploymentContract[]>("GET", `/api/employees/${enc(employeeId)}/employment-contracts`);
+    },
+    setEmploymentContract(employeeId, input) {
+      const { validFrom, ...body } = input;
+      return request<EmploymentContract>("PUT", `/api/employees/${enc(employeeId)}/employment-contracts/${enc(validFrom)}`, body);
+    },
+    async deleteEmploymentContract(employeeId, validFrom) {
+      await request<void>("DELETE", `/api/employees/${enc(employeeId)}/employment-contracts/${enc(validFrom)}`);
+    },
     listAllocations(employeeId) {
       return request<MonthAllocation[]>("GET", `/api/employees/${enc(employeeId)}/allocations`);
     },

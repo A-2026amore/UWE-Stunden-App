@@ -1,11 +1,15 @@
 import { useState } from "preact/hooks";
-import type { Employee, TenantRole } from "../../../core/types";
+import type { Employee, EmploymentContract, TenantRole } from "../../../core/types";
 import { Alert, Button, Card, Dialog, InputField, LinkButton, SelectField, StatusPill, Table, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
-import { ROLE_LABEL, dateTimeDE } from "../../shared/format";
+import { ROLE_LABEL, currentMonth, dateTimeDE, monthLabelDE, signedHours } from "../../shared/format";
+import { contractForMonth } from "../../../core/employment";
 import type { InvitationChannel, InvitationInfo, InvitedEmployee } from "../../../data/repository";
 import { useChef } from "../context";
 import { InvitationShareDialog, invitationText } from "../InvitationShare";
+import {
+  EMPTY_EMPLOYMENT_FORM, EmploymentFields, contractText, employmentFormFrom, employmentInputFrom, type EmploymentForm,
+} from "../employment";
 
 interface FormState { displayName: string; personnelNumber: string; email: string; role: TenantRole; channel: InvitationChannel }
 const EMPTY: FormState = { displayName: "", personnelNumber: "", email: "", role: "employee", channel: "email" };
@@ -14,7 +18,21 @@ export function EmployeesPage() {
   const { repo, tenant, me, version, changed } = useChef();
   const toast = useToast();
   const dialogs = useDialogs();
-  const q = useAsync(() => repo.listEmployees(tenant.id), [version]);
+  const month = currentMonth();
+  const q = useAsync(async () => {
+    const [employees, contracts] = await Promise.all([
+      repo.listEmployees(tenant.id),
+      // Contract data are additional information: a failure must not hide the list.
+      repo.listEmploymentContracts(tenant.id).catch(() => [] as EmploymentContract[]),
+    ]);
+    return { employees, contracts };
+  }, [version]);
+  const [emp, setEmp] = useState<EmploymentForm>(EMPTY_EMPLOYMENT_FORM(month));
+  const [empInitial, setEmpInitial] = useState<EmploymentForm>(EMPTY_EMPLOYMENT_FORM(month));
+  const versionsOf = (id: string) => (q.data?.contracts ?? []).filter((c) => c.employeeId === id);
+  /** Like the database (0025): leadership persons and oneself only the owner. */
+  const canEditContract = (e: Employee | "new" | null, role: TenantRole) =>
+    me.role === "owner" || (e === "new" ? role === "employee" : !!e && e.role === "employee" && e.id !== me.id);
   const [editing, setEditing] = useState<Employee | "new" | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +45,37 @@ export function EmployeesPage() {
     setEditing(e);
     setError(null);
     setForm(e === "new" ? EMPTY : { displayName: e.displayName, personnelNumber: e.personnelNumber, email: e.email ?? "", role: e.role, channel: "email" });
+    const f = e === "new" ? EMPTY_EMPLOYMENT_FORM(month) : employmentFormFrom(versionsOf(e.id), month);
+    setEmp(f);
+    setEmpInitial(f);
+  };
+
+  /** Saves the contract part when it was filled in / changed; returns an error text instead of throwing. */
+  const saveContract = async (employeeId: string): Promise<string | null> => {
+    if (!canEditContract(editing, form.role) || JSON.stringify(emp) === JSON.stringify(empInitial)) return null;
+    try {
+      const input = employmentInputFrom(emp);
+      if (input) await repo.setEmploymentContract(employeeId, input);
+      return null;
+    } catch (e) {
+      return errorText(e);
+    }
+  };
+
+  const removeVersion = async (e: Employee, c: EmploymentContract) => {
+    const ok = await dialogs.confirm({
+      title: "Vertragsdaten entfernen?", message: `${e.displayName}: Angaben ab ${monthLabelDE(c.validFrom)} (${contractText(c)}) werden entfernt. Frühere Angaben gelten dann wieder.`,
+      confirmLabel: "Entfernen", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await repo.deleteEmploymentContract(e.id, c.validFrom);
+      toast("Vertragsdaten entfernt.");
+      setEditing(null);
+      changed();
+    } catch (err) {
+      toast(errorText(err), "error");
+    }
   };
 
   const save = async (ev: Event) => {
@@ -34,22 +83,31 @@ export function EmployeesPage() {
     setBusy(true);
     setError(null);
     try {
+      // Check the contract part first, so nothing is created with unreadable values.
+      if (canEditContract(editing, form.role)) employmentInputFrom(emp);
       if (editing === "new") {
         const email = form.email.trim() || null;
-        const emp: InvitedEmployee = await repo.inviteEmployee(tenant.id, {
+        const created: InvitedEmployee = await repo.inviteEmployee(tenant.id, {
           displayName: form.displayName, personnelNumber: form.personnelNumber, email, role: form.role, invitation: form.channel,
         });
-        toast(`${emp.displayName} wurde angelegt.`);
-        if (emp.email && emp.invitation?.link) {
+        const contractError = await saveContract(created.id);
+        toast(contractError ? `${created.displayName} wurde angelegt, die Vertragsdaten aber nicht gespeichert: ${contractError}` : `${created.displayName} wurde angelegt.`, contractError ? "error" : undefined);
+        if (created.email && created.invitation?.link) {
           setSent(null);
-          setSharing({ employee: emp, initial: emp.invitation });
+          setSharing({ employee: created, initial: created.invitation });
         } else {
-          setSent(emp.email && emp.invitation
-            ? invitationText(emp.displayName, emp.email, emp.invitation)
-            : { tone: "warning", text: `${emp.displayName} hat keine E-Mail-Adresse – es wurde keine Einladung erstellt. Trage eine E-Mail-Adresse ein (sie ist der Anmeldename) und nutze dann „Zugang senden“.` });
+          setSent(created.email && created.invitation
+            ? invitationText(created.displayName, created.email, created.invitation)
+            : { tone: "warning", text: `${created.displayName} hat keine E-Mail-Adresse – es wurde keine Einladung erstellt. Trage eine E-Mail-Adresse ein (sie ist der Anmeldename) und nutze dann „Zugang senden“.` });
         }
       } else if (editing) {
         await repo.updateEmployee(editing.id, { displayName: form.displayName, personnelNumber: form.personnelNumber, email: form.email.trim() || null, ...(form.role !== editing.role ? { role: form.role } : {}) });
+        const contractError = await saveContract(editing.id);
+        if (contractError) {
+          changed();
+          setError(`Die Stammdaten sind gespeichert, die Vertragsdaten nicht: ${contractError}`);
+          return;
+        }
         toast("Änderungen gespeichert.");
       }
       setEditing(null);
@@ -102,7 +160,10 @@ export function EmployeesPage() {
     ));
   };
 
-  const list = (q.data ?? []).filter((e) => filter === "all" || e.status === filter);
+  const all = q.data?.employees ?? [];
+  const list = all.filter((e) => filter === "all" || e.status === filter);
+  const editingVersions = editing && editing !== "new" ? versionsOf(editing.id).slice().sort((a, b) => b.validFrom.localeCompare(a.validFrom)) : [];
+  const contractEditable = canEditContract(editing, form.role);
   const set = (k: keyof FormState) => (v: string) => setForm({ ...form, [k]: v });
 
   return (
@@ -121,7 +182,7 @@ export function EmployeesPage() {
           <SelectField label="Anzeigen" value={filter} onValue={(v) => setFilter(v as typeof filter)} options={[
             { value: "all", label: "Alle" }, { value: "active", label: "Aktiv" }, { value: "invited", label: "Eingeladen" }, { value: "locked", label: "Gesperrt" }, { value: "deactivated", label: "Deaktiviert" },
           ]} />
-          <p class="muted small mb-0">{list.length} von {q.data?.length ?? 0} Einträgen</p>
+          <p class="muted small mb-0">{list.length} von {all.length} Einträgen</p>
         </div>
         <Table<Employee>
           caption="Mitarbeiterliste"
@@ -133,6 +194,11 @@ export function EmployeesPage() {
             { key: "p", header: "Personalnr.", render: (e) => e.personnelNumber },
             { key: "e", header: "E-Mail", render: (e) => e.email ?? "—" },
             { key: "r", header: "Rolle", render: (e) => ROLE_LABEL[e.role] },
+            { key: "v", header: "Arbeitsvertrag", render: (e) => {
+              const vs = versionsOf(e.id);
+              const c = contractForMonth(vs, month) ?? vs.at(-1) ?? null;
+              return <span class="small">{contractText(c)}{c && c.validFrom > month ? ` (ab ${monthLabelDE(c.validFrom)})` : ""}</span>;
+            } },
             { key: "s", header: "Status", render: (e) => <StatusPill status={e.status} /> },
             { key: "c", header: "Angelegt", render: (e) => <span class="small muted">{dateTimeDE(e.createdAt).split(",")[0]}</span> },
             {
@@ -175,6 +241,21 @@ export function EmployeesPage() {
             disabled={me.role !== "owner" || (editing !== "new" && editing?.id === me.id)}
             hint={me.role !== "owner" ? "Rollen kann nur der Inhaber ändern." : undefined}
             options={[{ value: "employee", label: ROLE_LABEL.employee! }, { value: "manager", label: ROLE_LABEL.manager! }, { value: "owner", label: ROLE_LABEL.owner! }]} />
+          <EmploymentFields form={emp} onChange={setEmp} currentMonth={month} disabled={!contractEditable}
+            disabledHint={contractEditable ? undefined : "Die Vertragsdaten von Leitungspersonen und die eigenen trägt nur der Inhaber ein."} />
+          {editingVersions.length > 0 && editing && editing !== "new" && (
+            <div class="stack-sm" data-testid="employment-versions">
+              <p class="small mb-0"><strong>Gespeicherte Angaben</strong></p>
+              <ul class="list-plain stack-sm">
+                {editingVersions.map((c) => (
+                  <li key={c.validFrom} class="row-between">
+                    <span class="small">ab {monthLabelDE(c.validFrom)}: {contractText(c)}{c.carryOverMinutes ? ` · Übertrag ${signedHours(c.carryOverMinutes)}` : ""}</span>
+                    {contractEditable && <Button size="sm" variant="ghost" onClick={() => removeVersion(editing, c)} aria-label={`Angaben ab ${monthLabelDE(c.validFrom)} entfernen`}>Entfernen</Button>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {error && <Alert tone="danger" live>{error}</Alert>}
         </form>
       </Dialog>

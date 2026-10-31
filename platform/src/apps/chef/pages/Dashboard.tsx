@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { activeShifts } from "../../../core/time";
 import { BILLING_CONDITION_LABEL, formatEuro } from "../../../core/billing";
-import { Alert, Avatar, BarChart, Card, LinkButton, Segmented, Skeleton, StatTile, StatusPill, Table } from "../../../design";
+import { Alert, Avatar, Badge, BarChart, Card, LinkButton, Segmented, Skeleton, StatTile, StatusPill, Table } from "../../../design";
 import { useAsync } from "../../shared/hooks";
 import { currentMonth, formatDateDE, hoursLabel, monthLabelDE, signedHours, todayISO } from "../../shared/format";
 import { dailyBars, hoursAxis, weeklyBars } from "../../shared/charts";
@@ -11,6 +11,80 @@ import { loadTenantMonth, useChef } from "../context";
 import { DemoBanner } from "../../shared/ui";
 import { CORRECTION_KIND_LABEL, requestDate } from "../../shared/corrections";
 import { IS_DEMO } from "../../shared/repo";
+import { targetState, type EmploymentMonth } from "../../../core/employment";
+import { contractText, loadEmploymentOverview, type EmploymentRow } from "../employment";
+
+/** Over / under target of one month as a badge (with the value at the hourly wage). */
+function TargetBadge({ m }: { m: EmploymentMonth }) {
+  const diff = m.differenceMinutes ?? 0;
+  const money = m.contract.hourlyWageCents !== null && diff !== 0 ? ` (${diff > 0 ? "+" : "−"}${formatEuro(Math.round((Math.abs(diff) * m.contract.hourlyWageCents) / 60))})` : "";
+  switch (targetState(m)) {
+    case "open": return <Badge tone="neutral">ohne Limit</Badge>;
+    case "over": return <Badge tone="warning">{signedHours(diff)} zu viel{money}</Badge>;
+    case "met": return <Badge tone="success">Soll erreicht</Badge>;
+    case "running": return <Badge tone="info">noch {hoursLabel(-diff)} bis Soll</Badge>;
+    default: return <Badge tone="danger">{signedHours(diff)} unter Soll{money}</Badge>;
+  }
+}
+
+/** Soll / Ist of the current month, previous month and the hours account per person (migration 0025). */
+function EmploymentCard({ rows, month }: { rows: EmploymentRow[]; month: string }) {
+  const prev = shiftMonth(month, -1);
+  const withAccount = rows.filter((r) => r.account.hasAccount);
+  const total = withAccount.reduce((sum, r) => sum + r.account.balanceMinutes, 0);
+  const over = rows.filter((r) => r.account.current && targetState(r.account.current) === "over").length;
+  const overLimit = rows.filter((r) => r.account.current?.overMinijobLimit).length;
+  return (
+    <Card title={`Soll / Ist laut Arbeitsvertrag · ${monthLabelDE(month)}`} actions={<LinkButton href="#/mitarbeiter" size="sm">Verträge bearbeiten</LinkButton>}>
+      <div data-testid="employment-overview">
+        {withAccount.length > 0 && (
+          <p class="mb-0" data-testid="employment-summary">
+            Summe Arbeitszeitkonten: <strong class="num">{signedHours(total)}</strong>
+            {" · "}{over} über Soll{overLimit > 0 && <> · <Badge tone="danger">{overLimit} über Minijob-Grenze</Badge></>}
+          </p>
+        )}
+        <Table<EmploymentRow>
+          caption={`Soll und Ist laut Arbeitsvertrag im ${monthLabelDE(month)}`}
+          rows={rows}
+          rowKey={(r) => r.employee.id}
+          empty={<p class="muted">Noch keine Vertragsdaten hinterlegt. Unter „Mitarbeiter“ → „Bearbeiten“ können Sie Stundenlohn, Vertragsart und Soll-Stunden eintragen.</p>}
+          columns={[
+            { key: "n", header: "Mitarbeiter", render: (r) => (
+              <div style={{ minWidth: "12rem" }}>
+                <strong>{r.employee.displayName}</strong>
+                <div class="small muted">{contractText(r.account.current?.contract ?? r.versions.at(-1) ?? null)}</div>
+              </div>
+            ) },
+            { key: "i", header: "Ist / Soll", align: "right", render: (r) => r.account.current
+              ? <span class="num">{hoursLabel(r.account.current.payableMinutes)} / {r.account.current.targetMinutes === null ? "offen" : hoursLabel(r.account.current.targetMinutes)}</span>
+              : <span class="muted small">ab {monthLabelDE(r.versions[0]?.validFrom ?? month)}</span> },
+            { key: "d", header: "Differenz", render: (r) => r.account.current ? <TargetBadge m={r.account.current} /> : "—" },
+            { key: "p", header: monthLabelDE(prev), align: "right", render: (r) => {
+              const p = r.account.months.find((m) => m.month === prev);
+              return p && p.differenceMinutes !== null ? <span class="num small">{signedHours(p.differenceMinutes)}</span> : <span class="muted small">—</span>;
+            } },
+            { key: "k", header: "Arbeitszeitkonto", align: "right", render: (r) => r.account.hasAccount
+              ? <strong class="num" data-testid={`employment-balance-${r.employee.id}`}>{signedHours(r.account.balanceMinutes)}</strong>
+              : <span class="muted small">—</span> },
+            { key: "h", header: "Hinweis", render: (r) => {
+              const c = r.account.current;
+              if (!c) return null;
+              return (
+                <div class="stack-sm">
+                  {c.earningsCents !== null && <span class="small muted">Lohn Ist: {formatEuro(c.earningsCents)}</span>}
+                  {c.overMinijobLimit && <span title={`Minijob-Grenze ${formatEuro(c.minijobLimitCents!)} im Monat`}><Badge tone="danger">über Minijob-Grenze</Badge></span>}
+                  {c.belowMinimumWage && <Badge tone="warning">unter Mindestlohn</Badge>}
+                </div>
+              );
+            } },
+          ]}
+        />
+        <p class="muted small mb-0">Mehrstunden kommen sofort ins Arbeitszeitkonto, Minderstunden erst am Monatsende. Ist = abrechenbare Stunden.
+          Hinweise zu Mindestlohn und Minijob-Grenze ersetzen keine Lohnabrechnung.</p>
+      </div>
+    </Card>
+  );
+}
 
 export function DashboardPage() {
   const { repo, tenant, version } = useChef();
@@ -26,7 +100,9 @@ export function DashboardPage() {
       // Costs are informative only: a failure must not hide the dashboard.
       repo.getTenantBilling(tenant.id, month).catch(() => null),
     ]);
-    return { data, statements: [...stPrev, ...stCur], corrections, billing };
+    // Contract data are additional information as well.
+    const employment = await loadEmploymentOverview(repo, tenant, month, data.employees).catch(() => null);
+    return { data, statements: [...stPrev, ...stCur], corrections, billing, employment };
   }, [version, tenant.id]);
 
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
@@ -67,6 +143,7 @@ export function DashboardPage() {
     .filter((p) => p.minutes > 0)
     .sort((a, b) => b.minutes - a.minutes);
   const maxPerson = Math.max(1, ...perPerson.map((p) => p.minutes));
+  const employment = q.data?.employment ?? null;
 
   return (
     <div class="stack">
@@ -117,6 +194,8 @@ export function DashboardPage() {
         </Card>
       </div>
 
+
+      {employment && <EmploymentCard rows={employment} month={month} />}
 
       {correctedAfterApproval.length > 0 && (
         <Alert tone="warning" title="Nach Freigabe korrigiert">

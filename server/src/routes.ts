@@ -21,7 +21,7 @@ import type { Mail } from "./mailer.ts";
 import { welcomeCodeText } from "./subscription.ts";
 import { systemOverview } from "./system.ts";
 import {
-  STATEMENT_SELECT, TIME_ENTRY_COLUMNS, toAllocation, toAudit, toBillingSummary, toCorrectionRequest, toEmployee, toLicense,
+  STATEMENT_SELECT, TIME_ENTRY_COLUMNS, toAllocation, toAudit, toBillingSummary, toCorrectionRequest, toEmployee, toEmploymentContract, toLicense,
   toRevenueRow, toRevision, toStatement, toTenant, toTimeEntry,
 } from "./mappers.ts";
 import * as v from "./validate.ts";
@@ -628,6 +628,49 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     return app.asUser(ctx, async (q) => {
       const r = await one(q, "select * from public.review_allocation($1, $2, $3, $4)", [id, month, decision, reason]);
       return json(200, toAllocation(r!));
+    });
+  });
+
+  // ---------------------------------------------------------------- employment contracts (0025)
+  // Leadership reads the whole tenant; the person reads their own (RLS). Writes: set_/delete_employment_contract.
+  router.add("GET", "/api/tenants/:tenantId/employment-contracts", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.can_read_personal($1)", [id]);
+      const rows = await all(q, "select * from public.employment_contracts where tenant_id = $1 order by employee_id, valid_from", [id]);
+      return json(200, rows.map(toEmploymentContract));
+    });
+  });
+
+  router.add("GET", "/api/employees/:employeeId/employment-contracts", async (ctx) => {
+    const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    return app.asUser(ctx, async (q) => {
+      await visibleEmployee(q, id);
+      const rows = await all(q, "select * from public.employment_contracts where employee_id = $1 order by valid_from", [id]);
+      return json(200, rows.map(toEmploymentContract));
+    });
+  });
+
+  router.add("PUT", "/api/employees/:employeeId/employment-contracts/:month", async (ctx) => {
+    const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    const month = v.month(ctx.params.month);
+    const b = v.object(ctx.body, ["employmentType", "hourlyWageCents", "monthlyTargetMinutes", "carryOverMinutes"]);
+    const type = v.oneOf(b.employmentType, ["minijob", "teilzeit", "vollzeit", "offen"] as const, "Art des Arbeitsvertrags");
+    const wage = b.hourlyWageCents == null ? null : v.int(b.hourlyWageCents, "Stundenlohn (Cent)", 1, 100_000);
+    const target = b.monthlyTargetMinutes == null ? null : v.int(b.monthlyTargetMinutes, "Soll-Minuten pro Monat", 1, 24_000);
+    const carry = b.carryOverMinutes == null ? 0 : v.int(b.carryOverMinutes, "Übertrag (Minuten)", -120_000, 120_000);
+    return app.asUser(ctx, async (q) => {
+      const r = await one(q, "select * from public.set_employment_contract($1, $2, $3, $4, $5, $6)", [id, month, type, wage, target, carry]);
+      return json(200, toEmploymentContract(r!));
+    });
+  });
+
+  router.add("DELETE", "/api/employees/:employeeId/employment-contracts/:month", async (ctx) => {
+    const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    const month = v.month(ctx.params.month);
+    return app.asUser(ctx, async (q) => {
+      await one(q, "select public.delete_employment_contract($1, $2)", [id, month]);
+      return { status: 204 };
     });
   });
 

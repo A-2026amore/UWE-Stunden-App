@@ -14,7 +14,7 @@ const B = IDS.tenantB;
 const U = IDS.users;
 const E = IDS.employees;
 
-const PERSONAL_TABLES = ["time_entries", "time_entry_revisions", "employees", "work_account_allocations", "monthly_statements"];
+const PERSONAL_TABLES = ["time_entries", "time_entry_revisions", "employees", "work_account_allocations", "monthly_statements", "employment_contracts"];
 
 async function personalCounts(user: string, tenant: string): Promise<Record<string, number>> {
   return db.as(user, async (q) => {

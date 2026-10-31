@@ -394,6 +394,31 @@ export interface Employee {
   anonymizedAt?: string | null;
 }
 
+// ---------------------------------------------------------------- employment contract (0025)
+
+/** Kind of employment the leadership records (offen = not specified). */
+export type EmploymentType = "minijob" | "teilzeit" | "vollzeit" | "offen";
+
+/**
+ * Contract data of one employee from a month on (migration 0025, core/employment.ts).
+ * A new version with a later validFrom replaces the previous one from that month;
+ * months before keep the old values. Only leadership writes; the person reads their own.
+ */
+export interface EmploymentContract {
+  employeeId: UUID;
+  tenantId: UUID;
+  /** First month this version applies to. */
+  validFrom: ISOMonth;
+  employmentType: EmploymentType;
+  /** Gross hourly wage in cents; null = not recorded. */
+  hourlyWageCents: number | null;
+  /** Target hours per month in minutes; null = open (no limit, no hours account). */
+  monthlyTargetMinutes: number | null;
+  /** One-time booking into the hours account in the month validFrom (e.g. balance from before). */
+  carryOverMinutes: number;
+  updatedAt: string;
+}
+
 // ---------------------------------------------------------------- time
 
 export interface TimeEntry {
