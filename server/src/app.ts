@@ -18,7 +18,10 @@ import { withTx, type Queryable } from "./db.ts";
 import { HttpError, badRequest } from "./errors.ts";
 import { Router, createRequestHandler, serializeCookie, type Reply, type RequestContext } from "./http.ts";
 import type { Mail, Mailer } from "./mailer.ts";
+import { oneTimeLink } from "./operator.ts";
 import { RateLimiter } from "./rateLimit.ts";
+import { registerInvoiceRoutes } from "./invoices.ts";
+import { registerPrivacyRoutes } from "./privacy.ts";
 import { registerDomainRoutes } from "./routes.ts";
 import { withStaticFiles } from "./static.ts";
 import { CHALLENGE_MINUTES, createTwoFactorService, parseProof, type Proof } from "./twoFactor.ts";
@@ -40,11 +43,14 @@ export interface Membership {
   role: TenantRole;
   tenantName: string;
   /** Since 0008: memberships of suspended/pending tenants are listed too. */
-  tenantStatus: "active" | "suspended" | "pending";
+  tenantStatus: "active" | "suspended" | "pending" | "deactivated";
 }
 
 /** Session as in repository.ts, plus all memberships (for a later tenant switch). */
 export type ApiSession = Session & { memberships: Membership[] };
+
+/** Placeholder user id for timing-equalising lookups of unknown accounts (matches no row). */
+const NO_USER = "00000000-0000-4000-8000-000000000000";
 
 const SETUP_REQUIRED_MESSAGE = "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben. Bitte richte sie zuerst ein.";
 
@@ -92,7 +98,12 @@ export async function buildSession(q: Queryable, userId: string, email: string):
   let blocked: Blocked | null = null;
   if (!active && !session.platformRole) {
     blocked = memberships.length
-      ? { code: "tenant_suspended", message: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." }
+      ? {
+          code: "tenant_suspended",
+          message: memberships.every((m) => m.tenantStatus === "deactivated")
+            ? "Der Firmenzugang ist deaktiviert. Bitte wende dich an deinen Arbeitgeber."
+            : "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber.",
+        }
       : { code: "forbidden", message: "Dein Zugang ist nicht aktiv. Bitte wende dich an deinen Arbeitgeber." };
   }
   return { session, blocked };
@@ -106,8 +117,10 @@ export function createApp(deps: AppDeps) {
   const limiters = {
     loginKey: new RateLimiter(rl.loginPerKey, rl.windowMs),
     loginIp: new RateLimiter(rl.loginPerIp, rl.windowMs),
+    loginEmail: new RateLimiter(rl.loginPerEmail, rl.windowMs),
     resetKey: new RateLimiter(rl.resetPerKey, rl.windowMs),
     resetIp: new RateLimiter(rl.loginPerIp, rl.windowMs),
+    resetEmail: new RateLimiter(rl.resetPerEmail, rl.windowMs),
     tokenIp: new RateLimiter(rl.tokenPerIp, rl.windowMs),
     twoFactorKey: new RateLimiter(rl.twoFactorPerAccount, rl.windowMs),
     twoFactorIp: new RateLimiter(rl.twoFactorPerIp, rl.windowMs),
@@ -163,7 +176,7 @@ export function createApp(deps: AppDeps) {
     link(kind, token) {
       const path = kind === "reset" ? config.resetLinkPath : config.inviteLinkPath;
       // Token in the fragment: never sent to servers, not in access logs or Referer.
-      return `${config.publicOrigins[0]}${path}#token=${encodeURIComponent(token)}`;
+      return oneTimeLink(config.publicOrigins[0]!, path, token);
     },
   };
 
@@ -172,7 +185,8 @@ export function createApp(deps: AppDeps) {
   // ---------------------------------------------------------------- health & public
   router.add("GET", "/api/health", async () => {
     await app.asAnon((q) => q.query("select 1"));
-    return { status: 200, body: { ok: true } };
+    // The build commit (public repository) lets a deployment check confirm which version is live.
+    return { status: 200, body: config.system.commit ? { ok: true, commit: config.system.commit } : { ok: true } };
   });
 
   router.add("GET", "/api/public/tenants/:slug/branding", async (ctx) => {
@@ -190,25 +204,47 @@ export function createApp(deps: AppDeps) {
     }
     const email = b.email.trim().toLowerCase();
     const key = `${ctx.ip}|${email}`;
-    const wait = Math.max(limiters.loginIp.blockedFor(ctx.ip), limiters.loginKey.blockedFor(key));
+    // Per e-mail across all IPs as well (distributed guessing); unknown addresses are limited the
+    // same way, so the 429 reveals nothing about the account.
+    const wait = Math.max(limiters.loginIp.blockedFor(ctx.ip), limiters.loginKey.blockedFor(key), limiters.loginEmail.blockedFor(email));
     if (wait > 0) throw tooMany(wait, "Anmeldeversuche");
     limiters.loginIp.hit(ctx.ip);
+
+    // Wrong password, unknown account and blocked account without 2FA all end here: same
+    // status, code, text and rate-limit counting (QA 2026-10-28, B4).
+    const invalidLogin = () => {
+      limiters.loginKey.hit(key);
+      limiters.loginEmail.hit(email);
+      return new HttpError(401, "unauthenticated", "E-Mail-Adresse oder Passwort ist falsch.");
+    };
 
     const login = email ? await getLogin(pool, email) : null;
     // Same work for unknown accounts (scrypt on a dummy hash) – no enumeration via timing.
     const ok = login ? await verifyPassword(b.password, login.passwordHash) : (await verifyPassword(b.password, await getDummyHash()), false);
     if (!login || !ok) {
-      limiters.loginKey.hit(key);
-      throw new HttpError(401, "unauthenticated", "E-Mail-Adresse oder Passwort ist falsch.");
+      // Comparable work to a correct password of a blocked account without 2FA (timing, QA B4):
+      // that path runs the membership lookup (app_user) and the 2FA state lookup (app_auth,
+      // beginLogin) in two transactions – the same two read-only lookups run here.
+      await withTx(pool, "app_user", null, (q) => q.query("select public.current_session_context()"));
+      await withTx(pool, "app_auth", null, (q) => q.query("select * from auth.two_factor_state($1)", [login?.userId ?? NO_USER]));
+      throw invalidLogin();
     }
-    limiters.loginKey.reset(key);
 
     const { session, blocked } = await withTx(pool, "app_user", login.userId, (q) => buildSession(q, login.userId, email));
-    if (blocked) throw new HttpError(403, blocked.code, blocked.message);
     const ua = userAgent(ctx);
     // 2FA set up → no session yet, only a pending challenge (second step: POST /api/auth/2fa/verify).
     // The decision and the session/challenge insert happen under a lock on the user row.
-    const begun = await twoFactor.beginLogin(login.userId, config.sessionTtlHours, ua);
+    // Blocked access (deactivated, tenant suspended) – QA 2026-10-28, B4:
+    //  * with 2FA: the same challenge as for an active account; the block (403 with a clear
+    //    message) is reported only after the correct second factor (2fa/verify);
+    //  * without 2FA: the password must not reveal anything – the answer is exactly the one
+    //    for a wrong password (401, same text, counts towards the rate limit), no session.
+    const begun = await twoFactor.beginLogin(login.userId, config.sessionTtlHours, ua, { allowSession: !blocked });
+    if (begun.kind === "refused") {
+      log({ level: "info", msg: "login refused: access blocked", requestId: ctx.requestId, userId: login.userId, reason: blocked!.code });
+      throw invalidLogin();
+    }
+    limiters.loginKey.reset(key);
     if (begun.kind === "challenge") {
       log({ level: "info", msg: "login password ok, second factor pending", requestId: ctx.requestId, userId: login.userId });
       return {
@@ -364,10 +400,11 @@ export function createApp(deps: AppDeps) {
     const b = v.object(ctx.body, ["email"]);
     const email = v.email(b.email);
     const key = `${ctx.ip}|${email}`;
-    const wait = Math.max(limiters.resetIp.blockedFor(ctx.ip), limiters.resetKey.blockedFor(key));
+    const wait = Math.max(limiters.resetIp.blockedFor(ctx.ip), limiters.resetKey.blockedFor(key), limiters.resetEmail.blockedFor(email));
     if (wait > 0) throw tooMany(wait, "Anfragen");
     limiters.resetIp.hit(ctx.ip);
     limiters.resetKey.hit(key);
+    limiters.resetEmail.hit(email);
     const token = await createPasswordReset(pool, email);
     if (token) {
       app.sendLater([{
@@ -438,13 +475,16 @@ export function createApp(deps: AppDeps) {
   });
 
   registerDomainRoutes(router, app);
+  registerPrivacyRoutes(router, app);
+  registerInvoiceRoutes(router, app);
 
   const apiHandler = createRequestHandler(router, {
     allowedOrigins: config.publicOrigins,
     secure: config.secureCookies,
     trustProxy: config.trustProxy,
+    trustedProxies: config.trustedProxies,
     log,
   });
   const handler = config.staticDir ? withStaticFiles(apiHandler, { root: config.staticDir, secure: config.secureCookies, log }) : apiHandler;
-  return { handler, limiters, cookieName, challengeCookieName, twoFactor };
+  return { handler, limiters, cookieName, challengeCookieName, twoFactor, routes: router.list() };
 }

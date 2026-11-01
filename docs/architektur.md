@@ -1,6 +1,6 @@
 # Architektur der Zeiterfassungsplattform
 
-Arbeitstitel des Produkts: neutral (siehe `platform/src/design` – eine Konstante, später umbenennbar).
+Produktname: „Stundenwerk“ (vorläufig, vorbehaltlich Markenprüfung; eine Konstante in `platform/src/design/branding.ts`). Designsystem: siehe `docs/design.md`.
 UWE – Krankentransporte GmbH ist der erste Mandant, nicht das Produkt.
 
 ## 1. Zielbild
@@ -87,10 +87,12 @@ gemeldet statt überschrieben. Löschen ist ein „Soft Delete“, jede Änderun
 ### ADR-5: Mandantenkonfiguration statt fest eingebauter UWE-Regeln
 Pausenschwellen, 12-Stunden-Grenze, Arbeitszeitkonto (an/aus, Modell Schuljahr/Kalenderjahr,
 Startsaldo, Bundesland, Genehmigung) sind Einstellungen je Mandant. UWE erhält die bisherigen Werte.
+Pausenregel: „gesetzlich“ (mehr als 6/9 h, Standard für neue Mandanten) oder „streng“ (ab genau 6/9 h,
+UWE); nie laxer als § 4 ArbZG ([pausenregeln.md](pausenregeln.md)).
 
 ### ADR-6: Frontend-Technik Vite + Preact + TypeScript
 Preact (ca. 4 KB) hält die App auf älteren Smartphones schnell; TypeScript (strict) verhindert
-Fehlerklassen in einer wachsenden Codebasis. Keine CSS-Frameworks, keine externen CDNs/Schriften.
+Fehlerklassen in einer wachsenden Codebasis. Keine CSS-Frameworks, keine externen CDNs/Schriften (die Schrift Inter liegt lokal im Repository, Lizenz OFL).
 
 ### ADR-7: Branch-Strategie
 `main` = Produktion (GitHub Pages, geschützt, nur per Pull Request nach Freigabe des Auftraggebers).

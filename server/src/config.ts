@@ -3,6 +3,8 @@
  * Secrets (database password, SMTP password, TOTP key) are never logged.
  */
 import { createHash } from "node:crypto";
+import { createProxyMatcher } from "./http.ts";
+import { parsePaymentProviderName, type PaymentProviderName } from "./payment.ts";
 
 export interface SmtpConfig {
   host: string;
@@ -22,8 +24,15 @@ export interface RateLimitConfig {
   loginPerKey: number;
   /** Login attempts per IP within the window (all e-mails). */
   loginPerIp: number;
+  /**
+   * Failed logins per e-mail address within the window, from all IPs together (distributed
+   * guessing / credential stuffing against one account). Not reset by a successful login.
+   */
+  loginPerEmail: number;
   /** Password-reset requests per IP + e-mail within the window. */
   resetPerKey: number;
+  /** Password-reset requests per e-mail address within the window, from all IPs together (mail flooding). */
+  resetPerEmail: number;
   /** Password-reset / invitation token submissions per IP within the window. */
   tokenPerIp: number;
   /** Wrong two-factor codes per account within the window (sign-in, setup, disable). */
@@ -57,6 +66,8 @@ export interface Config {
   secureCookies: boolean;
   /** Trust the X-Forwarded-For header of the local reverse proxy (Caddy). */
   trustProxy: boolean;
+  /** TRUST_PROXY_CIDRS: only peers from these networks may set X-Forwarded-For (empty = any peer). */
+  trustedProxies: string[];
   sessionTtlHours: number;
   sessionIdleMinutes: number;
   smtp: SmtpConfig | null;
@@ -67,6 +78,10 @@ export interface Config {
   /** Built frontend (platform/dist) served by the API itself; null = API only (e.g. Caddy serves the files). */
   staticDir: string | null;
   twoFactor: TwoFactorConfig;
+  /** Payment provider (PAYMENT_PROVIDER). Only "none" exists: nothing is charged automatically (server/src/payment.ts). */
+  paymentProvider: PaymentProviderName;
+  /** System overview (Super-Admin): build commit (APP_COMMIT) and a file whose timestamp marks the last successful backup (BACKUP_STATUS_FILE). */
+  system: { commit: string | null; backupStatusFile: string | null };
 }
 
 function int(env: NodeJS.ProcessEnv, name: string, def: number, min: number, max: number): number {
@@ -128,6 +143,12 @@ function loadTwoFactor(env: NodeJS.ProcessEnv, production: boolean): TwoFactorCo
   return { keys, developmentKey, issuer };
 }
 
+function parseTrustedProxies(raw: string | undefined): string[] {
+  const list = (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  createProxyMatcher(list); // validates, throws with a German message
+  return list;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const production = env.NODE_ENV === "production";
   const databaseUrl = env.DATABASE_URL ?? "";
@@ -166,6 +187,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicOrigins,
     secureCookies: production || publicOrigins[0]!.startsWith("https://"),
     trustProxy: env.TRUST_PROXY === "1",
+    trustedProxies: parseTrustedProxies(env.TRUST_PROXY_CIDRS),
     sessionTtlHours: int(env, "SESSION_TTL_HOURS", 12, 1, 24 * 30),
     sessionIdleMinutes: int(env, "SESSION_IDLE_MINUTES", 120, 5, 24 * 60),
     smtp,
@@ -176,11 +198,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       windowMs: int(env, "RATE_LIMIT_WINDOW_MINUTES", 15, 1, 24 * 60) * 60_000,
       loginPerKey: int(env, "RATE_LIMIT_LOGIN_PER_ACCOUNT", 5, 1, 1000),
       loginPerIp: int(env, "RATE_LIMIT_LOGIN_PER_IP", 100, 1, 100000),
+      loginPerEmail: int(env, "RATE_LIMIT_LOGIN_PER_EMAIL", 30, 1, 100000),
       resetPerKey: int(env, "RATE_LIMIT_RESET_PER_ACCOUNT", 3, 1, 1000),
+      resetPerEmail: int(env, "RATE_LIMIT_RESET_PER_EMAIL", 10, 1, 1000),
       tokenPerIp: int(env, "RATE_LIMIT_TOKEN_PER_IP", 20, 1, 100000),
       twoFactorPerAccount: int(env, "RATE_LIMIT_2FA_PER_ACCOUNT", 5, 1, 1000),
       twoFactorPerIp: int(env, "RATE_LIMIT_2FA_PER_IP", 50, 1, 100000),
     },
     twoFactor: loadTwoFactor(env, production),
+    paymentProvider: parsePaymentProviderName(env.PAYMENT_PROVIDER),
+    system: {
+      commit: /^[0-9a-f]{7,40}$/i.test(env.APP_COMMIT ?? "") ? env.APP_COMMIT!.toLowerCase() : null,
+      backupStatusFile: env.BACKUP_STATUS_FILE ? env.BACKUP_STATUS_FILE : null,
+    },
   };
 }

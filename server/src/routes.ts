@@ -8,16 +8,20 @@
  * here with platform/src/core and the tenant's breakPolicy; the database
  * enforces the hard limits (overlap, 12 h, pause < duration, locked months).
  */
-import type { BreakPolicy, TenantSettings, WorkAccountPolicy } from "../../platform/src/core/types.ts";
+import type { BillingSettings, BreakPolicy, PlatformRevenue, TenantBillingMonth, TenantSettings, WorkAccountPolicy } from "../../platform/src/core/types.ts";
+import { revenueTotals } from "../../platform/src/core/billing.ts";
 import type { TenantOverview } from "../../platform/src/data/repository.ts";
 import { errorsForMonth, evaluateDay, issueForDay, validateBreakPolicy } from "../../platform/src/core/breaks.ts";
+import { addDays, findOverlapAcrossDays } from "../../platform/src/core/time.ts";
 import type { AppContext } from "./app.ts";
-import type { Queryable } from "./db.ts";
+import { withTx, type Queryable } from "./db.ts";
 import { HttpError, badRequest, forbidden } from "./errors.ts";
 import type { Router } from "./http.ts";
 import type { Mail } from "./mailer.ts";
+import { systemOverview } from "./system.ts";
 import {
-  TIME_ENTRY_COLUMNS, toAllocation, toAudit, toEmployee, toLicense, toStatement, toTenant, toTimeEntry,
+  STATEMENT_SELECT, TIME_ENTRY_COLUMNS, toAllocation, toAudit, toBillingSummary, toCorrectionRequest, toEmployee, toLicense,
+  toRevenueRow, toRevision, toStatement, toTenant, toTimeEntry,
 } from "./mappers.ts";
 import * as v from "./validate.ts";
 
@@ -25,6 +29,8 @@ const BRANDING_BODY_LIMIT = 1_200_000; // two images of max. 300 KB as base64 + 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 const ROLES = ["employee", "manager", "owner"] as const;
 const PLANS = ["pilot_free", "standard", "business", "enterprise"] as const;
+const CHANNELS = ["email", "link"] as const;
+const TENANT_STATUSES = ["active", "suspended", "pending", "deactivated"] as const;
 
 type Row = Record<string, unknown>;
 
@@ -157,6 +163,53 @@ async function resolveEntryEmployee(q: Queryable, id: string): Promise<string> {
   return String(rows[0]!.employee_id);
 }
 
+// ------------------------------------------------------------------ correction requests
+
+const CORRECTION_SELECT = `select r.*, d.display_name as decided_by_name
+  from public.correction_requests r
+  left join public.employees d on d.user_id = r.decided_by and d.tenant_id = r.tenant_id`;
+
+type Values = { date: string; start: string; end: string; pauseMinutes: number; note: string };
+type CorrectionInput = { kind: "change" | "delete" | "add"; entryId: string | null; proposed: EntryPatch | null; reason: string };
+
+function correctionInput(raw: unknown): CorrectionInput {
+  const b = v.object(raw, ["kind", "entryId", "proposed", "reason"], "Korrekturanfrage");
+  const kind = v.oneOf(b.kind, ["change", "delete", "add"] as const, "Art der Korrekturanfrage");
+  const reason = v.reason(b.reason, 5, "Bitte begründe die Korrekturanfrage (mind. 5 Zeichen).");
+  if (kind === "add") {
+    if (b.entryId !== undefined && b.entryId !== null) throw badRequest("Für einen fehlenden Eintrag bitte keine Eintrags-ID angeben.");
+    const p = entryPatch(b.proposed ?? {});
+    if (p.date === undefined || p.start === undefined || p.end === undefined || p.pauseMinutes === undefined) {
+      throw badRequest("Bitte Datum, Beginn, Ende und Pause angeben.");
+    }
+    return { kind, entryId: null, proposed: { note: "", ...p }, reason };
+  }
+  const entryId = v.entryId(b.entryId);
+  if (kind === "delete") {
+    if (b.proposed !== undefined && b.proposed !== null) throw badRequest("Eine Löschung enthält keine neuen Werte.");
+    return { kind, entryId, proposed: null, reason };
+  }
+  const p = entryPatch(b.proposed ?? {});
+  if (Object.keys(p).length === 0) throw badRequest("Bitte die gewünschten Werte angeben.");
+  return { kind, entryId, proposed: p, reason };
+}
+
+/**
+ * Same checks as for a new entry, before the request is stored: overlaps with
+ * other entries and the tenant's break rules for the requested day. (The
+ * database repeats the hard limits and the API the break rules on acceptance.)
+ */
+async function assertPlausible(q: Queryable, employeeId: string, entryId: string | null, values: Values): Promise<void> {
+  const around = (await shiftsOf(q, employeeId, addDays(values.date, -1), addDays(values.date, 1))).filter((x) => x.id !== entryId);
+  const candidate = { id: entryId ?? "", date: values.date, start: values.start, end: values.end, pause: values.pauseMinutes };
+  const overlap = findOverlapAcrossDays(candidate, around);
+  if (overlap) throw new HttpError(409, "overlap", `Der Einsatz überschneidet sich mit ${overlap.start}–${overlap.end} Uhr. Bitte die Zeiten prüfen.`);
+  const policy = await breakPolicyOf(q, employeeId);
+  if (!policy) return;
+  const problem = issueForDay(evaluateDay([...around.filter((x) => x.date === values.date), candidate], values.date, policy), policy);
+  if (problem) throw new HttpError(400, "break_rule", problem);
+}
+
 // ------------------------------------------------------------------ tenant input
 
 function brandingPatch(raw: unknown): Record<string, unknown> {
@@ -251,6 +304,8 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const patch = brandingPatch(ctx.body);
     return app.asUser(ctx, async (q) => {
+      // Owner only – platform staff neither (also not with a support grant; RLS tenants_update since 0011).
+      await check(q, "private.is_owner($1)", [id], "Firmendaten darf nur der Inhaber ändern.");
       const r = await one(q, "update public.tenants set branding = branding || $2::jsonb where id = $1 returning *", [id, JSON.stringify(patch)]);
       if (!r) throw forbidden("Firmendaten darf nur der Inhaber ändern.");
       return json(200, toTenant(r));
@@ -261,7 +316,21 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const patch = contactPatch(ctx.body);
     return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_owner($1)", [id], "Firmendaten darf nur der Inhaber ändern.");
       const r = await one(q, "update public.tenants set contact = contact || $2::jsonb where id = $1 returning *", [id, JSON.stringify(patch)]);
+      if (!r) throw forbidden("Firmendaten darf nur der Inhaber ändern.");
+      return json(200, toTenant(r));
+    });
+  });
+
+  // Owner: display name of the company (tenants_guard allows name changes by the owner since 0011).
+  router.add("PATCH", "/api/tenants/:tenantId/name", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const b = v.object(ctx.body, ["name"]);
+    const name = v.str(b.name, { label: "den Firmennamen", max: 200, min: 2 });
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_owner($1)", [id], "Firmendaten darf nur der Inhaber ändern.");
+      const r = await one(q, "update public.tenants set name = $2 where id = $1 returning *", [id, name]);
       if (!r) throw forbidden("Firmendaten darf nur der Inhaber ändern.");
       return json(200, toTenant(r));
     });
@@ -337,45 +406,67 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  /**
+   * Delivery of a freshly created (committed) invitation. channel "link": the one-time link goes back to the
+   * manager for sharing (copy / WhatsApp) – except when the address already belongs to an account: accepting
+   * such an invitation links it WITHOUT a password (auth.accept_invitation), so the link must only reach the
+   * address owner and is mailed instead (existingAccount: true).
+   */
+  async function deliverInvitation(channel: (typeof CHANNELS)[number], inv: { token: string; expiresAt: string; email: string; tenantName: string }, mails: Mail[]) {
+    if (channel === "link") {
+      const existing = await withTx(app.pool, "app_auth", null, async (q) =>
+        Boolean((await q.query<{ v: boolean }>("select auth.invitation_needs_existing_login($1) as v", [inv.token])).rows[0]?.v));
+      if (!existing) return { expiresAt: inv.expiresAt, delivery: "link" as const, link: app.link("invite", inv.token) };
+      mails.push(invitationMail(inv.email, inv.token, inv.tenantName));
+      return { expiresAt: inv.expiresAt, delivery: app.mailDelivery, existingAccount: true };
+    }
+    // E-mail delivery: the link itself is not returned, only the invited address receives it.
+    mails.push(invitationMail(inv.email, inv.token, inv.tenantName));
+    return { expiresAt: inv.expiresAt, delivery: app.mailDelivery };
+  }
+
   router.add("POST", "/api/tenants/:tenantId/employees", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
-    const b = v.object(ctx.body, ["displayName", "personnelNumber", "email", "role"]);
+    const b = v.object(ctx.body, ["displayName", "personnelNumber", "email", "role", "invitation"]);
+    const channel = v.oneOf(b.invitation ?? "email", CHANNELS, "Einladungsweg");
     const displayName = v.str(b.displayName, { label: "den Namen", max: 120, min: 1 });
     const personnelNumber = v.str(b.personnelNumber, { label: "die Personalnummer", max: 30, min: 1, pattern: /^[A-Za-z0-9_-]{1,30}$/, patternMessage: "Personalnummer: 1–30 Zeichen, nur Buchstaben, Ziffern, - und _." });
     const email = b.email === null || b.email === undefined || b.email === "" ? null : v.email(b.email);
     const role = v.oneOf(b.role ?? "employee", ROLES, "Rolle");
-    const mails: Mail[] = [];
-    const result = await app.asUser(ctx, async (q) => {
+    const created = await app.asUser(ctx, async (q) => {
       await check(q, "private.is_manager($1)", [id], "Mitarbeitende dürfen nur Vorgesetzte anlegen.");
       const r = await one(q,
         `insert into public.employees (tenant_id, personnel_number, display_name, email, role, status)
          values ($1, $2, $3, $4, $5, 'invited') returning *`, [id, personnelNumber, displayName, email, role]);
-      if (email) {
-        const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
-        const t = await one(q, "select name from public.tenants where id = $1", [id]);
-        const data = inv!.inv as { token: string; expiresAt: string };
-        mails.push(invitationMail(email, String(data.token), String(t?.name ?? "")));
-        // The link itself is never returned: only the invited address receives it.
-        return json(201, { ...toEmployee(r!), invitation: { expiresAt: data.expiresAt, delivery: app.mailDelivery } });
-      }
-      return json(201, toEmployee(r!));
+      if (!email) return { employee: toEmployee(r!), inv: null };
+      const inv = await one(q, "select public.create_invitation($1, 7) as inv", [r!.id]);
+      const t = await one(q, "select name from public.tenants where id = $1", [id]);
+      const data = inv!.inv as { token: string; expiresAt: string };
+      return { employee: toEmployee(r!), inv: { token: String(data.token), expiresAt: data.expiresAt, email, tenantName: String(t?.name ?? "") } };
     });
+    if (!created.inv) return json(201, created.employee);
+    const mails: Mail[] = [];
+    const invitation = await deliverInvitation(channel, created.inv, mails);
     app.sendLater(mails);
-    return result;
+    return json(201, { ...created.employee, invitation });
   });
 
+  // New invitation (earlier links of this employee become invalid – create_invitation revokes them).
+  // {channel: "link"} returns the one-time link for sharing (copy / WhatsApp) instead of mailing it.
   router.add("POST", "/api/employees/:employeeId/invitation", async (ctx) => {
     const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
-    const mails: Mail[] = [];
-    const result = await app.asUser(ctx, async (q) => {
+    const b = v.object(ctx.body ?? {}, ["channel"]);
+    const channel = v.oneOf(b.channel ?? "email", CHANNELS, "Einladungsweg");
+    const created = await app.asUser(ctx, async (q) => {
       const inv = await one(q, "select public.create_invitation($1, 7) as inv", [id]);
       const e = await one(q, "select e.email, t.name from public.employees e join public.tenants t on t.id = e.tenant_id where e.id = $1", [id]);
       const data = inv!.inv as { invitationId: string; token: string; expiresAt: string };
-      mails.push(invitationMail(String(e!.email), data.token, String(e!.name)));
-      return json(200, { invitationId: data.invitationId, expiresAt: data.expiresAt, delivery: app.mailDelivery });
+      return { invitationId: data.invitationId, token: data.token, expiresAt: data.expiresAt, email: String(e!.email), tenantName: String(e!.name) };
     });
+    const mails: Mail[] = [];
+    const delivery = await deliverInvitation(channel, created, mails);
     app.sendLater(mails);
-    return result;
+    return json(200, { invitationId: created.invitationId, ...delivery });
   });
 
   router.add("PATCH", "/api/employees/:employeeId", async (ctx) => {
@@ -403,7 +494,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
   router.add("POST", "/api/employees/:employeeId/status", async (ctx) => {
     const id = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
     const b = v.object(ctx.body, ["status", "reason"]);
-    const status = v.oneOf(b.status, ["active", "deactivated"] as const, "Status");
+    const status = v.oneOf(b.status, ["active", "locked", "deactivated"] as const, "Status");
     const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Statusänderung angeben.");
     return app.asUser(ctx, async (q) => {
       const r = await one(q, "select * from public.set_employee_status($1, $2, $3)", [id, status, reason]);
@@ -455,6 +546,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       source: b.source === undefined ? "app" : v.oneOf(b.source, ["app", "migration"] as const, "Herkunft"),
     };
     return app.asUser(ctx, async (q) => {
+      // "migration" marks entries taken over from the legacy app. The import runs in the employee
+      // app for the signed-in person's own data only – nobody marks entries of others (QA B5).
+      if (entry.source === "migration" && !(await isSelf(q, employeeId))) {
+        throw forbidden("Altdaten können nur für das eigene Konto übernommen werden.");
+      }
       await lockEmployee(q, employeeId);
       const existed = await one(q, "select 1 from public.time_entries where employee_id = $1 and id = $2", [employeeId, entry.id]);
       const row = await one(q, "select * from public.create_time_entry($1, $2::jsonb)", [employeeId, JSON.stringify(entry)]);
@@ -534,7 +630,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const month = v.month(ctx.query.get("month"));
     return app.asUser(ctx, async (q) => {
       await check(q, "private.can_read_personal($1)", [id]);
-      const rows = await all(q, "select * from public.monthly_statements where tenant_id = $1 and month = $2 order by employee_id", [id, month]);
+      const rows = await all(q, `${STATEMENT_SELECT} where s.tenant_id = $1 and s.month = $2 order by s.employee_id`, [id, month]);
       return json(200, rows.map(toStatement));
     });
   });
@@ -544,7 +640,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const month = v.month(ctx.params.month);
     return app.asUser(ctx, async (q) => {
       await visibleEmployee(q, id);
-      const r = await one(q, "select * from public.monthly_statements where employee_id = $1 and month = $2", [id, month]);
+      const r = await one(q, `${STATEMENT_SELECT} where s.employee_id = $1 and s.month = $2`, [id, month]);
       return json(200, r ? toStatement(r) : null);
     });
   });
@@ -583,6 +679,100 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     return app.asUser(ctx, async (q) => json(200, toStatement((await one(q, "select * from public.return_statement($1, $2)", [id, reason]))!)));
   });
 
+  // ---------------------------------------------------------------- correction requests
+  router.add("GET", "/api/tenants/:tenantId/correction-requests", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const employeeId = ctx.query.get("employeeId");
+    const status = ctx.query.get("status");
+    const params: unknown[] = [id];
+    let where = "r.tenant_id = $1";
+    if (employeeId) {
+      params.push(v.uuid(employeeId, "Mitarbeiter-ID"));
+      where += ` and r.employee_id = $${params.length}`;
+    }
+    if (status) {
+      params.push(v.oneOf(status, ["open", "accepted", "rejected", "withdrawn"] as const, "Status"));
+      where += ` and r.status = $${params.length}`;
+    }
+    return app.asUser(ctx, async (q) => {
+      // RLS: employees see only their own requests, leadership the tenant, platform staff only with a grant.
+      await check(q, "private.is_member($1) or private.has_support_access($1)", [id]);
+      const rows = await all(q, `${CORRECTION_SELECT} where ${where} order by r.created_at desc, r.id limit 500`, params);
+      return json(200, rows.map(toCorrectionRequest));
+    });
+  });
+
+  router.add("POST", "/api/employees/:employeeId/correction-requests", async (ctx) => {
+    const employeeId = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    const input = correctionInput(ctx.body);
+    return app.asUser(ctx, async (q) => {
+      if (!(await isSelf(q, employeeId))) throw forbidden("Korrekturanfragen können nur für eigene Einträge gestellt werden.");
+      await lockEmployee(q, employeeId);
+      if (input.kind !== "delete") {
+        let values = input.proposed as Values;
+        if (input.kind === "change") {
+          const cur = await one(q, `select ${TIME_ENTRY_COLUMNS} from public.time_entries where employee_id = $1 and id = $2 and deleted_at is null`,
+            [employeeId, input.entryId]);
+          if (!cur) throw forbidden("Eintrag nicht gefunden oder bereits gelöscht.");
+          const e = toTimeEntry(cur);
+          values = { date: e.date, start: e.start, end: e.end, pauseMinutes: e.pauseMinutes, note: e.note, ...input.proposed };
+        }
+        await assertPlausible(q, employeeId, input.entryId, values);
+      }
+      const created = await one(q, "select id from public.create_correction_request($1, $2, $3, $4::jsonb, $5)",
+        [employeeId, input.kind, input.entryId, input.proposed ? JSON.stringify(input.proposed) : null, input.reason]);
+      const r = await one(q, `${CORRECTION_SELECT} where r.id = $1`, [created!.id]);
+      return json(201, toCorrectionRequest(r!));
+    });
+  });
+
+  router.add("POST", "/api/correction-requests/:requestId/withdraw", async (ctx) => {
+    const id = v.uuid(ctx.params.requestId, "Anfrage-ID");
+    v.object(ctx.body, []);
+    return app.asUser(ctx, async (q) => {
+      await q.query("select 1 from public.withdraw_correction_request($1)", [id]);
+      return json(200, toCorrectionRequest((await one(q, `${CORRECTION_SELECT} where r.id = $1`, [id]))!));
+    });
+  });
+
+  router.add("POST", "/api/correction-requests/:requestId/decide", async (ctx) => {
+    const id = v.uuid(ctx.params.requestId, "Anfrage-ID");
+    const b = v.object(ctx.body, ["decision", "note"]);
+    const decision = v.oneOf(b.decision, ["accepted", "rejected"] as const, "Entscheidung");
+    const note = decision === "rejected" ? v.reason(b.note, 3, "Bitte begründe die Ablehnung.") : v.optReason(b.note);
+    return app.asUser(ctx, async (q) => {
+      const cur = await one(q, "select employee_id from public.correction_requests where id = $1", [id]);
+      if (!cur) throw forbidden("Korrekturanfrage nicht gefunden oder kein Zugriff.");
+      const employeeId = String(cur.employee_id);
+      await lockEmployee(q, employeeId);
+      const decided = await one(q, "select * from public.decide_correction_request($1, $2, $3)", [id, decision, note]);
+      if (decision === "accepted" && decided?.applied_entry_id) {
+        // Statutory break rules of the tenant for the corrected day – rollback on a violation, like every correction.
+        const e = await one(q, "select to_char(work_date, 'YYYY-MM-DD') as d, deleted_at from public.time_entries where employee_id = $1 and id = $2",
+          [employeeId, decided.applied_entry_id]);
+        if (e && !e.deleted_at) await assertBreakRules(q, employeeId, String(e.d));
+      }
+      return json(200, toCorrectionRequest((await one(q, `${CORRECTION_SELECT} where r.id = $1`, [id]))!));
+    });
+  });
+
+  // Change history of one entry (time_entry_revisions under RLS; platform staff only with a grant).
+  router.add("GET", "/api/employees/:employeeId/time-entries/:entryId/revisions", async (ctx) => {
+    const employeeId = v.uuid(ctx.params.employeeId, "Mitarbeiter-ID");
+    const entryId = v.entryId(ctx.params.entryId);
+    return app.asUser(ctx, async (q) => {
+      await visibleEmployee(q, employeeId);
+      const rows = await all(q,
+        `select r.*, c.display_name as changed_by_name
+           from public.time_entry_revisions r
+           left join public.employees c on c.user_id = r.changed_by and c.tenant_id = r.tenant_id
+          where r.employee_id = $1 and r.entry_id = $2
+          order by r.version, r.changed_at`, [employeeId, entryId]);
+      if (rows.length === 0) throw forbidden("Eintrag nicht gefunden oder kein Zugriff.");
+      return json(200, rows.map(toRevision));
+    });
+  });
+
   // ---------------------------------------------------------------- audit
   router.add("GET", "/api/tenants/:tenantId/audit", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
@@ -600,11 +790,18 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
       await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
       const rows = await all(q,
         `select * from public.audit_log
-          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant')
+          where tenant_id is null or entity in ('tenant', 'license', 'support_access_grant', 'billing_period', 'billing_settings', 'invoice', 'invoice_settings')
           order by created_at desc, id limit $1`, [limit]);
       return json(200, rows.map(toAudit));
     });
   });
+
+  // Technical status for super_admin and support: no secrets, no personal data (server/src/system.ts).
+  router.add("GET", "/api/platform/system", async (ctx) =>
+    app.asUser(ctx, async (q) => {
+      await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
+      return json(200, await systemOverview(app.config, app.mailDelivery, q));
+    }));
 
   // ---------------------------------------------------------------- platform administration
   async function overviews(q: Queryable, onlyTenant?: string): Promise<TenantOverview[]> {
@@ -631,7 +828,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     app.asUser(ctx, async (q) => json(200, await overviews(q))));
 
   router.add("POST", "/api/platform/tenants", async (ctx) => {
-    const b = v.object(ctx.body, ["name", "slug", "plan", "isDemo", "ownerEmail", "ownerName"]);
+    const b = v.object(ctx.body, ["name", "slug", "plan", "isDemo", "ownerEmail", "ownerName", "freeOfCharge", "conditionNote", "conditionValidUntil"]);
+    // Free test customer in one step: standard licence with the "free" special condition (optionally limited).
+    const trial = b.freeOfCharge === undefined ? [] : billingConditionPatch({
+      freeOfCharge: b.freeOfCharge, conditionNote: b.conditionNote, conditionValidUntil: b.conditionValidUntil,
+    });
     const name = v.str(b.name, { label: "den Firmennamen", max: 200, min: 2 });
     const slug = v.str(b.slug, { label: "den Kurznamen", max: 50, min: 3, pattern: /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/, patternMessage: "Kurzname: 3–50 Zeichen, nur Kleinbuchstaben, Ziffern und Bindestriche." });
     const plan = v.oneOf(b.plan, PLANS, "Tarif");
@@ -642,6 +843,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     const result = await app.asUser(ctx, async (q) => {
       const r = await one(q, "select public.create_tenant($1, $2, $3, $4, $5, $6, null) as res", [name, slug, plan, isDemo, ownerEmail, ownerName]);
       const res = r!.res as { tenantId: string; invitationToken: string };
+      if (trial.length && plan !== "pilot_free") {
+        const sets = trial.map(([col], i) => `${col} = $${i + 2}`);
+        await q.query("select set_config('app.change_reason', $1, true)", ["Kostenloser Testkunde bei Anlage"]);
+        await q.query(`update public.licenses set ${sets.join(", ")} where tenant_id = $1 and status = 'active'`, [res.tenantId, ...trial.map(([, val]) => val)]);
+      }
       mails.push(invitationMail(ownerEmail, res.invitationToken, name));
       const [ov] = await overviews(q, res.tenantId);
       return json(201, ov);
@@ -653,7 +859,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
   router.add("POST", "/api/platform/tenants/:tenantId/status", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
     const b = v.object(ctx.body, ["status", "reason"]);
-    const status = v.oneOf(b.status, ["active", "suspended", "pending"] as const, "Status");
+    const status = v.oneOf(b.status, TENANT_STATUSES, "Status");
     const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Statusänderung angeben.");
     return app.asUser(ctx, async (q) => {
       await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen den Mandantenstatus ändern.");
@@ -664,8 +870,11 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
 
   router.add("PUT", "/api/platform/tenants/:tenantId/license", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
-    const b = v.object(ctx.body, ["plan", "maxEmployees", "validUntil", "note", "features"]);
+    const b = v.object(ctx.body, ["plan", "maxEmployees", "validUntil", "note", "features",
+      "employeePriceCents", "freeOfCharge", "conditionNote", "conditionValidFrom", "conditionValidUntil", "reason"]);
     const plan = v.oneOf(b.plan, PLANS, "Tarif");
+    const cond = billingConditionPatch(b);
+    const reason = v.optReason(b.reason);
     const maxEmployees = b.maxEmployees === undefined ? undefined : b.maxEmployees === null ? null : v.int(b.maxEmployees, "Maximale Mitarbeiterzahl", 1, 100000);
     const validUntil = b.validUntil === undefined ? undefined : b.validUntil === null ? null : v.date(b.validUntil, "Enddatum");
     const note = b.note === undefined ? undefined : v.optStr(b.note, { label: "Die Notiz", max: 2000 });
@@ -676,6 +885,7 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     }
     return app.asUser(ctx, async (q) => {
       await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen Lizenzen ändern.");
+      if (reason) await q.query("select set_config('app.change_reason', $1, true)", [reason]);
       const cur = await one(q, "select * from public.licenses where tenant_id = $1 and status = 'active' for update", [id]);
       const free = plan === "pilot_free";
       let r: Row | undefined;
@@ -699,7 +909,97 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
            values ($1, $2, 'active', 0, $3, $4, $5, $6, coalesce($7::text[], '{}')) returning *`,
           [id, plan, free ? "none" : "manual", maxEmployees ?? null, validUntil ?? null, note ?? null, features ?? null]);
       }
+      // Special billing condition (price model 2026-10-28): only the fields that were sent.
+      const sets: string[] = [];
+      const params: unknown[] = [r!.id];
+      for (const [col, val] of cond) {
+        params.push(val);
+        sets.push(`${col} = $${params.length}`);
+      }
+      if (sets.length) r = await one(q, `update public.licenses set ${sets.join(", ")} where id = $1 returning *`, params);
       return json(200, toLicense(r!));
     });
   });
+
+  // ---------------------------------------------------------------- billing (price model 2026-10-28)
+  router.add("GET", "/api/tenants/:tenantId/billing", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const month = v.month(ctx.query.get("month"));
+    return app.asUser(ctx, async (q) => {
+      const r = await one(q, "select public.tenant_billing($1, $2) as b", [id, month]);
+      return json(200, r!.b as TenantBillingMonth);
+    });
+  });
+
+  router.add("GET", "/api/tenants/:tenantId/billing/history", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const limit = limitParam(ctx.query.get("limit"), 12, 36);
+    return app.asUser(ctx, async (q) => {
+      const rows = await all(q, "select * from public.tenant_billing_history($1, $2)", [id, limit]);
+      return json(200, rows.map(toBillingSummary));
+    });
+  });
+
+  async function billingSettings(q: Queryable): Promise<BillingSettings> {
+    await check(q, "private.is_platform_admin()", [], "Nur für die Plattformverwaltung.");
+    const r = await one(q, "select default_price_cents from public.billing_settings");
+    return { defaultPriceCents: Number(r!.default_price_cents), currency: "EUR" };
+  }
+
+  router.add("GET", "/api/platform/billing/settings", async (ctx) =>
+    app.asUser(ctx, async (q) => json(200, await billingSettings(q))));
+
+  router.add("PUT", "/api/platform/billing/settings", async (ctx) => {
+    const b = v.object(ctx.body, ["defaultPriceCents", "reason"]);
+    const cents = v.int(b.defaultPriceCents, "Standardpreis (Cent)", 0, 100000);
+    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Preisänderung angeben.");
+    return app.asUser(ctx, async (q) => {
+      await q.query("select public.platform_set_default_price($1, $2)", [cents, reason]);
+      return json(200, await billingSettings(q));
+    });
+  });
+
+  router.add("GET", "/api/platform/billing", async (ctx) => {
+    const month = v.month(ctx.query.get("month"));
+    return app.asUser(ctx, async (q) => {
+      const settings = await billingSettings(q);
+      const rows = (await all(q, "select * from public.platform_billing_overview($1)", [month])).map((r) => toRevenueRow(r, month));
+      const body: PlatformRevenue = {
+        month, defaultPriceCents: settings.defaultPriceCents, rows, totals: revenueTotals(rows),
+        paymentProvider: app.config.paymentProvider,
+      };
+      return json(200, body);
+    });
+  });
+
+  router.add("PUT", "/api/platform/tenants/:tenantId/billing/:month", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const month = v.month(ctx.params.month);
+    const b = v.object(ctx.body, ["status", "note"]);
+    const status = v.oneOf(b.status, ["open", "invoiced", "paid", "waived"] as const, "Abrechnungsstatus");
+    const note = v.optStr(b.note, { label: "Die Notiz", max: 500 });
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen den Abrechnungsstatus ändern.");
+      await q.query("select public.platform_set_billing_status($1, $2, $3, $4)", [id, month, status, note]);
+      const r = await one(q, "select * from public.platform_billing_overview($1) where tenant_id = $2", [month, id]);
+      if (!r) throw forbidden("Mandant nicht gefunden.");
+      return json(200, toBillingSummary({ ...r, month }));
+    });
+  });
+}
+
+/** Columns of the special billing condition sent with PUT …/license (validated; DB checks again). */
+function billingConditionPatch(b: v.Json): Array<[string, unknown]> {
+  const out: Array<[string, unknown]> = [];
+  if (b.employeePriceCents !== undefined) {
+    out.push(["employee_price_cents", b.employeePriceCents === null ? null : v.int(b.employeePriceCents, "Sonderpreis (Cent)", 0, 100000)]);
+  }
+  if (b.freeOfCharge !== undefined) out.push(["free_of_charge", v.bool(b.freeOfCharge, "Kostenloses Konto")]);
+  if (b.conditionNote !== undefined) out.push(["condition_note", v.optStr(b.conditionNote, { label: "Die Notiz zur Kondition", max: 500 })]);
+  const from = b.conditionValidFrom === undefined ? undefined : b.conditionValidFrom === null || b.conditionValidFrom === "" ? null : v.date(b.conditionValidFrom, "Datum (gültig ab)");
+  const until = b.conditionValidUntil === undefined ? undefined : b.conditionValidUntil === null || b.conditionValidUntil === "" ? null : v.date(b.conditionValidUntil, "Datum (gültig bis)");
+  if (from && until && until < from) throw badRequest("Die Kondition endet vor ihrem Beginn.");
+  if (from !== undefined) out.push(["condition_valid_from", from]);
+  if (until !== undefined) out.push(["condition_valid_until", until]);
+  return out;
 }

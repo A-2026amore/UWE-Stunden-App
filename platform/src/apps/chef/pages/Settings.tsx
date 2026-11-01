@@ -1,10 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
 import type { WorkAccountPolicy } from "../../../core/types";
+import { breakRuleKind, breakRuleSummary, thresholdLabel, thresholdsFor, type BreakRuleKind } from "../../../core/breaks";
 import { formatHours, parseHours } from "../../../core/time";
 import { Alert, Badge, Button, Card, Checkbox, InputField, SelectField, Table, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dateTimeDE, signedHours } from "../../shared/format";
-import { isUweBrand } from "../../shared/statement";
 import { useChef } from "../context";
 import { TwoFactorCard } from "../../shared/twoFactor";
 
@@ -27,6 +27,36 @@ export function SettingsPage() {
   const grant = useAsync(() => repo.getSupportGrant(tenant.id), [tenant.id]);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [policyBusy, setPolicyBusy] = useState(false);
+  const currentRule = breakRuleKind(bp);
+  const [rule, setRule] = useState<BreakRuleKind | "custom">(currentRule);
+  const [ruleError, setRuleError] = useState<string | null>(null);
+  const [ruleBusy, setRuleBusy] = useState(false);
+  useEffect(() => { setRule(breakRuleKind(tenant.settings.breakPolicy)); }, [tenant]);
+
+  const saveRule = async (e: Event) => {
+    e.preventDefault();
+    setRuleError(null);
+    if (rule === "custom" || rule === currentRule) return;
+    const ok = await dialogs.confirm({
+      title: "Pausenregel ändern?",
+      message: (rule === "strict"
+        ? "Danach gilt die Pausenpflicht bereits ab genau 6 bzw. 9 Stunden Arbeitszeit (strenger als das Gesetz)."
+        : "Danach gilt die gesetzliche Regel: Pausenpflicht erst bei mehr als 6 bzw. 9 Stunden Arbeitszeit.") +
+        " Die Regel gilt für alle neuen und geänderten Einträge. Gespeicherte Einträge werden nicht verändert, können aber in der Monatsprüfung als Pausenproblem erscheinen. Die Änderung wird im Änderungsprotokoll gespeichert.",
+      confirmLabel: "Pausenregel ändern",
+    });
+    if (!ok) return;
+    setRuleBusy(true);
+    try {
+      const t = await repo.updateSettings(tenant.id, { breakPolicy: { ...bp, thresholds: thresholdsFor(rule) } });
+      setTenant(t);
+      toast("Pausenregel gespeichert.");
+    } catch (err) {
+      setRuleError(errorText(err));
+    } finally {
+      setRuleBusy(false);
+    }
+  };
 
   const setPolicy = async (required: boolean) => {
     setPolicyError(null);
@@ -85,22 +115,39 @@ export function SettingsPage() {
   return (
     <div class="stack">
       <h1 class="page-title">Einstellungen</h1>
-      <Card title="Pausenregeln" actions={<Badge tone="neutral">nur lesbar</Badge>}>
-        <p class="muted small">{isUweBrand(tenant) ? "Betriebliche Pausenregel nach UWE-Vorgabe (strenger als die gesetzliche Mindestregel: bereits ab genau 6 bzw. 9 Stunden)." : "Pausenregel nach § 4 Arbeitszeitgesetz."} Die Regeln werden bei jeder Erfassung geprüft.</p>
-        <Table
-          caption="Pausenschwellen"
-          rows={bp.thresholds}
-          rowKey={(t) => String(t.minGrossMinutes)}
-          columns={[
-            { key: "g", header: "Arbeitszeit am Tag", render: (t) => `ab ${formatHours(t.minGrossMinutes)} Std.` },
-            { key: "p", header: "Mindestpause", align: "right", render: (t) => `${t.minPauseMinutes} Minuten` },
-          ]}
-        />
-        <dl class="kv" style={{ marginTop: "var(--space-3)" }}>
-          <dt>Höchstdauer pro Tag</dt><dd>{formatHours(bp.maxShiftMinutes)} Std.</dd>
-          <dt>Kleinster Pausenabschnitt</dt><dd>{bp.minPauseSegmentMinutes} Minuten</dd>
-        </dl>
-        <p class="muted small" style={{ marginTop: "var(--space-3)" }}>Änderungen an den Pausenregeln nur in Abstimmung mit dem Plattform-Support.</p>
+      <Card title="Pausenregeln" actions={me.role === "owner" ? undefined : <Badge tone="neutral">nur lesbar</Badge>}>
+        <div class="stack">
+          <p class="muted small mb-0" data-testid="break-rule-summary">
+            {currentRule === "strict" ? "Strenge Regel (strenger als § 4 Arbeitszeitgesetz): " : currentRule === "statutory" ? "Gesetzliche Regel nach § 4 Arbeitszeitgesetz: " : "Individuelle Regel (mindestens so streng wie § 4 Arbeitszeitgesetz): "}
+            {breakRuleSummary(bp)}. Pausenabschnitte unter {bp.minPauseSegmentMinutes} Minuten zählen nicht. Die Regeln werden bei jeder Erfassung geprüft; Mitarbeitende tragen nur die tatsächlich genommene Pause ein.
+          </p>
+          <Table
+            caption="Pausenschwellen"
+            rows={bp.thresholds}
+            rowKey={(t) => String(t.minGrossMinutes)}
+            columns={[
+              { key: "g", header: "Arbeitszeit am Tag", render: (t) => thresholdLabel(t.minGrossMinutes) },
+              { key: "p", header: "Mindestpause", align: "right", render: (t) => `${t.minPauseMinutes} Minuten` },
+            ]}
+          />
+          <dl class="kv">
+            <dt>Höchstdauer pro Tag</dt><dd>{formatHours(bp.maxShiftMinutes)} Std.</dd>
+            <dt>Kleinster Pausenabschnitt</dt><dd>{bp.minPauseSegmentMinutes} Minuten</dd>
+          </dl>
+          {me.role === "owner" ? (
+            <form class="stack" onSubmit={saveRule} noValidate>
+              <SelectField label="Pausenregel" value={rule} onValue={(v) => { setRule(v as BreakRuleKind); setRuleError(null); }}
+                hint="Laxere Regeln als das Gesetz sind nicht möglich."
+                options={[
+                  { value: "statutory", label: "Gesetzlich (mehr als 6 / 9 Stunden)" },
+                  { value: "strict", label: "Streng (ab genau 6 / 9 Stunden)" },
+                  ...(currentRule === "custom" ? [{ value: "custom", label: "Individuell (unverändert lassen)" }] : []),
+                ]} />
+              {ruleError && <Alert tone="danger" live>{ruleError}</Alert>}
+              <div><Button type="submit" variant="secondary" busy={ruleBusy} disabled={rule === currentRule || rule === "custom"}>Pausenregel speichern</Button></div>
+            </form>
+          ) : <p class="muted small mb-0">Nur der Inhaber kann die Pausenregel ändern.</p>}
+        </div>
       </Card>
 
       <Card title="Arbeitszeitkonto">

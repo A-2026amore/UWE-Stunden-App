@@ -3,24 +3,31 @@ import { activeShifts, isValidMonth, netMinutes } from "../../../core/time";
 import { errorsForMonth } from "../../../core/breaks";
 import { summarizeMonth } from "../../../core/workAccount";
 import type { TimeEntry } from "../../../core/types";
-import { Alert, Button, Card, EmptyState, LinkButton, StatusPill, useDialogs, useToast } from "../../../design";
+import { Alert, BarChart, Button, Card, EmptyState, LinkButton, StatusPill, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
-import { dayLabel, formatDateDE, hoursLabel, monthLabelDE } from "../../shared/format";
-import { buildStatement, shareOrDownload } from "../../shared/statement";
+import { dayLabel, formatDateDE, hoursLabel, monthLabelDE, todayISO } from "../../shared/format";
+import { dailyBars, hoursAxis } from "../../shared/charts";
+import { buildStatement, preparePdfLogo, shareOrDownload } from "../../shared/statement";
 import { downloadBlob } from "../../shared/format";
 import { navigate } from "../../shared/router";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { useEmployee } from "../context";
 import { syncStateOf } from "../../../data/sync";
+import type { CorrectionRequest } from "../../../core/types";
+import { requestInMonth } from "../../shared/corrections";
+import { CorrectionRequestDialog, CorrectionRequestList, type CorrectionTarget } from "../CorrectionRequests";
 
 export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   const { repo, me, tenant, month, setMonth, version, changed } = useEmployee();
   const toast = useToast();
   const dialogs = useDialogs();
   const [busy, setBusy] = useState<string | null>(null);
+  const [correction, setCorrection] = useState<CorrectionTarget | null>(null);
   const policy = tenant.settings.workAccount;
 
   useEffect(() => { if (initialMonth && isValidMonth(initialMonth)) setMonth(initialMonth); }, [initialMonth]);
+  // Company logo for the PDF is converted ahead of time: "PDF teilen" must open the share sheet directly in the click.
+  useEffect(() => { void preparePdfLogo(tenant); }, [tenant.branding.logoUrl]);
 
   const q = useAsync(async () => {
     const [entries, allocations, statement] = await Promise.all([
@@ -29,11 +36,18 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
     return { entries, allocations, statement };
   }, [month, version]);
 
+  // Correction requests need the server (not cached offline): a failure only hides this part.
+  const cq = useAsync(() => repo.listCorrectionRequests(tenant.id, { employeeId: me.id }), [version]);
+  const monthRequests = (cq.data ?? []).filter((r) => requestInMonth(r, month));
+  const requestFor = (entryId: string): CorrectionRequest | undefined => (cq.data ?? []).find((r) => r.entryId === entryId);
+
   const data = q.data;
   const summary = data ? summarizeMonth({ entries: activeShifts(data.entries), allocations: data.allocations, month, policy }) : null;
   const issues = data ? errorsForMonth(activeShifts(data.entries), month, tenant.settings.breakPolicy) : [];
   const status = data?.statement?.status ?? "draft";
-  const locked = status === "submitted" || status === "approved";
+  // "reopened": the leadership re-opened the approved month – changes only via correction request.
+  const locked = status === "submitted" || status === "approved" || status === "reopened";
+  const canSubmit = status !== "submitted" && status !== "approved";
 
   const byDay = new Map<string, TimeEntry[]>();
   for (const e of data?.entries ?? []) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
@@ -97,7 +111,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
           <div class="stack">
             <div class="row-between">
               <h2 class="mb-0">{monthLabelDE(month)}</h2>
-              <StatusPill status={status} label={status === "draft" ? "Nicht eingereicht" : undefined} />
+              <StatusPill status={status} label={status === "draft" ? "Nicht eingereicht" : status === "reopened" ? "Wieder geöffnet" : undefined} />
             </div>
             <div class="stat stat-hero" aria-live="polite">
               <span class="stat-label">Monatsstunden für die Abrechnung vorgesehen</span>
@@ -107,7 +121,17 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
               <dt>Tatsächlich geleistete Stunden</dt><dd class="num">{hoursLabel(summary.workedMinutes)}</dd>
               {policy.enabled && <><dt>Davon ins Arbeitszeitkonto übertragen</dt><dd class="num">–{hoursLabel(summary.allocatedMinutes)}</dd></>}
             </dl>
+            {data && data.entries.length > 0 && (
+              <BarChart data={dailyBars(data.entries, month, todayISO())} formatValue={hoursAxis} height={120}
+                label={`Geleistete Stunden je Tag im ${monthLabelDE(month)}`} />
+            )}
             <p class="muted small mb-0">Die geleisteten Stunden bleiben vollständig dokumentiert. Die Monatsstunden für die Abrechnung werden nach deiner gespeicherten Übertragung berechnet.</p>
+            {data?.statement?.correctedAfterApproval && (
+              <Alert tone="info" title="Nach Freigabe korrigiert"><p>Einträge dieses Monats wurden nach der Freigabe korrigiert. Die freigegebenen Monatszahlen bleiben vorerst unverändert; Rückfragen bitte an deine Vorgesetzten.</p></Alert>
+            )}
+            {data?.statement?.status === "reopened" && (
+              <Alert tone="warning" title="Wieder geöffnet"><p>Deine Leitung hat den freigegebenen Monat wieder geöffnet. Begründung: {data.statement.reviewNote}. Änderungen bitte per Korrekturanfrage; danach wird der Monat erneut freigegeben.</p></Alert>
+            )}
             {data?.statement?.status === "returned" && (
               <Alert tone="danger" title="Zurückgegeben"><p>Begründung: {data.statement.reviewNote}</p></Alert>
             )}
@@ -127,7 +151,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
         <div class="btn-row btn-row-stack">
           <Button icon="share" onClick={() => pdf("share")} busy={busy === "share"} disabled={!data?.entries.length}>PDF teilen</Button>
           <Button variant="secondary" icon="download" onClick={() => pdf("download")} busy={busy === "download"} disabled={!data?.entries.length}>PDF speichern</Button>
-          {!locked && <Button variant="secondary" icon="send" onClick={submit} busy={busy === "submit"} disabled={!data?.entries.length}>Monatsnachweis einreichen</Button>}
+          {canSubmit && <Button variant="secondary" icon="send" onClick={submit} busy={busy === "submit"} disabled={!data?.entries.length}>Monatsnachweis einreichen</Button>}
         </div>
         <p class="muted small" style={{ marginTop: "var(--space-3)" }}>
           „PDF teilen“ öffnet das Teilen-Menü deines Handys (z. B. WhatsApp oder E-Mail). Prüfe die PDF vor dem Senden. Wenn keine Dateifreigabe angeboten wird, wird die PDF heruntergeladen.
@@ -135,7 +159,13 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
       </Card>
 
       <section aria-labelledby="days-title" class="stack-sm">
-        <h2 id="days-title">Einsätze</h2>
+        <div class="row-between">
+          <h2 id="days-title" class="mb-0">Einsätze</h2>
+          {locked && <Button size="sm" variant="secondary" icon="plus" onClick={() => setCorrection({ kind: "add", date: `${month}-01` })}>Fehlenden Einsatz melden</Button>}
+        </div>
+        {locked && (
+          <p class="muted small mb-0">{status === "approved" ? "Dieser Monat ist freigegeben." : status === "reopened" ? "Dieser Monat ist wieder geöffnet." : "Dieser Monat ist eingereicht."} Änderungen beantragst du über „Korrektur beantragen“ – deine Vorgesetzten entscheiden.</p>
+        )}
         {data && data.entries.length === 0 && (
           <EmptyState icon="calendar" title="Keine Arbeitszeiten in diesem Monat" action={<LinkButton href="#/erfassen" variant="primary" icon="plus">Arbeitszeit erfassen</LinkButton>} />
         )}
@@ -149,8 +179,11 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
                 <div class="shift" key={x.id}>
                   <div class="shift-main">
                     <div class="shift-time">{x.start}–{x.end} Uhr</div>
-                    <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}</div>
+                    <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}{correctionHint(requestFor(x.id))}</div>
                   </div>
+                  {locked && requestFor(x.id)?.status !== "open" && (
+                    <Button size="sm" variant="ghost" icon="message" aria-label={`Korrektur für Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} beantragen`} onClick={() => setCorrection({ kind: "change", entry: x })} />
+                  )}
                   {!locked && <>
                     <Button size="sm" variant="ghost" icon="edit" aria-label={`Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} bearbeiten`} onClick={() => navigate(`/erfassen/${x.id}?datum=${x.date}`)} />
                     <Button size="sm" variant="ghost" icon="trash" aria-label={`Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} löschen`} onClick={() => remove(x)} />
@@ -162,6 +195,22 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
           );
         })}
       </section>
+
+      {(monthRequests.length > 0 || cq.error) && (
+        <section aria-labelledby="corr-title" class="stack-sm">
+          <h2 id="corr-title">Korrekturanfragen</h2>
+          {cq.error && <Alert tone="info">Korrekturanfragen können gerade nicht geladen werden (Internetverbindung nötig).</Alert>}
+          <CorrectionRequestList requests={monthRequests} onChanged={changed} />
+        </section>
+      )}
+      <CorrectionRequestDialog target={correction} onClose={() => setCorrection(null)} onSaved={() => { setCorrection(null); changed(); }} />
     </div>
   );
+}
+
+function correctionHint(r: CorrectionRequest | undefined): string {
+  if (!r) return "";
+  if (r.status === "open") return " · Korrektur angefragt";
+  if (r.status === "rejected") return " · Korrektur abgelehnt";
+  return "";
 }

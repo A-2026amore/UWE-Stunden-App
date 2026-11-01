@@ -15,9 +15,13 @@
  * reject access to other tenants' data with AccessDeniedError.
  */
 import type {
-  AuditEvent, CompanyContact, Branding, Employee, ISOMonth, License, LicensePlan,
-  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID,
+  AuditEvent, BillingMonthSummary, BillingSettings, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
+  Employee, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
+  TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
+import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
+import type { Invoice, InvoiceDraft, InvoiceSettings, InvoiceSettingsPatch } from "../core/invoice";
+import type { StatementEvent } from "../core/types";
 
 export class AccessDeniedError extends Error {
   constructor(message = "Kein Zugriff auf diese Daten.") {
@@ -113,11 +117,79 @@ export interface NewTimeEntry {
   source?: "app" | "migration";
 }
 
+/** Input of Repository.createCorrectionRequest (reason: at least 5 characters). */
+export type NewCorrectionRequest =
+  | { kind: "change"; entryId: string; proposed: Partial<EntryValues>; reason: string }
+  | { kind: "delete"; entryId: string; reason: string }
+  | { kind: "add"; proposed: EntryValues; reason: string };
+
 export interface TenantOverview {
   tenant: Tenant;
   license: License | null;
   employeeCount: number;
   activeEmployeeCount: number;
+}
+
+/** Returned by inviteEmployee / resendInvitation when an invitation was created. */
+export interface InvitationInfo {
+  expiresAt: string;
+  /**
+   * "email": sent via SMTP · "log": development server without SMTP (link in the server log) · "none": not sent (SMTP missing)
+   * · "link": not sent – `link` is returned once for sharing (copy / WhatsApp) · "demo": demo build, nothing sent.
+   */
+  delivery: "email" | "log" | "none" | "link" | "demo";
+  /** One-time invitation link (only for delivery "link"). Never stored by the client. */
+  link?: string;
+  /**
+   * The address already belongs to an account (e.g. a person working for two companies): accepting links the
+   * membership without a password, so the server mails the link to that address instead of returning it.
+   */
+  existingAccount?: boolean;
+}
+
+/** How a new invitation reaches the employee: e-mail from the server, or a link the manager shares. */
+export type InvitationChannel = "email" | "link";
+
+export interface NewEmployee {
+  displayName: string;
+  personnelNumber: string;
+  email: string | null;
+  role: TenantRole;
+  /** Default "email". */
+  invitation?: InvitationChannel;
+}
+
+export type InvitedEmployee = Employee & { invitation?: InvitationInfo };
+
+/** Input of Repository.createTenant. freeOfCharge = free test customer in one step (special condition "free"). */
+export interface NewTenant {
+  name: string;
+  slug: string;
+  plan: LicensePlan;
+  isDemo: boolean;
+  ownerEmail: string;
+  freeOfCharge?: boolean;
+  conditionNote?: string | null;
+  /** Last day of the free condition (YYYY-MM-DD); null/undefined = unlimited. */
+  conditionValidUntil?: string | null;
+}
+
+/** Technical status for platform staff (GET /api/platform/system) – no secrets, no personal data. */
+export interface SystemOverview {
+  version: string | null;
+  commit: string | null;
+  serverTime: string;
+  uptimeSeconds: number;
+  nodeVersion: string;
+  production: boolean;
+  database: { reachable: boolean; time: string | null };
+  migrations: { count: number; latest: string | null; appliedAt: string | null } | null;
+  activeSessions: number | null;
+  tenants: Record<string, number>;
+  mail: { configured: boolean; delivery: "email" | "log" | "none" };
+  paymentProvider: string;
+  /** null = not known. */
+  lastBackupAt: string | null;
 }
 
 export interface Repository {
@@ -138,7 +210,8 @@ export interface Repository {
   listEmployees(tenantId: UUID): Promise<Employee[]>;
   inviteEmployee(tenantId: UUID, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }): Promise<Employee>;
   updateEmployee(employeeId: UUID, patch: Partial<Pick<Employee, "displayName" | "personnelNumber" | "email" | "role">>): Promise<Employee>;
-  setEmployeeStatus(employeeId: UUID, status: "active" | "deactivated", reason: string): Promise<Employee>;
+  /** "locked" = temporarily blocked (only from "active"), "active" = unlock / reactivate. */
+  setEmployeeStatus(employeeId: UUID, status: "active" | "locked" | "deactivated", reason: string): Promise<Employee>;
 
   // ---- time entries
   listTimeEntries(employeeId: UUID, month: ISOMonth): Promise<TimeEntry[]>;
@@ -162,12 +235,101 @@ export interface Repository {
   approveStatement(statementId: UUID): Promise<MonthlyStatement>;
   returnStatement(statementId: UUID, reason: string): Promise<MonthlyStatement>;
 
+  // ---- correction requests (docs/bedienung-korrekturen.md)
+  /** Employees: only their own requests; leadership: whole tenant; platform staff only with support grant. */
+  listCorrectionRequests(tenantId: UUID, filter?: { employeeId?: UUID; status?: CorrectionStatus }): Promise<CorrectionRequest[]>;
+  /** Employee, own entries only. */
+  createCorrectionRequest(employeeId: UUID, input: NewCorrectionRequest): Promise<CorrectionRequest>;
+  /** Employee withdraws an own open request. */
+  withdrawCorrectionRequest(requestId: UUID): Promise<CorrectionRequest>;
+  /** Leadership: "accepted" applies the change as a correction; "rejected" needs a note. */
+  decideCorrectionRequest(requestId: UUID, decision: "accepted" | "rejected", note?: string): Promise<CorrectionRequest>;
+  /** Change history of one entry (oldest first). */
+  listTimeEntryRevisions(employeeId: UUID, entryId: string): Promise<TimeEntryRevision[]>;
+
   // ---- audit
   listAudit(tenantId: UUID, limit?: number): Promise<AuditEvent[]>;
 
   // ---- platform administration (super_admin only)
   listTenants(): Promise<TenantOverview[]>;
-  createTenant(input: { name: string; slug: string; plan: LicensePlan; isDemo: boolean; ownerEmail: string }): Promise<TenantOverview>;
+  createTenant(input: NewTenant): Promise<TenantOverview>;
   setTenantStatus(tenantId: UUID, status: Tenant["status"], reason: string): Promise<Tenant>;
-  setLicense(tenantId: UUID, plan: LicensePlan, patch?: Partial<Pick<License, "maxEmployees" | "validUntil" | "note" | "features">>): Promise<License>;
+  setLicense(tenantId: UUID, plan: LicensePlan, patch?: LicensePatch): Promise<License>;
+}
+
+/** Changeable licence fields incl. the special billing condition (super_admin). */
+export type LicensePatch = Partial<Pick<License,
+  "maxEmployees" | "validUntil" | "note" | "features"
+  | "employeePriceCents" | "freeOfCharge" | "conditionNote" | "conditionValidFrom" | "conditionValidUntil">> & {
+  /** Optional reason for the audit log. */
+  reason?: string;
+};
+
+/**
+ * Data protection (GDPR, migration 0016, docs/datenschutz.md). Access and audit
+ * are enforced by the database; legal periods are tenant settings, not code.
+ */
+export interface PrivacyApi {
+  /** Everything stored about one person in the tenant – for the person themself or the owner. */
+  exportPersonalData(employeeId: UUID): Promise<PersonalDataExport>;
+  /** Owner: all data of the tenant (e.g. on termination). */
+  exportTenantData(tenantId: UUID): Promise<TenantDataExport>;
+  /** Owner: retention period after an employee left, in months (1–600); null = not configured. */
+  setRetentionPolicy(tenantId: UUID, months: number | null): Promise<Tenant>;
+  /**
+   * Owner: anonymise a deactivated employee after the retention period. The personnel number
+   * must be repeated as confirmation. Working times stay (anonymised); cannot be undone.
+   */
+  anonymizeEmployee(employeeId: UUID, confirmPersonnelNumber: string): Promise<Employee>;
+}
+
+/**
+ * Price model (2026-10-28): billing views. Owner/manager see their own tenant
+ * with the billable persons; platform staff see numbers only (no names).
+ */
+export interface BillingApi {
+  getTenantBilling(tenantId: UUID, month: ISOMonth): Promise<TenantBillingMonth>;
+  /** Current month and previous months (newest first, not before the tenant was created). */
+  listTenantBillingHistory(tenantId: UUID, limit?: number): Promise<BillingMonthSummary[]>;
+  /** super_admin / support: revenue of all tenants for one month. */
+  getPlatformRevenue(month: ISOMonth): Promise<PlatformRevenue>;
+  getBillingSettings(): Promise<BillingSettings>;
+  /** super_admin: default net price per billable employee and month (cents), reason required. */
+  setDefaultPrice(cents: number, reason: string): Promise<BillingSettings>;
+  /**
+   * super_admin: manual billing status of a past month. Leaving "open" freezes
+   * the month; "waived" and reopening ("open") need a note.
+   */
+  setBillingStatus(tenantId: UUID, month: ISOMonth, status: BillingStatus, note?: string): Promise<BillingMonthSummary>;
+}
+
+/**
+ * Decision of 28.10.2026: an approved month is changed only after a documented
+ * re-opening (reason, audit) and a new approval (migration 0017).
+ */
+export interface StatementReviewApi {
+  /** Leadership: approved → reopened (reason ≥ 5 characters). The own statement only the owner. */
+  reopenStatement(statementId: UUID, reason: string): Promise<MonthlyStatement>;
+  /** Submissions, approvals, returns and re-openings of one statement (oldest first). */
+  listStatementEvents(statementId: UUID): Promise<StatementEvent[]>;
+}
+
+/**
+ * Invoices (migration 0019). Platform staff: all customers; the owner: own invoices.
+ * Nothing is sent and nothing is charged – the PDF is generated in the app.
+ */
+export interface InvoiceApi {
+  getInvoiceSettings(): Promise<InvoiceSettings>;
+  /** super_admin, reason required. */
+  updateInvoiceSettings(patch: InvoiceSettingsPatch, reason: string): Promise<InvoiceSettings>;
+  /** Platform staff: invoices of all customers (optionally one customer / month), newest first. */
+  listInvoices(filter?: { tenantId?: UUID; month?: ISOMonth }): Promise<Invoice[]>;
+  /** Owner: invoices of the own tenant. */
+  listTenantInvoices(tenantId: UUID): Promise<Invoice[]>;
+  /** Preview without number; `missing` lists absent mandatory data (then only a draft PDF is possible). */
+  getInvoiceDraft(tenantId: UUID, month: ISOMonth): Promise<InvoiceDraft>;
+  /** super_admin: issues the invoice of a past billing month (freezes an open month as "invoiced"). */
+  issueInvoice(tenantId: UUID, month: ISOMonth): Promise<Invoice>;
+  /** super_admin: cancellation document with its own number; the original stays. */
+  cancelInvoice(invoiceId: UUID, reason: string): Promise<Invoice>;
 }

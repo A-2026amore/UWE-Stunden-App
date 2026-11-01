@@ -1,0 +1,19 @@
+# Nur, was das Dockerfile braucht; nie Geheimnisse oder lokale Daten in den Build-Kontext.
+**/node_modules
+**/dist
+.git
+.github
+.env
+.env.*
+**/.env
+**/.env.*
+deploy
+tests
+test-results
+playwright-report
+coverage
+docs
+*.md
+*.log
+**/*.local
+.DS_Store

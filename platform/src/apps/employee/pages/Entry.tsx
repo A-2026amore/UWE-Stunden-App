@@ -1,28 +1,36 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
 import { activeShifts, findOverlapAcrossDays, formatClock, grossMinutes, netMinutes, parseClock, isRealDate } from "../../../core/time";
-import { evaluateDay, issueForDay, suggestedPause } from "../../../core/breaks";
-import type { ShiftLike, TimeEntry } from "../../../core/types";
+import { evaluateDay, issueForDay, requiredPauseText } from "../../../core/breaks";
+import type { BreakPolicy, ShiftLike, TimeEntry } from "../../../core/types";
 import { ConflictError } from "../../../data/repository";
 import { syncStateOf } from "../../../data/sync";
-import { Alert, Button, Card, EmptyState, InputField, LinkButton, useDialogs, useToast } from "../../../design";
+import { Alert, Button, Card, EmptyState, InputField, LinkButton, Skeleton, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, hoursLabel, newId, todayISO } from "../../shared/format";
 import { navigate } from "../../shared/router";
 import { useEmployee } from "../context";
 
-function hoursText(min: number) {
-  return (min / 60).toFixed(2).replace(".", ",");
+/**
+ * Live rule hint for the day. The pause is never pre-filled: the hint names
+ * the minimum for the day (wording from the tenant's thresholds) and asks for
+ * the pause actually taken.
+ */
+export function dayHint(day: ReturnType<typeof evaluateDay>, policy: BreakPolicy): string {
+  if (!day.valid) return day.reason ?? "";
+  const required = (day.required ?? 0) > 0;
+  return requiredPauseText(day, policy) +
+    (day.gaps ? ` Freie Zeit zwischen Einsätzen: ${day.gaps} Min. (zählt als Pause, bereits unbezahlt).` : "") +
+    ` Trage nur die Pause ein, die du tatsächlich genommen hast${required ? "" : " – 0, wenn du keine gemacht hast"}.` +
+    ` Pausenteile unter ${policy.minPauseSegmentMinutes} Minuten zählen nicht.`;
 }
 
-/** Live pause/rule hint for the day (legacy wording of refreshPauseHint). */
-function dayHint(day: ReturnType<typeof evaluateDay>): string {
-  if (!day.valid) return day.reason ?? "";
-  return "Für diesen Tag: " + (day.required ? `${day.required} Minuten Mindestpause` : "unter 6 Stunden keine Mindestpause") +
-    `. Einsatzzeiten: ${hoursText(day.gross ?? 0)} Std.` +
-    (day.gaps ? ` Freie Zeit zwischen Einsätzen: ${day.gaps} Min. (bereits unbezahlt).` : "") +
-    (day.missing ? ` Noch fehlend: ${day.missing} Min.` : "") +
-    " Nur tatsächlich genommene Pausen eintragen.";
-}
+/** Friendly advice when the pause actually taken is too short (nothing is saved). */
+export const SHORT_PAUSE_ADVICE =
+  "So kann der Einsatz nicht gespeichert werden. Bitte trage keine Pause ein, die du nicht gemacht hast. " +
+  "Hattest du eine Unterbrechung, erfasse den Tag als mehrere Einsätze mit der Unterbrechung dazwischen. " +
+  "Sonst prüfe Arbeitsbeginn und Arbeitsende oder sprich mit deiner Leitung.";
+
+export const PAUSE_REQUIRED_MESSAGE = "Bitte trage die tatsächlich genommene Pause ein – 0, wenn du keine Pause gemacht hast.";
 
 export function EntryPage({ editId, presetDate }: { editId: string | null; presetDate: string | null }) {
   const { repo, me, tenant, version, changed } = useEmployee();
@@ -33,9 +41,9 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
   const [date, setDate] = useState(presetDate && isRealDate(presetDate) ? presetDate : todayISO());
   const [start, setStart] = useState("08:00");
   const [end, setEnd] = useState("16:00");
-  const [pause, setPause] = useState("30");
+  // Deliberately empty: the actual pause must be entered (no automatic suggestion).
+  const [pause, setPause] = useState("");
   const [note, setNote] = useState("");
-  const [pauseTouched, setPauseTouched] = useState(false);
   const [editing, setEditing] = useState<TimeEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,7 +61,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
     if (found && editing?.id !== found.id) {
       setEditing(found);
       setDate(found.date); setStart(found.start); setEnd(found.end);
-      setPause(String(found.pauseMinutes)); setNote(found.note); setPauseTouched(true); setError(null);
+      setPause(String(found.pauseMinutes)); setNote(found.note); setError(null);
     }
   }, [editId, q.data]);
 
@@ -61,16 +69,11 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
   const candidate: ShiftLike = { id: editing?.id, date, start, end, pause: Number(pause) };
   const others = saved.filter((s) => s.id !== editing?.id);
 
-  // Live pause suggestion as long as the user did not type a pause.
-  useEffect(() => {
-    if (pauseTouched || !q.data) return;
-    const s = suggestedPause({ ...candidate, pause: 0 }, saved, policy);
-    if (s !== null) setPause(String(s));
-  }, [date, start, end, q.data, pauseTouched]);
-
   const timesValid = Number.isFinite(grossMinutes(candidate)) && isRealDate(date);
   const pauseValid = /^\d{1,4}$/.test(pause);
   const day = timesValid && pauseValid ? evaluateDay([...others, candidate], date, policy) : null;
+  // Rule hint also while the pause is still empty (evaluated as "no pause yet").
+  const hintDay = day ?? (timesValid ? evaluateDay([...others, { ...candidate, pause: 0 }], date, policy) : null);
   const issue = day ? issueForDay(day, policy) : "";
   const overlap = timesValid ? findOverlapAcrossDays(candidate, others) : undefined;
   const net = timesValid && pauseValid ? netMinutes(candidate) : NaN;
@@ -84,7 +87,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
     } else {
       setStart("08:00"); setEnd("16:00");
     }
-    setNote(""); setPauseTouched(false); setError(null);
+    setPause(""); setNote(""); setError(null);
     if (editId) navigate("/erfassen");
   };
 
@@ -92,9 +95,10 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
     e.preventDefault();
     setError(null);
     if (!timesValid) { setError("Bitte Datum, Arbeitsbeginn und Arbeitsende eintragen."); return; }
+    if (pause === "") { setError(PAUSE_REQUIRED_MESSAGE); return; }
     if (!pauseValid) { setError("Pause bitte in ganzen Minuten eintragen."); return; }
     if (overlap) { setError(`Der Einsatz überschneidet sich mit ${overlap.start}–${overlap.end} Uhr.`); return; }
-    if (issue) { setError(issue); return; }
+    if (issue) { setError(day?.valid && day.missing ? `${issue} ${SHORT_PAUSE_ADVICE}` : issue); return; }
     setBusy(true);
     try {
       const payload = { date, start, end, pauseMinutes: Number(pause), note: note.trim() };
@@ -166,8 +170,9 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
           </div>
           <InputField
             label="Pause" suffix="Minuten" type="text" inputMode="numeric" pattern="[0-9]*" value={pause}
-            onValue={(v) => { setPause(v.replace(/[^\d]/g, "")); setPauseTouched(true); setError(null); }}
-            hint={<span aria-live="polite">{day ? dayHint(day) : "Bitte Beginn und Ende eintragen."}{!pauseTouched && day?.valid ? " (Vorschlag automatisch eingetragen)" : ""}</span>}
+            onValue={(v) => { setPause(v.replace(/[^\d]/g, "")); setError(null); }}
+            required
+            hint={<span aria-live="polite" data-testid="pause-hint">{hintDay ? dayHint(hintDay, policy) : "Bitte Beginn und Ende eintragen."}</span>}
             disabled={!!locked}
           />
           <InputField label="Bemerkung" optional maxLength={200} placeholder="z. B. Schülertour" value={note} onValue={setNote} disabled={!!locked} />
@@ -185,7 +190,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
           {error && <Alert tone="danger" live>{error}</Alert>}
 
           <div class="btn-row btn-row-stack">
-            <Button type="submit" icon="check" busy={busy} disabled={!!locked}>{editing ? "Änderung speichern" : "Arbeitszeit speichern"}</Button>
+            <Button type="submit" icon="check" class="btn-lg" busy={busy} disabled={!!locked}>{editing ? "Änderung speichern" : "Arbeitszeit speichern"}</Button>
             {editing && <Button variant="secondary" onClick={() => resetForNext(null)}>Abbrechen</Button>}
             {!editing && <Button variant="secondary" onClick={() => { setDate(todayISO()); resetForNext(null); }}>Anderen Tag eintragen</Button>}
           </div>
@@ -193,7 +198,7 @@ export function EntryPage({ editId, presetDate }: { editId: string | null; prese
       </Card>
 
       <Card title={`Einsätze am ${dayLabel(date)}`} headingLevel={2}>
-        {q.loading && !q.data ? <p class="muted">Wird geladen …</p> : dayEntries.length === 0 ? (
+        {q.loading && !q.data ? <Skeleton title={false} lines={2} /> : dayEntries.length === 0 ? (
           <EmptyState icon="clock" title="Noch keine Einsätze an diesem Tag" />
         ) : (
           <div class="day-group">

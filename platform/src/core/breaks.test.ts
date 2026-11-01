@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ShiftLike } from "./types";
-import { UWE_BREAK_POLICY, errorsForMonth, evaluateDay, issueForDay, necessaryPause, suggestedPause } from "./breaks";
+import {
+  BREAK_RULE_THRESHOLDS, NEW_TENANT_BREAK_RULE, UWE_BREAK_POLICY, breakRuleKind, breakRuleSummary, defaultBreakPolicy, errorsForMonth,
+  evaluateDay, issueForDay, necessaryPause, requiredPauseText, statutoryBreakProblems, suggestedPause, thresholdLabel, thresholdsFor,
+  validateBreakPolicy,
+} from "./breaks";
 import { loadLegacy } from "./__legacy__/loadLegacy";
 import { clock, int, pick, rng } from "./__legacy__/random";
 
@@ -98,5 +102,74 @@ describe("breaks – explicit cases", () => {
     expect(evaluateDay(day(["08:00", "14:00", 0]), "2026-11-02", policy).required).toBe(0);
     expect(evaluateDay(day(["08:00", "18:30", 30]), "2026-11-02", policy).reason).toContain("höchstens 10 Stunden");
     expect(UWE_BREAK_POLICY.maxShiftMinutes).toBe(720);
+  });
+});
+
+describe("breaks – statutory vs. strict rule (§4 ArbZG, client 2026-10-28)", () => {
+  const STATUTORY = { thresholds: thresholdsFor("statutory"), maxShiftMinutes: 600, minPauseSegmentMinutes: 15 };
+  const STRICT = { thresholds: thresholdsFor("strict"), maxShiftMinutes: 720, minPauseSegmentMinutes: 15 };
+  const one = (start: string, end: string, pause: number) => [{ id: "a", date: "2026-11-02", start, end, pause }];
+  const valid = (start: string, end: string, pause: number, policy: typeof STRICT) =>
+    issueForDay(evaluateDay(one(start, end, pause), "2026-11-02", policy), policy) === "";
+
+  it("6:00 exactly without pause: valid under the statutory rule, invalid under the strict rule", () => {
+    expect(valid("08:00", "14:00", 0, STATUTORY)).toBe(true);
+    expect(valid("08:00", "14:00", 0, STRICT)).toBe(false);
+  });
+  it("6:01 needs 30 minutes under both rules", () => {
+    for (const p of [STATUTORY, STRICT]) {
+      expect(valid("08:00", "14:01", 0, p)).toBe(false);
+      expect(valid("08:00", "14:01", 29, p)).toBe(false);
+      expect(valid("08:00", "14:01", 30, p)).toBe(true);
+    }
+  });
+  it("9:00 exactly with 30 minutes: valid statutory, strict needs 45; 9:01 needs 45 under both", () => {
+    expect(valid("08:00", "17:00", 30, STATUTORY)).toBe(true);
+    expect(valid("08:00", "17:00", 30, STRICT)).toBe(false);
+    expect(valid("08:00", "17:00", 45, STRICT)).toBe(true);
+    for (const p of [STATUTORY, STRICT]) {
+      expect(valid("08:00", "17:01", 30, p)).toBe(false);
+      expect(valid("08:00", "17:01", 45, p)).toBe(true);
+    }
+  });
+  it("pause pieces under 15 minutes do not count under the statutory rule either", () => {
+    const day = evaluateDay([{ id: "a", date: "2026-11-02", start: "08:00", end: "12:00", pause: 14 }, { id: "b", date: "2026-11-02", start: "12:00", end: "15:00", pause: 14 }], "2026-11-02", STATUTORY);
+    expect(day.missing).toBe(30);
+  });
+  it("UWE keeps the strict rule; new tenants get the configured default", () => {
+    expect(breakRuleKind(UWE_BREAK_POLICY)).toBe("strict");
+    expect(NEW_TENANT_BREAK_RULE).toBe("statutory");
+    expect(breakRuleKind(defaultBreakPolicy())).toBe(NEW_TENANT_BREAK_RULE);
+    expect(defaultBreakPolicy()).toEqual({ thresholds: [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }], maxShiftMinutes: 600, minPauseSegmentMinutes: 15 });
+    expect(breakRuleKind({ ...STRICT, thresholds: [{ minGrossMinutes: 300, minPauseMinutes: 30 }] })).toBe("custom");
+  });
+  it("wording follows the configuration: 360 → 'ab 6 Stunden', 361 → 'mehr als 6 Stunden'", () => {
+    expect(thresholdLabel(360)).toBe("ab 6 Stunden");
+    expect(thresholdLabel(361)).toBe("mehr als 6 Stunden");
+    expect(thresholdLabel(540)).toBe("ab 9 Stunden");
+    expect(thresholdLabel(541)).toBe("mehr als 9 Stunden");
+    expect(thresholdLabel(390)).toBe("ab 6,5 Stunden");
+    expect(thresholdLabel(60)).toBe("ab 1 Stunde");
+    expect(breakRuleSummary(STRICT)).toBe("ab 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, ab 9 Stunden mindestens 45 Minuten");
+    expect(breakRuleSummary(STATUTORY)).toBe("bei mehr als 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, bei mehr als 9 Stunden mindestens 45 Minuten");
+  });
+  it("required pause text names minimum and rule of the day", () => {
+    const d = (end: string, p: typeof STRICT) => requiredPauseText(evaluateDay(one("08:00", end, 0), "2026-11-02", p), p);
+    expect(d("14:00", STRICT)).toBe("Für diesen Tag (6,00 Std. Einsatzzeit) sind mindestens 30 Minuten Pause vorgeschrieben (Regel: ab 6 Stunden).");
+    expect(d("14:00", STATUTORY)).toBe("Für diesen Tag (6,00 Std. Einsatzzeit) ist keine Mindestpause vorgeschrieben (Pausenpflicht erst mehr als 6 Stunden).");
+    expect(d("17:30", STATUTORY)).toBe("Für diesen Tag (9,50 Std. Einsatzzeit) sind mindestens 45 Minuten Pause vorgeschrieben (Regel: mehr als 9 Stunden).");
+    expect(d("12:00", STRICT)).toContain("keine Mindestpause vorgeschrieben (Pausenpflicht erst ab 6 Stunden)");
+  });
+  it("stricter configurations are accepted, laxer ones rejected", () => {
+    expect(validateBreakPolicy(STATUTORY)).toEqual([]);
+    expect(validateBreakPolicy(STRICT)).toEqual([]);
+    expect(validateBreakPolicy({ ...STRICT, thresholds: [{ minGrossMinutes: 240, minPauseMinutes: 45 }] })).toEqual([]);
+    expect(statutoryBreakProblems({ ...STRICT, thresholds: [{ minGrossMinutes: 362, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }] })[0])
+      .toContain("bei mehr als 6 Stunden Arbeitszeit sind mindestens 30 Minuten Pause vorgeschrieben");
+    expect(validateBreakPolicy({ ...STRICT, thresholds: [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 40 }] })[0])
+      .toContain("bei mehr als 9 Stunden");
+    expect(validateBreakPolicy({ ...STRICT, thresholds: [] })).toHaveLength(2);
+    expect(validateBreakPolicy({ ...STRICT, minPauseSegmentMinutes: 10 })[0]).toContain("unter 15 Minuten");
+    expect(validateBreakPolicy({ ...STRICT, thresholds: [...BREAK_RULE_THRESHOLDS.strict].reverse() })[0]).toContain("aufsteigend");
   });
 });

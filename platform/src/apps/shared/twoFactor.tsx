@@ -13,7 +13,7 @@ import { groupSecret } from "../../security/totp";
 import { dateTimeDE, downloadBlob } from "./format";
 import { errorText, useAsync } from "./hooks";
 import { IS_DEMO, demoTwoFactorCode, type AppArea, type AreaRepository } from "./repo";
-import { ProductMark } from "./ui";
+import { AuthLayout } from "./ui";
 
 export const CODE_LABEL = "Bestätigungscode aus der Authenticator-App";
 export const RECOVERY_LABEL = "Wiederherstellungscode";
@@ -264,20 +264,17 @@ export function TwoFactorGate({ repo, session, onDone, onSignOut }: {
   };
   const by = status.data?.requiredBy;
   return (
-    <div class="auth">
-      <main class="auth-card stack" id="main">
-        <div class="auth-head">
-          <ProductMark />
-          <h1 style={{ marginTop: "var(--space-4)" }}>Zwei-Faktor-Anmeldung einrichten</h1>
-          <p class="muted">{by ? REQUIRED_TEXT[by] : "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben."} Bitte richte sie jetzt ein – danach geht es weiter.</p>
-        </div>
-        <Card>
-          <TwoFactorSetupFlow repo={repo} account={session.email} onDone={finish} />
-          {error && <Alert tone="danger" live>{error}</Alert>}
-        </Card>
-        <Button variant="ghost" icon="logout" onClick={onSignOut}>Abmelden</Button>
-      </main>
-    </div>
+    <AuthLayout area={session.platformRole ? "admin" : session.employeeId && session.role === "employee" ? "app" : "chef"}>
+      <div class="auth-head">
+        <h1>Zwei-Faktor-Anmeldung einrichten</h1>
+        <p class="muted mb-0">{by ? REQUIRED_TEXT[by] : "Für dein Konto ist die Zwei-Faktor-Anmeldung vorgeschrieben."} Bitte richte sie jetzt ein – danach geht es weiter.</p>
+      </div>
+      <Card>
+        <TwoFactorSetupFlow repo={repo} account={session.email} onDone={finish} />
+        {error && <Alert tone="danger" live>{error}</Alert>}
+      </Card>
+      <Button variant="ghost" icon="logout" onClick={onSignOut}>Abmelden</Button>
+    </AuthLayout>
   );
 }
 

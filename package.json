@@ -22,6 +22,9 @@
     "build:api": "VITE_DATA_MODE=api vite build --config platform/vite.config.ts",
     "test:e2e:fullstack": "playwright test -c playwright.fullstack.config.ts"
   },
+  "dependencies": {
+    "pg": "^8.23.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.63.0",
@@ -31,7 +34,6 @@
     "eslint": "^9.39.5",
     "globals": "^17.13.0",
     "jsdom": "^29.1.1",
-    "pg": "^8.23.1",
     "preact": "^10.29.8",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.1",

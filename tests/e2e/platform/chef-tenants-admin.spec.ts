@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
-  ADMIN, ANNA_ID, APP, CHEF, confirmDialog, dbEntries, freeze, go, login, loginEmployee, signOutEmployee, statValue,
+  ADMIN, ANNA_ID, APP, CHEF, NOW, confirmDialog, dbEntries, freeze, go, login, loginEmployee, signOutEmployee, statValue,
 } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
@@ -61,6 +61,39 @@ test("chef: approve a submitted statement", async ({ page }) => {
   await expect(page.locator(".toast").filter({ hasText: "Monatsnachweis freigegeben." })).toBeVisible();
   await expect(page.getByRole("row", { name: /Ben Muster/ })).toContainText("Freigegeben");
   await expect(page.getByText("0 zur Prüfung")).toBeVisible();
+});
+
+test("chef: statements page opens the month in which statements wait", async ({ page }) => {
+  // Anna submits the current month (November); Ben's October statement is still open.
+  const app = await page.context().newPage();
+  await app.clock.setFixedTime(NOW);
+  await loginEmployee(app);
+  await go(app, "#/monat?m=2026-11");
+  await app.getByRole("button", { name: "Monatsnachweis einreichen" }).click();
+  await confirmDialog(app, "Einreichen");
+  await expect(app.locator(".toast").filter({ hasText: "Monatsnachweis eingereicht." })).toBeVisible();
+  await app.close();
+
+  await loginChef(page);
+  await expect(statValue(page, "Offene Monatsnachweise")).toHaveText("2");
+  await page.locator(".stat", { hasText: "Offene Monatsnachweise" }).first().click();
+  await expect(page.getByRole("heading", { level: 1, name: "Monatsnachweise" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Nachweis von Ben Muster freigeben" })).toBeVisible();
+  // The other month with an open statement is pointed out and one click away.
+  await expect(page.getByText("1 offener Nachweis im November 2026")).toBeVisible();
+  await page.getByRole("button", { name: "November 2026 anzeigen" }).click();
+  await expect(page.getByRole("button", { name: "Nachweis von Anna Beispiel freigeben" })).toBeVisible();
+  await expect(page.getByText("1 offener Nachweis im Oktober 2026")).toBeVisible();
+
+  // Once October is approved, the menu link opens November directly (before: always the previous month).
+  await page.getByRole("button", { name: "Oktober 2026 anzeigen" }).click();
+  await page.getByRole("button", { name: "Nachweis von Ben Muster freigeben" }).click();
+  await confirmDialog(page, "Freigeben");
+  await expect(page.locator(".toast").filter({ hasText: "Monatsnachweis freigegeben." })).toBeVisible();
+  await go(page, "#/");
+  await page.getByRole("link", { name: /Monatsnachweise/ }).first().click();
+  await expect(page.getByRole("button", { name: "Nachweis von Anna Beispiel freigeben" })).toBeVisible();
+  await expect(page.getByText(/offener? Nachweis/)).toHaveCount(0);
 });
 
 test("chef changes colour and WhatsApp number: visible for the own tenant only", async ({ page }) => {

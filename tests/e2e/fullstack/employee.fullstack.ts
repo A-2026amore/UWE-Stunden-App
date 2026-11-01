@@ -102,11 +102,12 @@ test("expired session → back to the login with a German hint; the unsent entry
   await expect(page.getByTestId("sync-pending")).toHaveCount(0);
 });
 
-test("suspended company: German message at login", async ({ page, stack }) => {
+test("suspended company: login without 2FA answers like a wrong password (QA B4)", async ({ page, stack }) => {
   await stack.db.query("update public.tenants set status = 'suspended' where id = $1", [IDS.tenantB]);
   try {
     await signIn(page, "/app/", USERS.empB);
-    await expect(page.getByRole("alert").filter({ hasText: "Der Firmenzugang ist derzeit gesperrt. Bitte wende dich an deinen Arbeitgeber." })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "E-Mail-Adresse oder Passwort ist falsch." })).toBeVisible();
+    await expect(page.getByText("Der Firmenzugang ist derzeit gesperrt.")).toHaveCount(0);
   } finally {
     await stack.db.query("update public.tenants set status = 'active' where id = $1", [IDS.tenantB]);
   }

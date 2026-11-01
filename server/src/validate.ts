@@ -31,7 +31,7 @@ export function entryId(v: unknown): string {
   return v;
 }
 
-interface StrOpts {
+export interface StrOpts {
   label: string;
   max: number;
   min?: number;

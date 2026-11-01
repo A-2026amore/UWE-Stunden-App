@@ -23,12 +23,18 @@
  * `Content-Type: application/json` as required by the server's CSRF check.
  */
 import type {
-  AuditEvent, Branding, CompanyContact, Employee, ISOMonth, License, LicensePlan,
-  MonthAllocation, MonthlyStatement, Tenant, TenantRole, TenantSettings, TimeEntry, UUID,
+  AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, ISOMonth, License,
+  LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
+  TimeEntryRevision, UUID,
 } from "../core/types";
+import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
+import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
+import type { StatementEvent } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type NewTimeEntry, type Repository, type Session, type TenantOverview, type TwoFactorApi, type TwoFactorProof,
+  type BillingApi, type InvoiceApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
+  type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type SystemOverview, type TenantOverview,
+  type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
 } from "./repository";
 
@@ -73,14 +79,7 @@ export class TwoFactorSetupRequiredError extends AccessDeniedError {
 
 export type AuthFailure = { kind: "expired" | "suspended" | "two_factor_setup"; message: string };
 
-/** Returned by inviteEmployee / resendInvitation when an invitation was created. */
-export interface InvitationInfo {
-  expiresAt: string;
-  /** "email": sent via SMTP · "log": development server without SMTP (link in the server log) · "none": not sent (SMTP missing). */
-  delivery: "email" | "log" | "none";
-}
-
-export type InvitedEmployee = Employee & { invitation?: InvitationInfo };
+export type { InvitationChannel, InvitationInfo, InvitedEmployee, NewEmployee } from "./repository";
 
 export interface InvitationResult {
   existingAccount: boolean;
@@ -95,7 +94,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -106,8 +105,14 @@ export interface ApiRepository extends Repository, TwoFactorApi {
    * show `message` and ask the user to sign in with the existing password.
    */
   acceptInvitation(token: string, password?: string): Promise<InvitationResult>;
-  inviteEmployee(tenantId: UUID, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }): Promise<InvitedEmployee>;
+  inviteEmployee(tenantId: UUID, input: NewEmployee): Promise<InvitedEmployee>;
   resendInvitation(employeeId: UUID): Promise<InvitationInfo | null>;
+  /** New invitation for an invited employee (earlier links become invalid). */
+  createInvitation(employeeId: UUID, channel: InvitationChannel): Promise<InvitationInfo>;
+  /** Owner: display name of the company. */
+  renameTenant(tenantId: UUID, name: string): Promise<Tenant>;
+  /** super_admin / support: technical status. */
+  getSystemOverview(): Promise<SystemOverview>;
 }
 
 export interface ApiRepositoryOptions {
@@ -238,6 +243,9 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     updateContact(tenantId, contact: Partial<CompanyContact>) {
       return request<Tenant>("PATCH", `/api/tenants/${enc(tenantId)}/contact`, contact);
     },
+    renameTenant(tenantId, name) {
+      return request<Tenant>("PATCH", `/api/tenants/${enc(tenantId)}/name`, { name });
+    },
     updateSettings(tenantId, settings: Partial<TenantSettings>) {
       return request<Tenant>("PATCH", `/api/tenants/${enc(tenantId)}/settings`, settings);
     },
@@ -252,12 +260,17 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     listEmployees(tenantId) {
       return request<Employee[]>("GET", `/api/tenants/${enc(tenantId)}/employees`);
     },
-    inviteEmployee(tenantId, input: { displayName: string; personnelNumber: string; email: string | null; role: TenantRole }) {
-      return request<InvitedEmployee>("POST", `/api/tenants/${enc(tenantId)}/employees`, input);
+    inviteEmployee(tenantId, input: NewEmployee) {
+      const { invitation, ...rest } = input;
+      return request<InvitedEmployee>("POST", `/api/tenants/${enc(tenantId)}/employees`, invitation === "link" ? { ...rest, invitation } : rest);
     },
     async resendInvitation(employeeId) {
       const r = await request<{ expiresAt: string; delivery?: InvitationInfo["delivery"] } | null>("POST", `/api/employees/${enc(employeeId)}/invitation`, {});
       return r ? { expiresAt: r.expiresAt, delivery: r.delivery ?? "email" } : null;
+    },
+    async createInvitation(employeeId, channel) {
+      const r = await request<InvitationInfo>("POST", `/api/employees/${enc(employeeId)}/invitation`, channel === "link" ? { channel } : {});
+      return { expiresAt: r.expiresAt, delivery: r.delivery ?? "email", ...(r.link ? { link: r.link } : {}) };
     },
     updateEmployee(employeeId, patch) {
       return request<Employee>("PATCH", `/api/employees/${enc(employeeId)}`, patch);
@@ -322,6 +335,60 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     returnStatement(statementId, reason) {
       return request<MonthlyStatement>("POST", `/api/statements/${enc(statementId)}/return`, { reason });
     },
+    reopenStatement(statementId, reason) {
+      return request<MonthlyStatement>("POST", `/api/statements/${enc(statementId)}/reopen`, { reason });
+    },
+    listStatementEvents(statementId) {
+      return request<StatementEvent[]>("GET", `/api/statements/${enc(statementId)}/events`);
+    },
+
+    // ---- invoices (migration 0019)
+    getInvoiceSettings() {
+      return request<InvoiceSettings>("GET", "/api/platform/invoice-settings");
+    },
+    updateInvoiceSettings(patch, reason) {
+      return request<InvoiceSettings>("PUT", "/api/platform/invoice-settings", { ...patch, reason });
+    },
+    listInvoices(filter = {}) {
+      const p = new URLSearchParams();
+      if (filter.tenantId) p.set("tenantId", filter.tenantId);
+      if (filter.month) p.set("month", filter.month);
+      const qs = p.toString();
+      return request<Invoice[]>("GET", `/api/platform/invoices${qs ? `?${qs}` : ""}`);
+    },
+    listTenantInvoices(tenantId) {
+      return request<Invoice[]>("GET", `/api/tenants/${enc(tenantId)}/invoices`);
+    },
+    getInvoiceDraft(tenantId, month) {
+      return request<InvoiceDraft>("GET", `/api/platform/tenants/${enc(tenantId)}/invoices/${enc(month)}/draft`);
+    },
+    issueInvoice(tenantId, month) {
+      return request<Invoice>("POST", `/api/platform/tenants/${enc(tenantId)}/invoices/${enc(month)}`, {});
+    },
+    cancelInvoice(invoiceId, reason) {
+      return request<Invoice>("POST", `/api/platform/invoices/${enc(invoiceId)}/cancel`, { reason });
+    },
+
+    // ---- correction requests
+    listCorrectionRequests(tenantId, filter = {}) {
+      const qs = new URLSearchParams();
+      if (filter.employeeId) qs.set("employeeId", filter.employeeId);
+      if (filter.status) qs.set("status", filter.status);
+      const query = qs.toString();
+      return request<CorrectionRequest[]>("GET", `/api/tenants/${enc(tenantId)}/correction-requests${query ? `?${query}` : ""}`);
+    },
+    createCorrectionRequest(employeeId, input: NewCorrectionRequest) {
+      return request<CorrectionRequest>("POST", `/api/employees/${enc(employeeId)}/correction-requests`, input);
+    },
+    withdrawCorrectionRequest(requestId) {
+      return request<CorrectionRequest>("POST", `/api/correction-requests/${enc(requestId)}/withdraw`, {});
+    },
+    decideCorrectionRequest(requestId, decision, note) {
+      return request<CorrectionRequest>("POST", `/api/correction-requests/${enc(requestId)}/decide`, note === undefined ? { decision } : { decision, note });
+    },
+    listTimeEntryRevisions(employeeId, entryId) {
+      return request<TimeEntryRevision[]>("GET", `/api/employees/${enc(employeeId)}/time-entries/${enc(entryId)}/revisions`);
+    },
 
     // ---- audit
     listAudit(tenantId, limit) {
@@ -331,18 +398,55 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
       return request<AuditEvent[]>("GET", `/api/platform/audit${limit ? `?limit=${limit}` : ""}`);
     },
 
+    // ---- data protection (0016)
+    exportPersonalData(employeeId) {
+      return request<PersonalDataExport>("GET", `/api/employees/${enc(employeeId)}/data-export`);
+    },
+    exportTenantData(tenantId) {
+      return request<TenantDataExport>("GET", `/api/tenants/${enc(tenantId)}/data-export`);
+    },
+    setRetentionPolicy(tenantId, months) {
+      return request<Tenant>("PUT", `/api/tenants/${enc(tenantId)}/privacy`, { retentionMonthsAfterExit: months });
+    },
+    anonymizeEmployee(employeeId, confirmPersonnelNumber) {
+      return request<Employee>("POST", `/api/employees/${enc(employeeId)}/anonymize`, { confirmPersonnelNumber });
+    },
+
     // ---- platform administration
     listTenants() {
       return request<TenantOverview[]>("GET", "/api/platform/tenants");
     },
-    createTenant(input: { name: string; slug: string; plan: LicensePlan; isDemo: boolean; ownerEmail: string }) {
+    createTenant(input: NewTenant) {
       return request<TenantOverview>("POST", "/api/platform/tenants", input);
+    },
+    getSystemOverview() {
+      return request<SystemOverview>("GET", "/api/platform/system");
     },
     setTenantStatus(tenantId, status, reason) {
       return request<Tenant>("POST", `/api/platform/tenants/${enc(tenantId)}/status`, { status, reason });
     },
-    setLicense(tenantId, plan: LicensePlan, patch: Partial<Pick<License, "maxEmployees" | "validUntil" | "note" | "features">> = {}) {
+    setLicense(tenantId, plan: LicensePlan, patch: LicensePatch = {}) {
       return request<License>("PUT", `/api/platform/tenants/${enc(tenantId)}/license`, { plan, ...patch });
+    },
+
+    // ---- billing (price model 2026-10-28)
+    getTenantBilling(tenantId, month) {
+      return request<TenantBillingMonth>("GET", `/api/tenants/${enc(tenantId)}/billing?month=${enc(month)}`);
+    },
+    listTenantBillingHistory(tenantId, limit) {
+      return request<BillingMonthSummary[]>("GET", `/api/tenants/${enc(tenantId)}/billing/history${limit ? `?limit=${limit}` : ""}`);
+    },
+    getPlatformRevenue(month) {
+      return request<PlatformRevenue>("GET", `/api/platform/billing?month=${enc(month)}`);
+    },
+    getBillingSettings() {
+      return request<BillingSettings>("GET", "/api/platform/billing/settings");
+    },
+    setDefaultPrice(cents, reason) {
+      return request<BillingSettings>("PUT", "/api/platform/billing/settings", { defaultPriceCents: cents, reason });
+    },
+    setBillingStatus(tenantId, month, status, note) {
+      return request<BillingMonthSummary>("PUT", `/api/platform/tenants/${enc(tenantId)}/billing/${enc(month)}`, note === undefined ? { status } : { status, note });
     },
   };
 }

@@ -116,3 +116,43 @@ test("invitation for an e-mail with an existing account: linked without changing
     "select tenant_id, status from public.employees where user_id = $1 order by tenant_id", [IDS.users.emp2A]);
   expect(memberships).toEqual([{ tenant_id: IDS.tenantA, status: "active" }, { tenant_id: IDS.tenantB, status: "active" }]);
 });
+
+test("invitation link shared by the chef (WhatsApp / copy): no mail, works once", async ({ browser, page, stack }) => {
+  const email = "link.fullstack@demo-krankentransporte.example";
+  await signIn(page, "/chef/", USERS.managerA);
+  await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
+  await go(page, "#/mitarbeiter");
+  await page.getByRole("button", { name: "Mitarbeiter einladen" }).click();
+  const dialog = page.getByRole("dialog", { name: "Mitarbeiter einladen" });
+  await dialog.getByLabel("Name", { exact: true }).fill("Lia Link");
+  await dialog.getByLabel("Personalnummer").fill("A-778");
+  await dialog.getByLabel("E-Mail-Adresse").fill(email);
+  await dialog.getByLabel("Zugang senden").selectOption("link");
+  await dialog.getByRole("button", { name: "Einladen" }).click();
+
+  const share = page.getByRole("dialog", { name: "Zugang senden: Lia Link" });
+  const link = (await share.getByTestId("invitation-link").locator(".share-link").innerText()).trim();
+  expect(link.startsWith(`${stack.url}/einladung#token=`)).toBe(true);
+  const wa = await share.getByRole("link", { name: "Per WhatsApp teilen" }).getAttribute("href");
+  expect(decodeURIComponent(wa!)).toContain(link);
+  await share.getByRole("button", { name: "Schließen", exact: true }).click();
+
+  const ctx = await browser.newContext({ baseURL: stack.url, locale: "de-DE", timezoneId: "Europe/Berlin" });
+  const invitee = await ctx.newPage();
+  await invitee.goto(link);
+  await invitee.getByLabel("Passwort", { exact: true }).fill(NEW_PASSWORD);
+  await invitee.getByLabel("Passwort wiederholen").fill(NEW_PASSWORD);
+  await invitee.getByRole("button", { name: "Einladung annehmen" }).click();
+  await expect(invitee.getByTestId("invitation-result")).toHaveText("Dein Passwort ist gespeichert. Du kannst dich jetzt anmelden.");
+  // A second use of the same link is refused.
+  await invitee.goto(link);
+  await invitee.getByLabel("Passwort", { exact: true }).fill(NEW_PASSWORD);
+  await invitee.getByLabel("Passwort wiederholen").fill(NEW_PASSWORD);
+  await invitee.getByRole("button", { name: "Einladung annehmen" }).click();
+  await expect(invitee.getByRole("alert")).toBeVisible();
+  await ctx.close();
+
+  const [emp] = await rows<{ status: string }>(stack.db, "select status from public.employees where email = $1", [email]);
+  expect(emp).toMatchObject({ status: "active" });
+  expect(stack.mails.some((m) => m.to === email)).toBe(false); // shared by the chef, never mailed
+});

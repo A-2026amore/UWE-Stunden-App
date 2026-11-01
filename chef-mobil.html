@@ -149,13 +149,9 @@ main .card{background:rgba(255,255,255,.95)}
 </section>
 <section class="card">
 <h3>Vorhandene Mitarbeiter ergänzen</h3>
-<p class="small">Die fünf Mitarbeiter aus deiner bisherigen Eingabe sind bereits vorbereitet. Prüfe die Personalnummern und das Ablaufdatum, dann klicke auf „Mitarbeiter übernehmen“. Akzeptiert werden <b>31.12.2027</b> oder <b>2027-12-31</b>. Die vorhandenen Zugänge werden dadurch weder geändert noch neu ausgestellt.</p>
+<p class="small">Trage je Zeile einen Mitarbeiter ein. Prüfe die Personalnummern und das Ablaufdatum, dann klicke auf „Mitarbeiter übernehmen“. Akzeptiert werden <b>31.12.2027</b> oder <b>2027-12-31</b>. Die vorhandenen Zugänge werden dadurch weder geändert noch neu ausgestellt.</p>
 <label for="staffImport">Bestehende Mitarbeiter</label>
-<textarea id="staffImport" rows="6" spellcheck="false" autocomplete="off">Ivanka;M001;31.12.2027
-Aneta;M002;31.12.2027
-Viktor;M003;31.12.2027
-Ayse;M004;31.12.2027
-Mehtap;M005;31.12.2027</textarea>
+<textarea id="staffImport" rows="6" spellcheck="false" autocomplete="off" placeholder="Vorname;Personalnummer;Ablaufdatum&#10;z. B. Anna;M001;31.12.2027"></textarea>
 <div class="stack"><button type="button" id="staffImportBtn">Mitarbeiter übernehmen</button></div>
 <hr style="border:none;border-top:1px solid #d5e6e4;margin:23px 0 16px">
 <h3>Frühere Einladungslinks prüfen</h3>

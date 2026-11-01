@@ -7,13 +7,15 @@ export default defineConfig({
   testIgnore: process.env.PW_PLATFORM === "0" ? ["platform/**"] : [],
   timeout: 30000,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  reporter: process.env.CI ? [["list"], ["github"], ["html", { open: "never" }]] : "list",
   use: { trace: "retain-on-failure", locale: "de-DE", timezoneId: "Europe/Berlin" },
   projects: [
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile-android", use: { ...devices["Pixel 7"] } },
     // WebKit approximates iPhone Safari; real-device tests are still required (see docs/testplan.md).
-    { name: "mobile-iphone", use: { ...devices["iPhone 14"] } },
+    // Reduced motion: under CI load, Playwright's "stable" check in WebKit intermittently never settled while the
+    // design's entrance animations ran (buttons not clickable for 30 s). Animations themselves are not covered here.
+    { name: "mobile-iphone", use: { ...devices["iPhone 14"], reducedMotion: "reduce" } },
   ],
   webServer: [
     { command: "node scripts/serve-static.mjs . 4173", url: "http://127.0.0.1:4173/index.html", reuseExistingServer: !process.env.CI },

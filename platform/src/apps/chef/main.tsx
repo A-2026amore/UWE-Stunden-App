@@ -1,7 +1,9 @@
 import { render } from "preact";
 import "../../design/styles";
-import { setAssetBase } from "../../design";
+import { applyBranding, initTheme, setAssetBase } from "../../design";
 import { ChefApp } from "./App";
 
 setAssetBase("../");
+initTheme();
+applyBranding(null);
 render(<ChefApp />, document.getElementById("root")!);

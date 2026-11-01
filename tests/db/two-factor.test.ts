@@ -120,14 +120,14 @@ describe("requirement", () => {
   it("only the owner changes the tenant setting (not managers, not platform staff)", async () => {
     const m = await db.as(U.managerA, (q) => q.query("update public.tenants set require_two_factor_for_managers = true where id = $1", [A]));
     expect(m.rowCount).toBe(0);
-    const e = await pgError(db.as(U.superAdmin, (q) => q.query("update public.tenants set require_two_factor_for_managers = true where id = $1", [A])));
-    expect(e.code).toBe("42501");
-    expect(e.message).toContain("nur der Inhaber");
+    // Since 0011 platform staff cannot update tenant rows at all (RLS tenants_update: owner only).
+    const e = await db.as(U.superAdmin, (q) => q.query("update public.tenants set require_two_factor_for_managers = true where id = $1", [A]));
+    expect(e.rowCount).toBe(0);
     const o = await db.as(U.ownerA, (q) => q.query("update public.tenants set require_two_factor_for_managers = true where id = $1 returning require_two_factor_for_managers as r", [A]));
     expect(o.rows[0].r).toBe(true);
-    // Platform staff may still edit other tenant fields.
+    // Nor other tenant fields (QA 2026-10-28, B3).
     const s = await db.as(U.superAdmin, (q) => q.query("update public.tenants set name = name || ' ' where id = $1", [A]));
-    expect(s.rowCount).toBe(1);
+    expect(s.rowCount).toBe(0);
   });
 });
 

@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { Branding, CompanyContact } from "../../../core/types";
 import { ALLOWED_LOGO_TYPES, MAX_LOGO_BYTES } from "../../../data/demo";
 import {
-  Alert, Button, Card, Field, InputField, brandVariables, contrastRatio, isHexColor, readableTextOn, resolveAsset, useToast,
+  Alert, Button, Card, Field, InputField, brandVariables, brandVariablesDark, contrastRatio, isHexColor, readableTextOn, resolveAsset, useResolvedTheme, useToast,
 } from "../../../design";
 import { errorText } from "../../shared/hooks";
 import { useChef } from "../context";
@@ -20,22 +20,25 @@ function readFile(file: File): Promise<string> {
 }
 
 export function CompanyPage() {
-  const { repo, tenant, setTenant, changed } = useChef();
+  const { repo, tenant, setTenant, changed, me } = useChef();
+  // Company profile: owner only (API since migration 0011, QA B3); managers see it read-only.
+  const canEdit = me.role === "owner";
   const toast = useToast();
   const [branding, setBranding] = useState<Branding>(tenant.branding);
   const [contact, setContact] = useState<CompanyContact>(tenant.contact);
+  const [name, setName] = useState(tenant.name);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { setBranding(tenant.branding); setContact(tenant.contact); }, [tenant.id]);
+  useEffect(() => { setBranding(tenant.branding); setContact(tenant.contact); setName(tenant.name); }, [tenant.id]);
 
   const onLogo = async (e: Event) => {
     setLogoError(null);
     const input = e.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    if (!ALLOWED_LOGO_TYPES.includes(file.type)) { setLogoError("Erlaubte Formate: PNG, JPG, SVG oder WebP."); input.value = ""; return; }
+    if (!ALLOWED_LOGO_TYPES.includes(file.type)) { setLogoError("Erlaubte Formate: PNG, JPG oder WebP."); input.value = ""; return; }
     if (file.size > MAX_LOGO_BYTES) { setLogoError(`Die Datei ist zu groß (${Math.round(file.size / 1024)} KB). Maximal ${Math.round(MAX_LOGO_BYTES / 1024)} KB.`); input.value = ""; return; }
     try {
       setBranding({ ...branding, logoUrl: await readFile(file) });
@@ -45,14 +48,19 @@ export function CompanyPage() {
   };
 
   const colorsValid = (["primaryColor", "secondaryColor", "accentColor"] as ColorKey[]).every((k) => isHexColor(branding[k]));
-  const preview = colorsValid ? brandVariables(branding) : brandVariables(tenant.branding);
+  // The live preview uses the colours of the active scheme (light or dark).
+  const theme = useResolvedTheme();
+  const derive = theme === "dark" ? brandVariablesDark : brandVariables;
+  const preview = colorsValid ? derive(branding) : derive(tenant.branding);
 
   const save = async (e: Event) => {
     e.preventDefault();
     setError(null);
     if (!colorsValid) { setError("Farben bitte im Format #RRGGBB angeben."); return; }
+    if (name.trim().length < 2) { setError("Bitte den Firmennamen angeben."); return; }
     setBusy(true);
     try {
+      if (name.trim() !== tenant.name) await repo.renameTenant(tenant.id, name.trim());
       await repo.updateBranding(tenant.id, branding);
       const t = await repo.updateContact(tenant.id, {
         ...contact,
@@ -76,15 +84,16 @@ export function CompanyPage() {
     <form class="stack" onSubmit={save} noValidate>
       <div class="row-between">
         <h1 class="page-title">Firmenprofil</h1>
-        <Button type="submit" icon="check" busy={busy}>Speichern</Button>
+        <Button type="submit" icon="check" busy={busy} disabled={!canEdit}>Speichern</Button>
       </div>
+      {!canEdit && <Alert tone="info">Firmendaten darf nur der Inhaber ändern.</Alert>}
       {error && <Alert tone="danger" live>{error}</Alert>}
       <div class="grid-2" style={{ alignItems: "start" }}>
         <div class="stack">
           <Card title="Logo und Farben">
             <div class="stack">
               <div class="logo-preview">{logo ? <img src={logo} alt="Aktuelles Logo" /> : <span class="muted">Kein Logo – es wird der Firmenname angezeigt.</span>}</div>
-              <Field label="Logo hochladen" hint={`PNG, JPG, SVG oder WebP, max. ${Math.round(MAX_LOGO_BYTES / 1024)} KB. Wird erst beim Speichern übernommen.`} error={logoError}>
+              <Field label="Logo hochladen" hint={`PNG, JPG oder WebP, max. ${Math.round(MAX_LOGO_BYTES / 1024)} KB. Wird erst beim Speichern übernommen.`} error={logoError}>
                 {(ctl) => <input {...ctl} class="input" type="file" accept={ALLOWED_LOGO_TYPES.join(",")} onChange={onLogo} />}
               </Field>
               {branding.logoUrl && <Button variant="ghost" size="sm" icon="trash" onClick={() => setBranding({ ...branding, logoUrl: null })}>Logo entfernen</Button>}
@@ -106,7 +115,7 @@ export function CompanyPage() {
           <Card title="Live-Vorschau">
             <div class="brand-preview" style={{ ...preview, ["--pv-accent" as string]: preview["--brand-accent"] }}>
               <div class="brand-preview-head">
-                {logo ? <img src={logo} alt="" style={{ maxHeight: "36px", maxWidth: "160px" }} /> : <strong>{tenant.name}</strong>}
+                {logo ? <img src={logo} alt="" style={{ maxHeight: "36px", maxWidth: "160px" }} /> : <strong>{name}</strong>}
                 {branding.slogan && <span class="brand-slogan">{branding.slogan}</span>}
               </div>
               <div class="brand-preview-body">
@@ -122,7 +131,8 @@ export function CompanyPage() {
         </div>
         <Card title="Kontaktdaten">
           <div class="stack">
-            <InputField label="Firmenname (Anzeige)" value={tenant.name} onValue={() => undefined} readOnly hint="Änderung des Anzeigenamens über den Plattform-Support." />
+            <InputField label="Firmenname (Anzeige)" value={name} onValue={setName} readOnly={!canEdit} maxLength={200}
+              hint="Erscheint in der App, im Chef-Portal und im Kopf der PDF-Stundenzettel." />
             <InputField label="Rechtlicher Firmenname" value={contact.legalName} onValue={c("legalName")} />
             <InputField label="Straße und Hausnummer" value={contact.street} onValue={c("street")} autoComplete="street-address" />
             <div class="grid-3" style={{ gridTemplateColumns: "1fr 2fr" }}>

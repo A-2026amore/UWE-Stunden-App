@@ -98,12 +98,13 @@ describe("login, session, logout", () => {
     expect((await t.call("GET", `/api/tenants/${IDS.tenantA}`, { cookie: expired })).status).toBe(401);
   });
 
-  it("refuses sign-in for a deactivated employee (no session created)", async () => {
+  it("refuses sign-in for a deactivated employee like a wrong password (no session created, QA B4)", async () => {
     const owner = await t.login("ownerA");
     const r = await t.call("POST", `/api/employees/${IDS.employees.emp2A}/status`, { cookie: owner, body: { status: "deactivated", reason: "Test Deaktivierung" } });
     expect(r.status).toBe(200);
     const login = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.emp2A, password: PASSWORD } });
-    expect(login.status).toBe(403);
+    expect(login.status).toBe(401);
+    expect(login.body.error).toEqual({ code: "unauthenticated", message: "E-Mail-Adresse oder Passwort ist falsch." });
     expect(login.headers.get("set-cookie")).toBeNull();
     await t.call("POST", `/api/employees/${IDS.employees.emp2A}/status`, { cookie: owner, body: { status: "active", reason: "Test Reaktivierung" } });
   });
@@ -304,7 +305,7 @@ describe("invitations", () => {
 });
 
 describe("suspended tenant", () => {
-  it("an existing session of a member stops working with a clear message; login is refused", async () => {
+  it("an existing session of a member stops working with a clear message; login is refused like a wrong password", async () => {
     const emp = await t.login("ownerB"); // empB is rate-limited by an earlier test
     expect((await t.call("GET", `/api/employees/${IDS.employees.ownerB}/time-entries?month=2026-10`, { cookie: emp })).status).toBe(200);
     const admin = await t.login("superAdmin");
@@ -317,8 +318,9 @@ describe("suspended tenant", () => {
       }
       expect((await t.call("GET", "/api/auth/session", { cookie: emp })).body).toBeNull();
       const login = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.ownerB, password: PASSWORD } });
-      expect(login.status).toBe(403);
-      expect(login.body.error.code).toBe("tenant_suspended");
+      // Without 2FA a new sign-in does not reveal the block (QA B4): generic 401.
+      expect(login.status).toBe(401);
+      expect(login.body.error.code).toBe("unauthenticated");
       // platform staff keep working
       expect((await t.call("GET", "/api/platform/tenants", { cookie: admin })).status).toBe(200);
     } finally {
