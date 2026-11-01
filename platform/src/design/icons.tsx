@@ -56,6 +56,11 @@ const PATHS = {
   sparkles: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
   activity: "M22 12h-4l-3 9L9 3l-3 9H2",
   creditCard: "M2 5h20v14H2zM2 10h20M6 15h4",
+  plusSquare: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM12 8v8M8 12h8",
+  moreVertical: "M12 5h.01M12 12h.01M12 19h.01",
+  smartphone: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM12 18h.01",
+  printer: "M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z",
+  compass: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0zM16 8l-2.5 5.5L8 16l2.5-5.5z",
 } as const;
 
 export type IconName = keyof typeof PATHS;

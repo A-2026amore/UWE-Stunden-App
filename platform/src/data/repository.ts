@@ -15,9 +15,9 @@
  * reject access to other tenants' data with AccessDeniedError.
  */
 import type {
-  AuditEvent, BillingMonthSummary, BillingSettings, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
+  AuditEvent, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
   Employee, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
-  TenantBillingMonth, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
+  NewPromoCode, PromoCode, PromoRedemption, SubscriptionInterval, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings, InvoiceSettingsPatch } from "../core/invoice";
@@ -294,8 +294,10 @@ export interface BillingApi {
   /** super_admin / support: revenue of all tenants for one month. */
   getPlatformRevenue(month: ISOMonth): Promise<PlatformRevenue>;
   getBillingSettings(): Promise<BillingSettings>;
-  /** super_admin: default net price per billable employee and month (cents), reason required. */
+  /** super_admin: default gross price (12-month subscription) per billable employee and month (cents), reason required. */
   setDefaultPrice(cents: number, reason: string): Promise<BillingSettings>;
+  /** super_admin: prices, trial window, notice days, welcome code (migration 0023); only given fields change, reason required. */
+  updateBillingSettings(patch: BillingSettingsPatch): Promise<BillingSettings>;
   /**
    * super_admin: manual billing status of a past month. Leaving "open" freezes
    * the month; "waived" and reopening ("open") need a note.
@@ -332,4 +334,44 @@ export interface InvoiceApi {
   issueInvoice(tenantId: UUID, month: ISOMonth): Promise<Invoice>;
   /** super_admin: cancellation document with its own number; the original stays. */
   cancelInvoice(invoiceId: UUID, reason: string): Promise<Invoice>;
+}
+
+/**
+ * Promo codes (decision 30.10.2026, migration 0022). The super admin creates codes
+ * with 1–100 % discount and ends them; the owner of a tenant redeems one. The
+ * discount runs until the super admin ends it (effective from the following month).
+ */
+export interface PromoApi {
+  /** Platform staff: all codes with their redemptions (company names only). */
+  listPromoCodes(): Promise<PromoCode[]>;
+  /** super_admin. */
+  createPromoCode(input: NewPromoCode): Promise<PromoCode>;
+  /** super_admin: no new redemptions; all running discounts of the code end (reason required). */
+  endPromoCode(promoCodeId: UUID, reason: string): Promise<PromoCode>;
+  /** super_admin: ends the running discount of one tenant (reason required). */
+  endTenantPromo(tenantId: UUID, reason: string): Promise<PromoRedemption>;
+  /** Leadership of the tenant (and platform staff): redemptions of the tenant, newest first. */
+  listTenantPromo(tenantId: UUID): Promise<PromoRedemption[]>;
+  /** Owner: redeem a code. */
+  redeemPromoCode(tenantId: UUID, code: string): Promise<PromoRedemption>;
+}
+
+/**
+ * Subscription (decision 30.10.2026, migration 0023, core/subscription.ts): trial, 12-month
+ * subscription or monthly plan, cancellation. Leadership of the tenant and platform staff read;
+ * only the owner changes. Every change is audited; cancelling sends a confirmation mail (API).
+ */
+export interface SubscriptionApi {
+  getTenantSubscription(tenantId: UUID): Promise<TenantSubscription>;
+  /** Owner: choose a plan (monthly → annual from the next month; after the end: new term). */
+  chooseSubscription(tenantId: UUID, interval: SubscriptionInterval): Promise<TenantSubscription>;
+  /** Owner: cancel the running term (annual optionally "continue monthly afterwards"). */
+  cancelSubscription(tenantId: UUID, input: { thenMonthly?: boolean; reason?: string | null }): Promise<TenantSubscription>;
+  /** Owner: withdraw a cancellation before it takes effect. */
+  withdrawCancellation(tenantId: UUID): Promise<TenantSubscription>;
+  /**
+   * Owner, once: conclude the contract (entrepreneur, AGB + AVV accepted, plan chosen). Stores time and
+   * versions (TERMS_VERSION, DPA_VERSION); "annual" applies the plan choice like chooseSubscription.
+   */
+  acceptContract(tenantId: UUID, input: { entrepreneur: true; termsAccepted: true; interval: SubscriptionInterval }): Promise<TenantSubscription>;
 }

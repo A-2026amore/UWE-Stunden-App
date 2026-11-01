@@ -282,3 +282,68 @@ Trigger `billing_periods_invoice_guard`: Solange für Mandant und Monat eine gü
 besteht, lehnt die Datenbank den Wechsel des Abrechnungsmonats auf `open` oder `waived` ab (Fehler 55000 mit
 Rechnungsnummer). `invoiced` → `paid` bleibt möglich. Korrekturweg: Rechnung stornieren (0019), danach Monat
 wieder öffnen oder erlassen.
+
+## Bruttopreise und Aktionscodes (0022)
+
+- `billing_settings.default_price_cents` und `licenses.employee_price_cents` sind **Bruttopreise** (inkl. USt.).
+  `private.invoice_build` rechnet die enthaltene USt. heraus: `vat = round(brutto × Satz / (100 + Satz))`,
+  `net = brutto − vat`. Gespeicherte Rechnungen bleiben unverändert.
+- `promo_codes` (Code `^[A-Z0-9-]{6,32}$`, Nachlass 1–100 %, optional `max_redemptions`, `redeemable_until`,
+  Ende mit Grund) und `promo_redemptions` (je Firma höchstens ein laufender Rabatt, je Code und Firma eine
+  Einlösung, Nachlass wird beim Einlösen kopiert). Beide Tabellen ohne Rechte für `app_user`; Zugriff nur über
+  die SECURITY-DEFINER-Funktionen `platform_promo_codes`, `platform_create_promo_code`, `platform_end_promo_code`,
+  `platform_end_promo_redemption`, `tenant_promo`, `tenant_redeem_promo_code` (alle protokolliert).
+- `private.promo_for(tenant, month)`: Einlösung, deren Laufzeit den Monat berührt (mehrere: höchster Nachlass).
+  `private.billing_condition` wendet den Nachlass auf Standard- oder Sonderpreis an (Kondition `promo`);
+  Sperre, Pilot und kostenloses Konto bleiben 0 €. `tenant_billing` liefert `promo`, `platform_billing_overview`
+  `promo_code`/`promo_discount_percent`. Tests: `tests/db/promo-codes.test.ts`.
+
+## Tarif: Testphase, 12-Monats-Abo, Monatstarif, Vertragsschluss, Monatsrechnungen (0023)
+
+Regeln wie `platform/src/core/subscription.ts` und `billingConditionFor` (`platform/src/core/billing.ts`); Tage in
+Europe/Berlin (`private.berlin_today()`).
+
+- `billing_settings`: zusätzlich `monthly_price_cents` (650 = 6,50 € brutto; `default_price_cents` = 12-Monats-Abo),
+  `trial_window_from`/`trial_window_until` (beide leer = kein Einführungsangebot), `trial_months` (3),
+  `cancel_notice_days` (0), `welcome_promo_code_id`.
+- `tenant_subscriptions.trial_ends_on`: beim Anlegen der Firma festgelegt – Gründungstag im Fenster → Ende des
+  Kalendermonats, in dem `trial_months` Monate enden (15.11. + 3 Monate → 28.02.). Abgerechnet wird ab dem Folgemonat.
+- `subscription_terms`: Laufzeiten vom 1. bis zu einem Monatsletzten, `monthly` oder `annual`; `ends_on` leer = läuft
+  weiter, `starts_on − 1` = lief nie. Überschneidungsfrei (Exclusion-Constraint). 12-Monats-Abo: 12 Monate, dann
+  je +6 Monate (berechnet: Ende k = Start + (12 + 6k) Monate − 1 Tag), solange nicht bis Laufzeitende −
+  `cancel_notice_days` gekündigt. Trigger beim Anlegen einer Firma: Monatstarif ab dem ersten zahlpflichtigen Monat;
+  wird `tenants.created_at` korrigiert (Seed), folgen Testphase und Start, solange nur diese automatische Laufzeit besteht.
+- Bestandsfirmen (vor 0023): `tenant_subscriptions.terms_from` = Monatserster nach der Migration (Berlin), die
+  Monatstarif-Laufzeit beginnt dort. Monate davor rechnen nach der bisherigen Regel (Standardpreis, keine Laufzeit
+  nötig) – kein rückwirkender Monatstarif. Neue Firmen: `terms_from` leer. Die Seed-Firmen werden wie Bestandsfirmen behandelt.
+- `private.billing_condition`: Sperre → Pilot → kostenlos → (vor `terms_from`: bisherige Regel) → `trial` → keine Laufzeit `ended` (0 €) → Sonderpreis →
+  `standard` (12-Monats-Abo) / `monthly` → Aktionsrabatt. Eingefrorene Monate und ausgestellte Rechnungen bleiben
+  unverändert; Änderungen am Tarif wirken nur ab dem laufenden bzw. nächsten Monat. Rechnungszeile nennt
+  „12-Monats-Abo“ bzw. „Monatstarif“.
+- `tenant_contracts`: Vertragsschluss durch den Inhaber (Zeitpunkt, Benutzer, AGB-/AVV-Version, Tarif), einmalig.
+  Bestehende Firmen und Seed-/Testumgebungsfirmen: `bestand`/`testumgebung`. Trigger `private.contract_guard` auf
+  `time_entries`, `employees`, `invitations`: Mitglieder der Firma können vor dem Vertragsschluss nichts anlegen
+  (55000); Plattform, Operator-CLI und Wartung (kein Mitglied) sind nicht betroffen.
+- Kündigung eines geplanten, noch nicht begonnenen Wechsels (ohne „danach monatlich“): der Wechsel wird
+  zurückgenommen, die ersetzte Laufzeit läuft weiter (Audit `subscription.cancel` mit `undoneSwitch`).
+  `TenantSubscription.withdrawable`: die Kündigung, die „zurücknehmen“ aufheben würde.
+- Willkommenscode: ein neu gesetzter Code muss aktiv sein; der unveränderte gespeicherte Code darf inzwischen beendet sein.
+- `subscription_reminders`: je Firma, Art (`trial_end`, `annual_renewal`) und Stichtag genau eine Erinnerung;
+  `auth.claim_subscription_reminders(p_today)` (Rollen `app_auth`, `app_service`). Testphase: nur mit
+  Vertragsschluss und einer (nicht gekündigten) Laufzeit nach der Testphase. Verlängerung: von
+  `add_months(Ende − Frist, −1)` bis `Ende − Frist`. Empfänger: aktive Inhaber (`private.owner_emails`, Konto-Adresse,
+  sonst Adresse im Personaldatensatz) – auch für die Kündigungsbestätigung (`tenant_subscription_mail_recipients`).
+- `p_today` (abweichender Stichtag) nur aus der Wartung (Rolle `app_service`) bzw. als Eigentümer ohne Rollenwechsel;
+  der Server-Job (`app_auth`) arbeitet immer mit heute (sonst 42501).
+- Monatsrechnungen: `private.set_billing_status` und `private.issue_invoice` enthalten den unveränderten Ablauf von
+  `platform_set_billing_status`/`platform_issue_invoice` (die öffentlichen Funktionen prüfen den Super-Admin und rufen
+  sie auf). `auth.issue_monthly_invoices(p_today)` (Rollen `app_auth`, `app_service`) erzeugt ab dem 2. die Rechnungen
+  des Vormonats (Betrag > 0, keine Demo, noch keine – auch keine stornierte – Rechnung, nicht erlassen); Probleme einer
+  Firma halten die anderen nicht auf. Audit `invoice.issue` mit `issuedBy: "system"`, ohne `actor_id`.
+- Funktionen (SECURITY DEFINER, `search_path = ''`, protokolliert): `tenant_subscription`, `tenant_accept_contract`,
+  `tenant_choose_subscription`, `tenant_cancel_subscription`, `tenant_withdraw_cancellation`, `platform_billing_settings`,
+  `platform_update_billing_settings`, `platform_welcome_promo_code`. Die Tabellen haben keine Rechte für `app_user`.
+  Audit-Entität `subscription` ist für die Plattform sichtbar.
+- Behoben: `invoice_build` meldete eine fehlende Kundenanschrift mit `text[] || 'Text'` (Fehler „malformed array
+  literal“); seit 0023 `array_append`.
+- Tests: `tests/db/subscriptions.test.ts` (Vergleich mit den Core-Regeln), `tests/server/subscription.test.ts`.

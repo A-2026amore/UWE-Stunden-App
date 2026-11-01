@@ -32,6 +32,9 @@ import { createPool } from "./db.ts";
 import { TestEnvRefused, formatAccounts, seedTestEnvironment } from "./testenv.ts";
 import { OffboardingRefused, deleteTenant, exportTenant } from "./offboarding.ts";
 import { INVITE_ROLES, createOperatorInvitation, inviteLinkBase, oneTimeLink, type InviteRole } from "./operator.ts";
+import { loadConfig } from "./config.ts";
+import { createMailer, type Mail } from "./mailer.ts";
+import { runBillingJobs } from "./subscription.ts";
 
 const USAGE = [
   "Aufruf:",
@@ -40,6 +43,7 @@ const USAGE = [
   "  cli.ts seed-test-env --confirm-test-environment [--domain=stunden-test.example] [--admin-email=…]   (nur Testumgebung)",
   "  cli.ts export-tenant <mandant-kurzname> --out <verzeichnis>                     (Vertragsende: Gesamtexport)",
   "  cli.ts delete-tenant <mandant-kurzname> --confirm <mandant-kurzname> (--after-export <verzeichnis> | --without-export)",
+  "  cli.ts billing-jobs                                            (Tarif-Erinnerungen und Monatsrechnungen einmal ausführen)",
 ].join("\n");
 
 async function readLine(): Promise<string> {
@@ -253,6 +257,24 @@ async function deleteTenantCmd(args: string[]) {
   });
 }
 
+/** Runs the hourly billing job once (reminders, monthly invoices) with the server configuration. */
+async function billingJobsCmd(args: string[]) {
+  if (args.length) usage();
+  const config = loadConfig();
+  const mailer = createMailer(config.smtp, config.production);
+  const pool = createPool(config.databaseUrl, 1);
+  const pending: Promise<void>[] = [];
+  try {
+    const r = await runBillingJobs(pool, (mails: Mail[]) => { for (const m of mails) pending.push(mailer.send(m)); });
+    await Promise.allSettled(pending);
+    console.log(`Erinnerungen versendet: ${r.reminders}`);
+    console.log(`Rechnungen erzeugt: ${r.invoices.issued.length}${r.invoices.issued.length ? ` (${r.invoices.issued.map((i) => i.number).join(", ")})` : ""}`);
+    for (const p of r.invoices.problems) console.log(`Nicht erzeugt (${p.month}, Mandant ${p.tenantId}): ${p.problem}`);
+  } finally {
+    await pool.end();
+  }
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
   if (cmd === "set-password") await setPassword(args);
@@ -260,6 +282,7 @@ async function main() {
   else if (cmd === "seed-test-env") await seedTestEnv(args);
   else if (cmd === "export-tenant") await exportTenantCmd(args);
   else if (cmd === "delete-tenant") await deleteTenantCmd(args);
+  else if (cmd === "billing-jobs") await billingJobsCmd(args);
   else usage();
 }
 

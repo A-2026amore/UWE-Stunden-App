@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccessDeniedError, ConflictError, TwoFactorRequiredError } from "./repository";
 import { base32Decode, hotp, timeStep } from "../security/totp";
 import { DEMO_PASSWORD, DEMO_TENANT_IDS, createDemoRepository, demoMonths, memoryStorage } from "./demo";
+import { DPA_VERSION, TERMS_VERSION } from "../core/subscription";
 
 const NOW = new Date("2026-10-26T10:00:00");
 const ANNA = "30000000-0000-4000-8000-000000000101";
@@ -369,9 +370,13 @@ describe("demo repository – price model (billing)", () => {
     expect(hist.map((h) => h.month)).toEqual(["2026-10", "2026-09", "2026-08"]);
   });
 
-  it("standard customer: 3 employees × 5,00 € = 15,00 € net", async () => {
+  it("standard customer: 3 employees × 5,00 € = 15,00 € before the subscription model, monthly plan afterwards", async () => {
+    // Existing tenants (0023): the model starts with the month after the seed day (here 01.11.2026); earlier months keep 5,00 €.
     const { repo } = await as("leitung@muster-pflege.example");
-    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 3, amountCents: 1500 });
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 3, amountCents: 1500, interval: null, trialEndsOn: null });
+    expect((await repo.getTenantSubscription(DEMO_TENANT_IDS.pflege)).current).toMatchObject({ interval: "monthly", startsOn: "2026-11-01", endsOn: null });
+    vi.setSystemTime(new Date("2026-11-05T10:00:00"));
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-11")).toMatchObject({ condition: "monthly", unitPriceCents: 650, interval: "monthly" });
   });
 
   it("no foreign billing, no billing for employees", async () => {
@@ -409,7 +414,7 @@ describe("demo repository – price model (billing)", () => {
     const rev = await repo.getPlatformRevenue("2026-09");
     expect(rev.paymentProvider).toBe("none");
     expect(JSON.stringify(rev)).not.toMatch(/Anna|Mia|Emil/);
-    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1500, status: "open" });
+    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1500, status: "open", interval: null });
     expect(rev.totals).toMatchObject({ amountCents: 0, demoAmountCents: 1500 }); // both seed tenants are demo tenants
 
     await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-10", "invoiced")).rejects.toThrow("Monatsende");
@@ -420,6 +425,9 @@ describe("demo repository – price model (billing)", () => {
     expect((await repo.getBillingSettings()).defaultPriceCents).toBe(600);
     const after = await repo.getPlatformRevenue("2026-09");
     expect(after.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1500); // frozen
+    // October is before the subscription model: the default price applies; the monthly price does not.
+    expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1800);
+    await repo.updateBillingSettings({ monthlyPriceCents: 700, reason: "Preisanpassung Test" });
     expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1800);
 
     await repo.setLicense(DEMO_TENANT_IDS.pflege, "standard", { employeePriceCents: 400, conditionNote: "Rabatt", conditionValidFrom: "2026-10-01" });
@@ -428,11 +436,137 @@ describe("demo repository – price model (billing)", () => {
     expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ condition: "free", amountCents: 0 });
 
     const actions = (await repo.listPlatformAudit()).map((e) => e.action);
-    expect(actions).toEqual(expect.arrayContaining(["billing_period.status", "billing_settings.default_price", "license.updated"]));
+    expect(actions).toEqual(expect.arrayContaining(["billing_period.status", "billing_settings.default_price", "billing_settings.update", "license.updated"]));
 
     const support = await as("support@plattform.example");
     expect((await support.repo.getPlatformRevenue("2026-10")).rows).toHaveLength(2);
     await expect(support.repo.setBillingStatus(DEMO_TENANT_IDS.kt, "2026-09", "paid")).rejects.toBeInstanceOf(AccessDeniedError);
     await expect(support.repo.setDefaultPrice(1, "Test")).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+});
+
+describe("demo repository – subscription (0023)", () => {
+  const PFLEGE = DEMO_TENANT_IDS.pflege;
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T10:00:00+01:00"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("existing tenant: monthly from the month of creation; owner switches to annual from the next month, cancels and withdraws", async () => {
+    const { repo, storage } = await as("leitung@muster-pflege.example");
+    let sub = await repo.getTenantSubscription(PFLEGE);
+    expect(sub).toMatchObject({ trialEndsOn: null, inTrial: false, ended: false, annualPriceCents: 500, monthlyPriceCents: 650, cancelNoticeDays: 0 });
+    expect(sub.current).toMatchObject({ interval: "monthly", endsOn: null });
+    expect(sub.next).toBeNull();
+
+    sub = await repo.chooseSubscription(PFLEGE, "annual");
+    expect(sub.current).toMatchObject({ interval: "monthly", endsOn: "2026-11-30" });
+    expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: null, currentTermEndsOn: "2027-11-30" });
+    await expect(repo.chooseSubscription(PFLEGE, "monthly")).rejects.toThrow("nur zum Ende der Laufzeit");
+    expect((await repo.getTenantBilling(PFLEGE, "2026-11"))).toMatchObject({ condition: "monthly", unitPriceCents: 650 });
+
+    // Cancelling the planned switch undoes it: the monthly plan runs on.
+    sub = await repo.cancelSubscription(PFLEGE, {});
+    expect(sub.current).toMatchObject({ interval: "monthly", endsOn: null });
+    expect(sub.next).toBeNull();
+    expect(sub.withdrawable).toBeNull();
+    sub = await repo.chooseSubscription(PFLEGE, "annual");
+    expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01" });
+    // Annual not started yet: cancelling costs nothing (never runs); with "then monthly" the monthly plan simply continues.
+    sub = await repo.cancelSubscription(PFLEGE, { thenMonthly: true, reason: "Test" });
+    expect(sub.next).toMatchObject({ interval: "monthly", startsOn: "2026-12-01", endsOn: null });
+    expect(sub.withdrawable).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: "2026-11-30" });
+    sub = await repo.withdrawCancellation(PFLEGE);
+    expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: null, cancelledAt: null });
+
+    // In December the annual term runs: price 5,00 €; cancel → end 30.11.2027, monthly afterwards.
+    vi.setSystemTime(new Date("2026-12-10T10:00:00+01:00"));
+    const other = createDemoRepository(storage, { now: NOW });
+    await other.signIn("leitung@muster-pflege.example", DEMO_PASSWORD);
+    expect(await other.getTenantBilling(PFLEGE, "2026-12")).toMatchObject({ condition: "standard", unitPriceCents: 500, interval: "annual" });
+    sub = await other.cancelSubscription(PFLEGE, { thenMonthly: true });
+    expect(sub.current).toMatchObject({ interval: "annual", endsOn: "2027-11-30", thenMonthly: true });
+    expect(sub.next).toMatchObject({ interval: "monthly", startsOn: "2027-12-01", endsOn: null });
+    expect(sub.contractEndsOn).toBeNull();
+    expect(sub.withdrawable).toMatchObject({ interval: "annual", endsOn: "2027-11-30" });
+    await expect(other.cancelSubscription(PFLEGE, { reason: "x".repeat(1001) })).rejects.toThrow("1000");
+    sub = await other.withdrawCancellation(PFLEGE);
+    expect(sub.current).toMatchObject({ interval: "annual", endsOn: null, currentTermEndsOn: "2027-11-30" });
+    expect(sub.next).toBeNull();
+    await expect(other.withdrawCancellation(PFLEGE)).rejects.toThrow("keine Kündigung");
+
+    const actions = (await other.listAudit(PFLEGE, 50)).map((e) => e.action);
+    expect(actions).toEqual(expect.arrayContaining(["subscription.choose", "subscription.cancel", "subscription.withdraw"]));
+  });
+
+  it("monthly cancellation ends with the month; after the end nothing is billed and a new plan can be chosen", async () => {
+    const { repo, storage } = await as("leitung@muster-pflege.example");
+    const sub = await repo.cancelSubscription(PFLEGE, {});
+    expect(sub.current).toMatchObject({ interval: "monthly", endsOn: "2026-11-30" });
+    expect(sub.contractEndsOn).toBe("2026-11-30");
+    vi.setSystemTime(new Date("2026-12-03T10:00:00+01:00"));
+    const other = createDemoRepository(storage, { now: NOW });
+    await other.signIn("leitung@muster-pflege.example", DEMO_PASSWORD);
+    expect(await other.getTenantSubscription(PFLEGE)).toMatchObject({ ended: true, current: null });
+    expect(await other.getTenantBilling(PFLEGE, "2026-12")).toMatchObject({ condition: "ended", unitPriceCents: 0, amountCents: 0 });
+    const again = await other.chooseSubscription(PFLEGE, "annual");
+    expect(again.current).toMatchObject({ interval: "annual", startsOn: "2026-12-01" });
+  });
+
+  it("only the owner changes; managers and platform staff read", async () => {
+    const dispo = await as("dispo@demo-kt.example");
+    expect((await dispo.repo.getTenantSubscription(DEMO_TENANT_IDS.kt)).current?.interval).toBe("monthly");
+    await expect(dispo.repo.chooseSubscription(DEMO_TENANT_IDS.kt, "annual")).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(dispo.repo.getTenantSubscription(PFLEGE)).rejects.toBeInstanceOf(AccessDeniedError);
+    const support = await as("support@plattform.example");
+    expect((await support.repo.getTenantSubscription(PFLEGE)).current?.interval).toBe("monthly");
+    await expect(support.repo.updateBillingSettings({ trialMonths: 2, reason: "Test" })).rejects.toBeInstanceOf(AccessDeniedError);
+  });
+
+  it("super admin: trial window and welcome code; a new tenant inside the window gets the trial", async () => {
+    const { repo } = await as("admin@plattform.example");
+    await expect(repo.updateBillingSettings({ trialWindowFrom: "2026-11-01", reason: "Test" })).rejects.toThrow("Beginn und Ende");
+    await expect(repo.updateBillingSettings({ trialWindowFrom: "2026-12-01", trialWindowUntil: "2026-11-01", reason: "Test" })).rejects.toThrow("nicht vor dem Beginn");
+    await expect(repo.updateBillingSettings({ trialMonths: 3 } as never)).rejects.toThrow("Grund");
+    const code = await repo.createPromoCode({ code: "WILLKOMMEN-10", discountPercent: 10, note: null, maxRedemptions: null, redeemableUntil: null });
+    const st = await repo.updateBillingSettings({ trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 3, welcomePromoCodeId: code.id, reason: "Aktion Winter" });
+    expect(st).toMatchObject({ defaultPriceCents: 500, monthlyPriceCents: 650, trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 3, welcomePromoCodeId: code.id, welcomePromoCode: "WILLKOMMEN-10" });
+    const o = await repo.createTenant({ name: "Test Fahrdienst", slug: "test-fahrdienst", plan: "standard", isDemo: true, ownerEmail: "inhaber@test-fahrdienst.example" });
+    const sub = await repo.getTenantSubscription(o.tenant.id);
+    // 20.11.2026 + 3 months − 1 day = 19.02.2027 → trial until the end of February; March is the first paid month.
+    expect(sub).toMatchObject({ trialEndsOn: "2027-02-28", inTrial: true, firstPaidMonth: "2027-03" });
+    expect(sub.current).toMatchObject({ interval: "monthly", startsOn: "2027-03-01" });
+    expect((await repo.getPlatformRevenue("2026-11")).rows.find((r) => r.tenantId === o.tenant.id)).toMatchObject({ condition: "trial", unitPriceCents: 0, trialEndsOn: "2027-02-28" });
+    expect((await repo.listPlatformAudit()).map((e) => e.action)).toContain("billing_settings.update");
+    expect(sub.contract).toBeNull();
+  });
+
+  it("contract conclusion: new tenants first accept AGB/AVV as entrepreneur; existing demo tenants are accepted", async () => {
+    const { repo, storage } = await as("admin@plattform.example");
+    expect((await repo.getTenantSubscription(PFLEGE)).contract).toMatchObject({ termsVersion: "bestand", dpaVersion: "bestand", interval: "monthly" });
+    await repo.updateBillingSettings({ trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", reason: "Aktion" });
+    const o = await repo.createTenant({ name: "Test Fahrdienst", slug: "test-fahrdienst", plan: "standard", isDemo: true, ownerEmail: "inhaber@test-fahrdienst.example" });
+    const owner = createDemoRepository(storage, { now: NOW, sessionKey: "owner" });
+    await owner.signIn("inhaber@test-fahrdienst.example", DEMO_PASSWORD);
+    await expect(owner.acceptContract(o.tenant.id, { entrepreneur: false, termsAccepted: true, interval: "monthly" } as never)).rejects.toThrow("Unternehmer");
+    await expect(owner.acceptContract(o.tenant.id, { entrepreneur: true, termsAccepted: false, interval: "monthly" } as never)).rejects.toThrow("AGB");
+    // Nothing can be used before the contract (like private.assert_contract).
+    const pending = "Die Firma ist noch nicht freigeschaltet: Der Inhaber muss zuerst den Nutzungsbedingungen zustimmen.";
+    const invite = { displayName: "Test Person", personnelNumber: "2", email: "person@test-fahrdienst.example", role: "employee" as const };
+    await expect(owner.inviteEmployee(o.tenant.id, invite)).rejects.toThrow(pending);
+    const me = (await owner.currentSession())!.employeeId!;
+    await expect(owner.createTimeEntry(me, { id: "t-1", date: "2026-11-19", start: "08:00", end: "12:00", pauseMinutes: 0, note: "" })).rejects.toThrow(pending);
+    await expect(owner.chooseSubscription(o.tenant.id, "annual")).rejects.toThrow(pending);
+    await expect(owner.cancelSubscription(o.tenant.id, {})).rejects.toThrow(pending);
+    const sub = await owner.acceptContract(o.tenant.id, { entrepreneur: true, termsAccepted: true, interval: "annual" });
+    expect(sub.contract).toMatchObject({ termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: "annual", acceptedByName: "Inhaber/in" });
+    // Annual from the first paid month after the trial (like chooseSubscription).
+    expect(sub.current).toMatchObject({ interval: "annual", startsOn: "2027-03-01" });
+    await expect(owner.acceptContract(o.tenant.id, { entrepreneur: true, termsAccepted: true, interval: "monthly" })).rejects.toThrow("bereits");
+    expect((await owner.listAudit(o.tenant.id, 20)).map((e) => e.action)).toContain("subscription.accept");
+    await owner.inviteEmployee(o.tenant.id, invite);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import type { Employee, Tenant } from "../../core/types";
+import type { Employee, Tenant, TenantSubscription } from "../../core/types";
 import type { Session } from "../../data/repository";
 import { Avatar, Button, DialogProvider, Sidebar, ThemeSwitch, ToastProvider, applyBranding, type NavGroup } from "../../design";
 import { getRepository, onAuthFailure } from "../shared/repo";
@@ -22,6 +22,8 @@ import { AuditPage } from "./pages/Audit";
 import { CorrectionsPage } from "./pages/Corrections";
 import { BillingPage } from "./pages/Billing";
 import { PrivacyPage } from "./pages/Privacy";
+import { ContractGate } from "./ContractGate";
+import { AppGuidePage } from "./pages/AppGuide";
 
 const repo = getRepository("chef");
 
@@ -56,7 +58,7 @@ function navGroups(counts: { corrections: number; statements: number }): NavGrou
 
 export function ChefApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [data, setData] = useState<{ tenant: Tenant; me: Employee } | null>(null);
+  const [data, setData] = useState<{ tenant: Tenant; me: Employee; sub: TenantSubscription | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -80,14 +82,15 @@ export function ChefApp() {
   }), []);
   useEffect(() => {
     if (!session?.tenantId || session.twoFactorSetupRequired) { setData(null); applyBranding(null); return; }
-    Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId)])
-      .then(([tenant, list]) => {
+    // Subscription: only to know whether the contract is concluded (0023). If it cannot be read, the portal stays usable.
+    Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId), repo.getTenantSubscription(session.tenantId).catch(() => null)])
+      .then(([tenant, list, sub]) => {
         const me = list.find((e) => e.id === session.employeeId);
         if (!me) throw new Error("Benutzer nicht gefunden.");
         applyBranding(tenant.branding);
         rememberTenant("chef", tenant.name, tenant.branding);
         document.title = `Chef-Portal · ${tenant.name}`;
-        setData({ tenant, me });
+        setData({ tenant, me, sub });
       })
       .catch((e) => setError(errorText(e)));
   }, [session]);
@@ -121,6 +124,11 @@ export function ChefApp() {
     return <div class="auth"><div class="auth-card card stack"><h1>Fehler</h1><p>{error}</p><Button onClick={async () => { await repo.signOut(); setError(null); setSession(null); }}>Zur Anmeldung</Button></div></div>;
   }
   if (!data) return <p class="sr-only" role="status">Wird geladen …</p>;
+  if (data.sub && !data.sub.contract) {
+    return <ContractGate repo={repo} tenant={data.tenant} me={data.me} sub={data.sub}
+      onAccepted={(sub) => { setData({ ...data, sub }); location.hash = "#/abrechnung"; }}
+      onSignOut={async () => { await repo.signOut(); setSession(null); setData(null); }} />;
+  }
 
   const ctx: ChefCtx = {
     repo, session, tenant: data.tenant, me: data.me, version,
@@ -132,6 +140,7 @@ export function ChefApp() {
   let page;
   switch (route.path) {
     case "/mitarbeiter": page = <EmployeesPage />; break;
+    case "/app-anleitung": page = <AppGuidePage />; break;
     case "/stunden": page = <HoursPage initialMonth={route.query.get("m")} initialEmployee={route.query.get("ma")} />; break;
     case "/zeiten": page = <TimesPage />; break;
     case "/nachweise": page = <StatementsPage initialMonth={route.query.get("m")} />; break;

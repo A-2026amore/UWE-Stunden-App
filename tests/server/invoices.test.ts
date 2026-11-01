@@ -43,7 +43,7 @@ describe("invoices", () => {
   it("draft without number lists the missing data; issuing is refused until complete", async () => {
     const d = await call("superAdmin", "GET", `/api/platform/tenants/${B}/invoices/2026-07/draft`);
     expect(d.status).toBe(200);
-    expect(d.body).toMatchObject({ draft: true, number: null, netCents: 500, vatCents: 95, grossCents: 595, vatRatePercent: 19 });
+    expect(d.body).toMatchObject({ draft: true, number: null, netCents: 420, vatCents: 80, grossCents: 500, vatRatePercent: 19 });
     expect(d.body.missing).toContain("Steuernummer oder USt-IdNr.");
     const e = await call("superAdmin", "POST", `/api/platform/tenants/${B}/invoices/2026-07`, {});
     expect(e.status).toBe(409);
@@ -60,8 +60,8 @@ describe("invoices", () => {
     expect((await call("support", "POST", `/api/platform/tenants/${B}/invoices/2026-07`, {})).status).toBe(403);
     const r = await call("superAdmin", "POST", `/api/platform/tenants/${B}/invoices/2026-07`, {});
     expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({ kind: "invoice", number: `SW-${new Date().getFullYear()}-000001`, month: "2026-07", netCents: 500, vatCents: 95,
-      grossCents: 595, paymentTermsDays: 30, servicePeriodStart: "2026-07-01", servicePeriodEnd: "2026-07-31", tenantName: "Muster Pflegedienst GmbH" });
+    expect(r.body).toMatchObject({ kind: "invoice", number: `SW-${new Date().getFullYear()}-000001`, month: "2026-07", netCents: 420, vatCents: 80,
+      grossCents: 500, paymentTermsDays: 30, servicePeriodStart: "2026-07-01", servicePeriodEnd: "2026-07-31", tenantName: "Muster Pflegedienst GmbH" });
     expect(r.body.recipient).toMatchObject({ street: "Musterallee 99" });
     expect(r.body.issueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     invoiceId = r.body.id;
@@ -85,7 +85,7 @@ describe("invoices", () => {
     expect((await call("superAdmin", "POST", `/api/platform/invoices/${invoiceId}/cancel`, { reason: "x" })).status).toBe(400);
     const r = await call("superAdmin", "POST", `/api/platform/invoices/${invoiceId}/cancel`, { reason: "Falsche Anschrift" });
     expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({ kind: "cancellation", netCents: -500, grossCents: -595, cancelsInvoiceId: invoiceId, cancelReason: "Falsche Anschrift" });
+    expect(r.body).toMatchObject({ kind: "cancellation", netCents: -420, grossCents: -500, cancelsInvoiceId: invoiceId, cancelReason: "Falsche Anschrift" });
     expect(r.body.cancelsInvoiceNumber).toMatch(/000001$/);
     expect(r.body.number).toMatch(/000002$/);
     const list = await call("superAdmin", "GET", `/api/platform/invoices?month=2026-07`);

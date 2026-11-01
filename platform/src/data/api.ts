@@ -24,15 +24,15 @@
  */
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, ISOMonth, License,
-  LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
-  TimeEntryRevision, UUID,
+  LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, PromoCode, PromoRedemption, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
+  TenantSubscription, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
 import type { StatementEvent } from "../core/types";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
-  type BillingApi, type InvoiceApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
+  type BillingApi, type InvoiceApi, type PromoApi, type SubscriptionApi, type StatementReviewApi, type LicensePatch, type NewCorrectionRequest, type NewTenant, type NewTimeEntry, type PrivacyApi, type Repository, type Session,
   type InvitationChannel, type InvitationInfo, type InvitedEmployee, type NewEmployee, type SystemOverview, type TenantOverview,
   type TwoFactorApi, type TwoFactorProof,
   type TwoFactorSetup, type TwoFactorStatus,
@@ -94,7 +94,7 @@ export interface SupportGrantInfo {
 }
 
 /** Repository plus the server functions the UI uses beyond the base contract. */
-export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi {
+export interface ApiRepository extends Repository, TwoFactorApi, BillingApi, PrivacyApi, StatementReviewApi, InvoiceApi, PromoApi, SubscriptionApi {
   listPlatformAudit(limit?: number): Promise<AuditEvent[]>;
   getSupportGrant(tenantId: UUID): Promise<SupportGrantInfo | null>;
   setSupportGrant(tenantId: UUID, hours: number, reason?: string): Promise<SupportGrantInfo | null>;
@@ -445,8 +445,50 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     setDefaultPrice(cents, reason) {
       return request<BillingSettings>("PUT", "/api/platform/billing/settings", { defaultPriceCents: cents, reason });
     },
+    updateBillingSettings(patch) {
+      return request<BillingSettings>("PUT", "/api/platform/billing/settings", patch);
+    },
     setBillingStatus(tenantId, month, status, note) {
       return request<BillingMonthSummary>("PUT", `/api/platform/tenants/${enc(tenantId)}/billing/${enc(month)}`, note === undefined ? { status } : { status, note });
+    },
+
+    // ---- promo codes (migration 0022)
+    listPromoCodes() {
+      return request<PromoCode[]>("GET", "/api/platform/promo-codes");
+    },
+    createPromoCode(input) {
+      return request<PromoCode>("POST", "/api/platform/promo-codes", input);
+    },
+    endPromoCode(promoCodeId, reason) {
+      return request<PromoCode>("POST", `/api/platform/promo-codes/${enc(promoCodeId)}/end`, { reason });
+    },
+    endTenantPromo(tenantId, reason) {
+      return request<PromoRedemption>("POST", `/api/platform/tenants/${enc(tenantId)}/promo/end`, { reason });
+    },
+    listTenantPromo(tenantId) {
+      return request<PromoRedemption[]>("GET", `/api/tenants/${enc(tenantId)}/promo`);
+    },
+    redeemPromoCode(tenantId, code) {
+      return request<PromoRedemption>("POST", `/api/tenants/${enc(tenantId)}/promo`, { code });
+    },
+
+    // ---------------------------------------------------------------- subscription (0023)
+    getTenantSubscription(tenantId) {
+      return request<TenantSubscription>("GET", `/api/tenants/${enc(tenantId)}/subscription`);
+    },
+    chooseSubscription(tenantId, interval) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/choose`, { interval });
+    },
+    cancelSubscription(tenantId, input) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/cancel`,
+        { thenMonthly: input.thenMonthly ?? false, reason: input.reason ?? null });
+    },
+    withdrawCancellation(tenantId) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/withdraw`, {});
+    },
+    acceptContract(tenantId, input) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/accept`,
+        { entrepreneur: input.entrepreneur, termsAccepted: input.termsAccepted, interval: input.interval });
     },
   };
 }

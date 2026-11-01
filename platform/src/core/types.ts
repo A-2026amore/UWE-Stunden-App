@@ -119,7 +119,7 @@ export interface License {
   features: string[];
   note: string | null;
   /**
-   * Special condition (price model 2026-10-28): own net price per billable
+   * Special condition (price model 2026-10-28): own gross price per billable
    * employee and month in cents; null = platform default price.
    */
   employeePriceCents: number | null;
@@ -136,7 +136,15 @@ export interface License {
 /** Which price applies to a tenant in a month. */
 export type BillingCondition = "standard" | "special" | "free" | "pilot_free"
   /** Customer blocked (suspended / deactivated) for the whole month: 0 € (decision 28.10.2026, migration 0018). */
-  | "tenant_suspended" | "tenant_deactivated";
+  | "tenant_suspended" | "tenant_deactivated"
+  /** Promo code discount (migration 0022). */
+  | "promo"
+  /** Monthly plan price (migration 0023); "standard" is the 12-month subscription price. */
+  | "monthly"
+  /** Free introductory trial (migration 0023): the month contains at least one trial day. */
+  | "trial"
+  /** No subscription term covers the month (cancelled / ended): 0 € (migration 0023). */
+  | "ended";
 
 /** Block of a customer covering a whole month (status and start of the block). */
 export interface TenantBlock {
@@ -149,9 +157,94 @@ export type BillingStatus = "open" | "invoiced" | "paid" | "waived";
 export type BillableReason = "employee" | "leader_with_time";
 
 export interface BillingSettings {
-  /** Net price per billable employee and month in cents (default 500 = 5,00 €). */
+  /** Gross price (incl. VAT) per billable employee and month in cents for the 12-month subscription (default 500 = 5,00 €). */
   defaultPriceCents: number;
+  /** Gross price per billable employee and month for the monthly plan (default 650 = 6,50 €, migration 0023). */
+  monthlyPriceCents: number;
+  /** Introductory offer (migration 0023): tenants created on a day in [from, until] get a free trial. Null = no offer. */
+  trialWindowFrom: ISODate | null;
+  trialWindowUntil: ISODate | null;
+  /** Length of the free trial in months (default 3). */
+  trialMonths: number;
+  /** A cancellation must be received at least this many days before the term end (default 0 = up to the last day). */
+  cancelNoticeDays: number;
+  /** Promo code sent automatically in the invitation mail of every newly created tenant (null = none). */
+  welcomePromoCodeId: UUID | null;
+  welcomePromoCode: string | null;
   currency: "EUR";
+}
+
+/** Changes of the billing settings by the super admin (each field optional, reason required). */
+export interface BillingSettingsPatch {
+  defaultPriceCents?: number;
+  monthlyPriceCents?: number;
+  trialWindowFrom?: ISODate | null;
+  trialWindowUntil?: ISODate | null;
+  trialMonths?: number;
+  cancelNoticeDays?: number;
+  welcomePromoCodeId?: UUID | null;
+  reason: string;
+}
+
+// ---------------------------------------------------------------- subscription (migration 0023)
+
+/** "annual" = 12-month subscription (5,00 €), renews by 6 months unless cancelled; "monthly" = monthly plan (6,50 €). */
+export type SubscriptionInterval = "monthly" | "annual";
+
+/** One subscription term of a tenant. Terms start on the first and end on the last day of a month. */
+export interface SubscriptionTerm {
+  id: UUID;
+  interval: SubscriptionInterval;
+  /** First day of the first billed month. */
+  startsOn: ISODate;
+  /** Annual and not ended: last day of the current term as of today (12 months, then +6 per renewal). Else null. */
+  currentTermEndsOn: ISODate | null;
+  /** Last day once cancelled or replaced (startsOn − 1 day = never active), else null (runs on). */
+  endsOn: ISODate | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  /** Annual cancelled with "continue monthly afterwards". */
+  thenMonthly: boolean;
+}
+
+/**
+ * Contract conclusion (AGB § 2 Abs. 1, draft 0.9.3): the owner confirms at the first login that the
+ * company acts as entrepreneur (§ 14 BGB), accepts AGB and AVV and chooses a plan (or confirms the
+ * monthly plan). Until then the tenant cannot be used. Time and versions are stored.
+ */
+export interface ContractAcceptance {
+  acceptedAt: string;
+  acceptedByName: string | null;
+  termsVersion: string;
+  dpaVersion: string;
+  interval: SubscriptionInterval;
+}
+
+/** Subscription state of a tenant (leadership of the tenant and platform staff). */
+export interface TenantSubscription {
+  tenantId: UUID;
+  /** Last day of the free trial; null = no trial (created outside the introductory window). */
+  trialEndsOn: ISODate | null;
+  inTrial: boolean;
+  /** First month that is billed (the month after the month in which the trial ends; without trial the month of creation). */
+  firstPaidMonth: ISOMonth;
+  /** Term that covers today, else the next term that starts (e.g. during the trial). */
+  current: SubscriptionTerm | null;
+  /** Term after `current` (e.g. monthly after a cancelled annual, or annual after a switch). */
+  next: SubscriptionTerm | null;
+  /** Last day of the contract when it is cancelled without follow-up, else null. */
+  contractEndsOn: ISODate | null;
+  /** No term covers today or later: the contract has ended. */
+  ended: boolean;
+  /** The cancelled term a withdraw would reopen (also one that never started), else null. */
+  withdrawable: SubscriptionTerm | null;
+  /** Null until the owner has concluded the contract; the tenant cannot be used before. */
+  contract: ContractAcceptance | null;
+  annualPriceCents: number;
+  monthlyPriceCents: number;
+  termMonths: number;
+  renewalMonths: number;
+  cancelNoticeDays: number;
 }
 
 /** One billable person (only visible to owner/manager of the tenant). */
@@ -173,7 +266,7 @@ export interface BillingMonthSummary {
   condition: BillingCondition;
   unitPriceCents: number;
   billableCount: number;
-  /** Net amount in cents (billableCount × unitPriceCents). */
+  /** Gross amount in cents (billableCount × unitPriceCents). */
   amountCents: number;
 }
 
@@ -187,6 +280,12 @@ export interface TenantBillingMonth extends BillingMonthSummary {
   lines: BillingLine[];
   /** Set when the customer was blocked for the whole month (condition tenant_*), else null. */
   tenantBlock?: TenantBlock | null;
+  /** Set when a promo discount applies (condition "promo"), else null. */
+  promo?: { code: string; discountPercent: number } | null;
+  /** Subscription term covering the month (migration 0023), else null. */
+  interval?: SubscriptionInterval | null;
+  /** Last day of the free trial of the tenant, null = no trial. */
+  trialEndsOn?: ISODate | null;
 }
 
 /** One row of the platform revenue overview – numbers only, never names. */
@@ -202,6 +301,54 @@ export interface PlatformRevenueRow extends BillingMonthSummary {
   /** Condition tenant_*: start of the block and the reason given by the super-admin. */
   blockSince?: string | null;
   blockReason?: string | null;
+  /** Condition promo: the code and its discount. */
+  promoCode?: string | null;
+  promoDiscountPercent?: number | null;
+  /** Subscription term covering the month and the trial end (migration 0023). */
+  interval?: SubscriptionInterval | null;
+  trialEndsOn?: ISODate | null;
+}
+
+// ---------------------------------------------------------------- promo codes (migration 0022)
+
+/** One redemption of a promo code by a tenant. endedAt null = the discount is running. */
+export interface PromoRedemption {
+  id: UUID;
+  promoCodeId: UUID;
+  code: string;
+  tenantId: UUID;
+  /** Only in the platform view. */
+  tenantName: string | null;
+  discountPercent: number;
+  redeemedAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+}
+
+/** Promo code created by the super admin (discount 1–100 %). */
+export interface PromoCode {
+  id: UUID;
+  code: string;
+  discountPercent: number;
+  note: string | null;
+  /** null = unlimited. */
+  maxRedemptions: number | null;
+  /** Last day for redeeming; null = no end. */
+  redeemableUntil: ISODate | null;
+  createdAt: string;
+  endedAt: string | null;
+  endReason: string | null;
+  redemptionCount: number;
+  activeCount: number;
+  redemptions: PromoRedemption[];
+}
+
+export interface NewPromoCode {
+  code: string;
+  discountPercent: number;
+  note?: string | null;
+  maxRedemptions?: number | null;
+  redeemableUntil?: ISODate | null;
 }
 
 export interface PlatformRevenue {

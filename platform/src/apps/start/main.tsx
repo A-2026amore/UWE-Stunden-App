@@ -15,7 +15,7 @@ applyBranding(null);
 const AREAS = [
   { href: "app/", title: "Mitarbeiter-App", icon: "clock" as const, text: "Mobile App (PWA) für Mitarbeitende: Zeiten erfassen, Monatsübersicht, PDF-Nachweis, Arbeitszeitkonto." },
   { href: "chef/", title: "Chef-Portal", icon: "building" as const, text: "Web-Portal für Arbeitgeber: Mitarbeitende, Arbeitszeiten, Monatsnachweise, Arbeitszeitkonten, Firmenprofil." },
-  { href: "admin/", title: "Super-Admin", icon: "shield" as const, text: "Plattformbetrieb: Mandanten, Lizenzen, Pilotkunden, Systemstatus. Keine Einsicht in Arbeitszeiten ohne Freigabe." },
+  { href: "admin/", title: "Super-Admin", icon: "shield" as const, text: "Plattformbetrieb: Mandanten, Lizenzen, Aktionscodes, Systemstatus. Keine Einsicht in Arbeitszeiten ohne Freigabe." },
 ];
 
 function AreaCards() {
@@ -83,7 +83,7 @@ function Start() {
         <Card title="Mandanten in der Demo" muted>
           <ul class="stack-sm" style={{ margin: 0, paddingLeft: "1.2em" }}>
             <li><strong>Demo Krankentransporte</strong> – UWE-Markenauftritt als Mandanten-Branding, UWE-Pausenregeln, Arbeitszeitkonto pro NRW-Schuljahr mit Startsaldo –100 Std., Pilotlizenz „Kostenlos – Pilot“.</li>
-            <li><strong>Muster Pflegedienst GmbH</strong> – eigenes Logo und Farben, Arbeitszeitkonto pro Kalenderjahr, Standardkunde (5,00 € netto je abrechenbarem Mitarbeiter und Monat).</li>
+            <li><strong>Muster Pflegedienst GmbH</strong> – eigenes Logo und Farben, Arbeitszeitkonto pro Kalenderjahr, Standardkunde im Monatstarif (6,50 € je abrechenbarem Mitarbeiter und Monat; im 12-Monats-Abo 5,00 €, jeweils inkl. USt.).</li>
           </ul>
         </Card>
         <Card><div style={{ maxWidth: "420px" }}><ThemeSwitch hint="Wird nur auf diesem Gerät gespeichert." /></div></Card>

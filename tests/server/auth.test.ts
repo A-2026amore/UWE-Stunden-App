@@ -254,6 +254,9 @@ describe("invitations", () => {
     const mail = t.mails[t.mails.length - 1]!;
     expect(mail.to).toBe("neu.person@demo-krankentransporte.example");
     expect(mail.text).toContain(`${ORIGIN}/einladung#token=`);
+    // How to get the app onto the phone afterwards (no app store) and where the app lives.
+    expect(mail.text).toContain("„Weiter zur Mitarbeiter-App“");
+    expect(mail.text).toContain(`${ORIGIN}/app/`);
     const accept = await t.call("POST", "/api/auth/invitation/accept", { body: { token: tokenFromMail(mail), password: "Erstes-Passwort-99" } });
     expect(accept.status).toBe(200);
     const login = await t.call("POST", "/api/auth/login", { body: { email: "neu.person@demo-krankentransporte.example", password: "Erstes-Passwort-99" } });

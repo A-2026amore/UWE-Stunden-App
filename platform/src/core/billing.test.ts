@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinMidnight, berlinMonthOf,
-  formatEuro, monthBounds, monthsBack, parseEuro, revenueTotals, tenantBlockFor, type LicenseCondition, type StatusPeriod, type TenantStatusPeriod,
+  DEFAULT_EMPLOYEE_PRICE_CENTS, billableReason, billingAmount, billingConditionFor, berlinDateOf, berlinMidnight, berlinMonthOf, discountedPrice, promoFor,
+  formatEuro, monthBounds, monthsBack, parseEuro, revenueTotals, tenantBlockFor, type LicenseCondition, type PromoPeriod, type StatusPeriod, type TenantStatusPeriod,
 } from "./billing";
 
 const active = (from: string, to: string | null = null, role: StatusPeriod["role"] = "employee"): StatusPeriod => ({ status: "active", role, from, to });
@@ -39,6 +39,9 @@ describe("month boundaries in Europe/Berlin", () => {
   it("month of an instant", () => {
     expect(berlinMonthOf("2026-09-30T21:30:00Z")).toBe("2026-09"); // 23:30 Berlin
     expect(berlinMonthOf("2026-09-30T22:30:00Z")).toBe("2026-10"); // 00:30 Berlin
+    expect(berlinDateOf("2026-09-30T21:30:00Z")).toBe("2026-09-30");
+    expect(berlinDateOf("2026-09-30T22:30:00Z")).toBe("2026-10-01");
+    expect(berlinDateOf("2026-12-31T23:30:00Z")).toBe("2027-01-01"); // winter time, +1 h
     expect(berlinMonthOf("2026-12-31T23:30:00Z")).toBe("2027-01");
   });
   it("months back to the first month", () => {
@@ -101,6 +104,36 @@ describe("conditions", () => {
     expect(billingConditionFor(special, 500, "2026-12").condition).toBe("special");
     expect(billingConditionFor(special, 500, "2027-01").condition).toBe("standard");
     expect(billingConditionFor({ ...special, freeOfCharge: true }, 500, "2026-11")).toEqual({ condition: "free", unitPriceCents: 0 });
+  });
+});
+
+describe("promo codes (decision 30.10.2026)", () => {
+  const base: LicenseCondition = { plan: "standard", status: "active", employeePriceCents: null, freeOfCharge: false, conditionValidFrom: null, conditionValidUntil: null };
+  const run = (from: string, to: string | null, discountPercent = 100): PromoPeriod => ({ code: "START-100", discountPercent, from, to });
+  it("applies to every month the redemption touches; the month of ending is still discounted", () => {
+    const p = [run("2026-07-15T10:00:00+02:00", "2026-09-20T12:00:00+02:00")];
+    expect(promoFor(p, "2026-06")).toBeNull();
+    expect(promoFor(p, "2026-07")?.code).toBe("START-100");
+    expect(promoFor(p, "2026-09")?.code).toBe("START-100");
+    expect(promoFor(p, "2026-10")).toBeNull();
+    expect(promoFor([run("2026-07-15T10:00:00+02:00", null)], "2030-01")?.discountPercent).toBe(100);
+    expect(promoFor([run("2026-07-01T00:00:00+02:00", null, 20), run("2026-07-10T00:00:00+02:00", null, 50)], "2026-07")?.discountPercent).toBe(50);
+  });
+  it("discounts the standard or special price; free accounts, pilots and blocks stay 0 €", () => {
+    expect(billingConditionFor(base, 500, "2026-10", null, { discountPercent: 100 })).toEqual({ condition: "promo", unitPriceCents: 0 });
+    expect(billingConditionFor(base, 500, "2026-10", null, { discountPercent: 25 })).toEqual({ condition: "promo", unitPriceCents: 375 });
+    expect(billingConditionFor(null, 500, "2026-10", null, { discountPercent: 50 })).toEqual({ condition: "promo", unitPriceCents: 250 });
+    expect(billingConditionFor({ ...base, employeePriceCents: 399 }, 500, "2026-10", null, { discountPercent: 50 })).toEqual({ condition: "promo", unitPriceCents: 200 });
+    expect(billingConditionFor({ ...base, plan: "pilot_free" }, 500, "2026-10", null, { discountPercent: 50 }).condition).toBe("pilot_free");
+    expect(billingConditionFor({ ...base, freeOfCharge: true }, 500, "2026-10", null, { discountPercent: 50 }).condition).toBe("free");
+    expect(billingConditionFor(base, 500, "2026-10", { status: "suspended", since: "2026-09-01T00:00:00Z" }, { discountPercent: 50 }).condition).toBe("tenant_suspended");
+    expect(billingConditionFor(base, 0, "2026-10", null, { discountPercent: 50 })).toEqual({ condition: "standard", unitPriceCents: 0 });
+  });
+  it("rounds half up to whole cents like PostgreSQL", () => {
+    expect(discountedPrice(399, 50)).toBe(200);
+    expect(discountedPrice(500, 33)).toBe(335);
+    expect(discountedPrice(500, 100)).toBe(0);
+    expect(() => discountedPrice(500, 101)).toThrow();
   });
 });
 

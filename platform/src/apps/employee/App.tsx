@@ -19,6 +19,7 @@ import { LegacyImportPage } from "./pages/LegacyImport";
 import { getEmployeeRepository } from "./syncRepo";
 import { ConflictDialog, SyncIndicator } from "./SyncStatus";
 import { UpdateBanner } from "./UpdateBanner";
+import { LoginInstallHint } from "./InstallHint";
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Start", icon: "home", match: "/" },
@@ -107,7 +108,9 @@ export function EmployeeApp() {
           if (!s.twoFactorSetupRequired) repo.flush().catch(() => undefined);
           setError(null); setSession(s); location.hash = "#/";
         }}
-      />
+      >
+        <LoginInstallHint />
+      </LoginScreen>
     );
   }
 

@@ -150,6 +150,23 @@ const ROUTE_RULES: Record<string, Rule> = {
     scope: "tenant", body: { reason: "Fremdzugriff Test" }, params: { invoiceId: "00000000-0000-4000-8000-0000000000aa" },
   },
 
+  // ---------------------------------------------------------------- promo codes (0022): owner redeems; super-admin manages
+  "GET /api/platform/promo-codes": { scope: "tenant", allowed: ["support"] },
+  "POST /api/platform/promo-codes": { scope: "tenant", body: { code: "FREMD-100", discountPercent: 100 } },
+  "POST /api/platform/promo-codes/:id/end": {
+    scope: "tenant", body: { reason: "Fremdzugriff" }, params: { id: "00000000-0000-4000-8000-0000000000ab" },
+  },
+  "POST /api/platform/tenants/:tenantId/promo/end": { scope: "tenant", body: { reason: "Fremdzugriff" } },
+  "GET /api/tenants/:tenantId/promo": { scope: "tenant", allowed: ["managerA", "support"] },
+  "POST /api/tenants/:tenantId/promo": { scope: "tenant", body: { code: "FREMD-100" } },
+
+  // ---------------------------------------------------------------- subscription (0023): leadership + platform staff read; owner changes
+  "GET /api/tenants/:tenantId/subscription": { scope: "tenant", allowed: ["managerA", "support"] },
+  "POST /api/tenants/:tenantId/subscription/accept": { scope: "tenant", body: { entrepreneur: true, termsAccepted: true, interval: "annual" } },
+  "POST /api/tenants/:tenantId/subscription/choose": { scope: "tenant", body: { interval: "annual" } },
+  "POST /api/tenants/:tenantId/subscription/cancel": { scope: "tenant", body: { thenMonthly: false, reason: "Fremdzugriff" } },
+  "POST /api/tenants/:tenantId/subscription/withdraw": { scope: "tenant", body: {} },
+
   // ---------------------------------------------------------------- privacy (0016): only the person or the owner
   "GET /api/employees/:employeeId/data-export": { scope: "tenant" },
   "POST /api/employees/:employeeId/anonymize": { scope: "tenant", body: { confirmPersonnelNumber: "A-101" } },

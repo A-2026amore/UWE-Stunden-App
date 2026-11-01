@@ -9,7 +9,9 @@ export function invitationShareText(args: { tenantName: string; employeeName: st
   const first = args.employeeName.trim().split(/\s+/)[0] || args.employeeName;
   return `Hallo ${first}, du wurdest zur Zeiterfassung von ${args.tenantName} eingeladen. ` +
     `Über diesen Link legst du dein eigenes Passwort fest: ${args.link} – ` +
-    `Der Link funktioniert nur einmal und ist gültig bis ${dateTimeDE(args.expiresAt)}.`;
+    `Der Link funktioniert nur einmal und ist gültig bis ${dateTimeDE(args.expiresAt)}. ` +
+    "Danach auf „Weiter zur Mitarbeiter-App“ tippen – die App zeigt dir, wie du sie mit einem Tipp " +
+    "auf deinen Startbildschirm legst (kostenlos, ohne App-Store).";
 }
 
 /** wa.me link with prefilled text (the user picks the contact in WhatsApp; no number is needed). */
