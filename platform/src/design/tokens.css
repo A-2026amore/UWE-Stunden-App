@@ -8,7 +8,7 @@
  * Tenant branding (white-label) is applied at runtime by applyBranding() in
  * branding.ts: it sets --light-brand-* and --dark-brand-* on the root
  * element; the --brand-* tokens below pick the set of the active scheme.
- * The fallbacks are the product colours (indigo) – identical to
+ * The fallbacks are the product colours (logo dark blue / turquoise) – identical to
  * brandVariables(PRODUCT_BRANDING) / brandVariablesDark(PRODUCT_BRANDING),
  * checked in branding.test.ts. Components never hard-code brand colours.
  */
@@ -51,16 +51,16 @@
   --logo-plate-pad: 0;
 
   /* ---- brand (product colours; tenant colours via applyBranding) */
-  --brand-primary: var(--light-brand-primary, #4f46e5);
-  --brand-primary-hover: var(--light-brand-primary-hover, #433cc3);
+  --brand-primary: var(--light-brand-primary, #1d4e89);
+  --brand-primary-hover: var(--light-brand-primary-hover, #194274);
   --brand-on-primary: var(--light-brand-on-primary, #ffffff);
-  --brand-primary-text: var(--light-brand-primary-text, #4f46e5);
-  --brand-primary-soft: var(--light-brand-primary-soft, #ededfc);
-  --brand-secondary: var(--light-brand-secondary, #312e81);
+  --brand-primary-text: var(--light-brand-primary-text, #1d4e89);
+  --brand-primary-soft: var(--light-brand-primary-soft, #e8edf3);
+  --brand-secondary: var(--light-brand-secondary, #0b2545);
   --brand-on-secondary: var(--light-brand-on-secondary, #ffffff);
-  --brand-accent: var(--light-brand-accent, #0891b2);
-  --brand-accent-text: var(--light-brand-accent-text, #06708b);
-  --brand-accent-soft: var(--light-brand-accent-soft, #e6f4f7);
+  --brand-accent: var(--light-brand-accent, #13a89e);
+  --brand-accent-text: var(--light-brand-accent-text, #0e7970);
+  --brand-accent-soft: var(--light-brand-accent-soft, #e7f6f5);
 
   /* ---- semantic status colours (text colours ≥ 4.5:1 on their bg and on the surface) */
   --color-success: #12704a;
@@ -174,16 +174,16 @@
   --logo-plate: #f8fafc;
   --logo-plate-pad: 6px 10px;
 
-  --brand-primary: var(--dark-brand-primary, #5a51e7);
-  --brand-primary-hover: var(--dark-brand-primary-hover, #4d45c4);
+  --brand-primary: var(--dark-brand-primary, #386397);
+  --brand-primary-hover: var(--dark-brand-primary-hover, #305480);
   --brand-on-primary: var(--dark-brand-on-primary, #ffffff);
-  --brand-primary-text: var(--dark-brand-primary-text, #8b86ee);
-  --brand-primary-soft: var(--dark-brand-primary-soft, #1f2456);
-  --brand-secondary: var(--dark-brand-secondary, #312e81);
+  --brand-primary-text: var(--dark-brand-primary-text, #7693b7);
+  --brand-primary-soft: var(--dark-brand-primary-soft, #142542);
+  --brand-secondary: var(--dark-brand-secondary, #0b2545);
   --brand-on-secondary: var(--dark-brand-on-secondary, #ffffff);
-  --brand-accent: var(--dark-brand-accent, #0891b2);
-  --brand-accent-text: var(--dark-brand-accent-text, #3fa9c3);
-  --brand-accent-soft: var(--dark-brand-accent-soft, #0f344b);
+  --brand-accent: var(--dark-brand-accent, #13a89e);
+  --brand-accent-text: var(--dark-brand-accent-text, #26afa6);
+  --brand-accent-soft: var(--dark-brand-accent-soft, #113947);
 
   --color-success: #5dd39e;
   --color-success-solid: #15803d;

@@ -13,13 +13,13 @@ export const PRODUCT_TAGLINE = "Zeiterfassung für Teams im Außendienst";
 /** Kept for existing imports; identical to PRODUCT_NAME (no "Arbeitstitel" suffix any more). */
 export const PRODUCT_FULL_NAME = PRODUCT_NAME;
 
-/** Product colours (indigo) for the login pages, the Super-Admin and pages without a tenant. */
+/** Product colours (logo: dark blue and turquoise) for the login pages, the Super-Admin and pages without a tenant. */
 export const PRODUCT_BRANDING: Branding = {
   logoUrl: null,
   markUrl: null,
-  primaryColor: "#4f46e5",
-  secondaryColor: "#312e81",
-  accentColor: "#0891b2",
+  primaryColor: "#1d4e89",
+  secondaryColor: "#0b2545",
+  accentColor: "#13a89e",
   slogan: null,
 };
 

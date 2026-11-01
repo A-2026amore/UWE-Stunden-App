@@ -44,7 +44,7 @@ dunkel) und setzt sie als `--light-brand-*` bzw. `--dark-brand-*`. Regeln:
 - Buttons bekommen weiße oder dunkle Schrift mit mind. 4,5 : 1; sehr dunkle Markenfarben werden im Dunkelmodus
   angehoben, damit Buttons sich vom Hintergrund abheben (mind. 3 : 1).
 - Firmenlogos (für helle Flächen gestaltet) stehen im Dunkelmodus auf einer hellen Plakette.
-- Ohne Firma (Anmeldung, Super-Admin) gelten die Produktfarben (Indigo). Die CSS-Rückfallwerte in
+- Ohne Firma (Anmeldung, Super-Admin) gelten die Produktfarben aus dem Logo (Blau #1d4e89, Dunkelblau #0b2545, Türkis #13a89e). Die CSS-Rückfallwerte in
   `tokens.css` entsprechen genau diesen Produktfarben – geprüft in `branding.test.ts`, ebenso alle
   Kontrastpaare der Status- und Textfarben in beiden Modi.
 

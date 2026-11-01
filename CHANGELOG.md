@@ -238,6 +238,9 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Android-Emulation) sowie 18 Full-Stack-Tests je Projekt (Stand 27.10.2026).
 
 ### Geändert
+- Produktfarben an das Logo angepasst (Entscheidung 01.11.2026): statt Indigo jetzt Blau #1d4e89 (Knöpfe, Links),
+  Dunkelblau #0b2545 und Türkis #13a89e – auf Anmeldeseiten, im Super-Admin, als Browser-Farbe (theme-color) und im
+  Manifest, hell und dunkel; Kontraste weiter ≥ 4,5:1 (branding.test.ts). Firmenfarben der Mandanten unverändert.
 - Produktname „Stundenwerk“ → **„Schichtklar24“** (Entscheidung 30.10.2026; „Stundenwerk“ ist bereits von einer
   anderen Zeiterfassung belegt, Domain schichtklar24.de gesichert). Geändert ist alles Sichtbare: Name in den drei
   Apps und auf der Startseite, PDF-Fußzeile „Erstellt mit Schichtklar24“, Rechnungs-PDF, Rechtstexte, Icons,
