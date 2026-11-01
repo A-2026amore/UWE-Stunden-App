@@ -21,15 +21,15 @@ function makeEntries(count: number, seed = 1): (ShiftLike & { note: string })[] 
   });
 }
 
-const uweTenant: StatementPdfArgs["tenant"] = {
-  name: "UWE Krankentransporte", brand: "uwe", primaryColor: "#00A99E",
-  contact: { legalName: "UWE Krankentransporte", street: "Musterstraße 1", postalCode: "52062", city: "Aachen", phone: "0241 400 111 11", email: "info@example.org" },
+const demoTenant: StatementPdfArgs["tenant"] = {
+  name: "Demo Krankentransporte", primaryColor: "#00A99E", filePrefix: "DKT",
+  contact: { legalName: "Demo Krankentransporte GmbH", street: "Musterstraße 1", postalCode: "52062", city: "Aachen", phone: "0241 400 111 11", email: "info@example.org" },
 };
 
 describe("pdf", () => {
   it("60 entries → multi-page PDF with %PDF header, repeated table header and page numbers", async () => {
     const entries = makeEntries(60);
-    const blob = createStatementPdf({ tenant: uweTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30), productName: "Schichtklar24" });
+    const blob = createStatementPdf({ tenant: demoTenant, employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries, status: "submitted", createdAt: new Date(2026, 10, 30), productName: "Schichtklar24" });
     expect(blob.type).toBe("application/pdf");
     const text = latin1(new Uint8Array(await blob.arrayBuffer()));
     expect(text.startsWith("%PDF-1.4")).toBe(true);
@@ -44,8 +44,8 @@ describe("pdf", () => {
     expect(text).toContain("(Erstellt: 30.11.2026)");
     expect(text.split("(Erstellt mit Schichtklar24)").length - 1).toBe(pages);
     expect(text).toContain("(November 2026)");
-    expect(text).toContain("0.000 0.663 0.620 rg"); // UWE vector logo colour
-    expect(text).toContain("/GSWatermark gs");
+    expect(text).toContain("(Demo Krankentransporte) Tj"); // typographic logo (no logo uploaded)
+    expect(text).toContain("0.000 0.663 0.620 rg"); // primary colour #00A99E
     expect(text).toContain("Tel. 0241 400 111 11");
     // xref offsets point at the objects.
     const start = Number(/startxref\n(\d+)/.exec(text)![1]);
@@ -59,7 +59,7 @@ describe("pdf", () => {
     const r = rng(5);
     for (let n = 0; n < 40; n++) {
       const entries = makeEntries(int(r, 1, 90), n + 10);
-      const mine = latin1(createStatementPdfBytes({ tenant: uweTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries }));
+      const mine = latin1(createStatementPdfBytes({ tenant: demoTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries }));
       const legacy = withBlob({ employee: { name: "A", eid: "1" }, month: "2026-11", records: entries });
       expect(/\/Count (\d+)/.exec(mine)![1]).toBe(/\/Count (\d+)/.exec(legacy)![1]);
       expect(/GESAMT: [\d,]+ Stunden/.exec(mine)![0]).toBe(/GESAMT: [\d,]+ Stunden/.exec(legacy)![0]);
@@ -82,14 +82,13 @@ describe("pdf", () => {
     expect(text).toMatch(/\((Mo|Di|Mi|Do|Fr|Sa|So) \d{2}\.11\.2026\)/);
   });
 
-  it("generic tenant: typographic logo in primary colour, no UWE artwork", () => {
+  it("tenant without logo: typographic logo in primary colour, no watermark", () => {
     const text = latin1(createStatementPdfBytes({
       tenant: { name: "Muster Pflege GmbH", primaryColor: "#336699", contact: null },
       employee: { name: "Max", personnelNumber: "M-1" }, month: "2026-11", entries: makeEntries(3),
     }));
     expect(text).toContain("(Muster Pflege GmbH)");
     expect(text).toContain("0.200 0.400 0.600 rg");
-    expect(text).not.toContain("1755 366 m");
     expect(text).not.toContain("/GSWatermark gs");
   });
 
@@ -97,22 +96,22 @@ describe("pdf", () => {
     const entries = [{ date: "2026-11-02", start: "08:00", end: "16:00", pauseMinutes: 30, note: "" }];
     const account = { cycleLabel: "2026/27", workedMinutes: 450, eligibleMinutes: 450, allocatedMinutes: 150, billingMinutes: 300,
       balanceMinutes: -5850, openingMinutes: -6000, cycleEnd: "2027-07-16", summerStart: "2027-07-19" };
-    const text = latin1(createStatementPdfBytes({ tenant: uweTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries, account }));
+    const text = latin1(createStatementPdfBytes({ tenant: demoTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries, account }));
     expect(text).toContain("Ins Konto: 2,50 Std.");
     expect(text).toContain("Zur Abrechnung vorgemerkt: 5,00 Std.");
     expect(text).toContain("Jahresstand nach diesem Monat: -97,50 Std.");
     expect(text).toContain("Letzter Schultag: 16.07.2027");
-    expect(() => createStatementPdfBytes({ tenant: uweTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries, account: { ...account, billingMinutes: 1 } }))
+    expect(() => createStatementPdfBytes({ tenant: demoTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries, account: { ...account, billingMinutes: 1 } }))
       .toThrow("Arbeitszeitkonto kann nicht korrekt in die PDF übernommen werden.");
-    expect(() => createStatementPdfBytes({ tenant: uweTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries: [] }))
+    expect(() => createStatementPdfBytes({ tenant: demoTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries: [] }))
       .toThrow("Für diesen Monat sind keine gültigen Arbeitszeiten zum Export vorhanden.");
-    expect(() => createStatementPdfBytes({ tenant: uweTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries, totals: { workedMinutes: 999 } }))
+    expect(() => createStatementPdfBytes({ tenant: demoTenant, employee: { name: "A", personnelNumber: "1" }, month: "2026-11", entries, totals: { workedMinutes: 999 } }))
       .toThrow("stimmen nicht");
   });
 
   it("file names", () => {
-    expect(statementFileName({ tenant: uweTenant, personnelNumber: "47/11", month: "2026-11" })).toBe("UWE-Stundenzettel-4711-2026-11.pdf");
-    expect(statementFileName({ tenant: uweTenant, personnelNumber: "4711", month: "2026-11", test: true })).toBe("UWE-TEST-Stundenzettel-4711-2026-11.pdf");
+    expect(statementFileName({ tenant: demoTenant, personnelNumber: "47/11", month: "2026-11" })).toBe("DKT-Stundenzettel-4711-2026-11.pdf");
+    expect(statementFileName({ tenant: demoTenant, personnelNumber: "4711", month: "2026-11", test: true })).toBe("DKT-TEST-Stundenzettel-4711-2026-11.pdf");
     expect(statementFileName({ tenant: { name: "Müller Pflege GmbH" }, personnelNumber: "1", month: "2026-11" })).toBe("Mueller-Pflege-GmbH-Stundenzettel-1-2026-11.pdf");
   });
 });
@@ -139,7 +138,7 @@ describe("pdf: tenant logo (generic brand)", () => {
     0xff, 0xd9,
   ]);
   const generic = (logo: StatementPdfArgs["tenant"]["logo"]): StatementPdfArgs["tenant"] => ({
-    name: "Muster Pflegedienst GmbH", brand: "generic", primaryColor: "#2d4f73", logo,
+    name: "Muster Pflegedienst GmbH", primaryColor: "#2d4f73", logo,
     contact: { legalName: "Muster Pflegedienst GmbH", street: "Beispielweg 2", postalCode: "50667", city: "Köln" },
   });
 
@@ -169,14 +168,12 @@ describe("pdf: tenant logo (generic brand)", () => {
     for (const m of text.matchAll(/^(\d{10}) 00000 n $/gm)) expect(text.slice(Number(m[1]))).toMatch(/^\d+ 0 obj/);
   });
 
-  it("falls back to the typographic logo without (or with an unusable) logo; UWE keeps its vector logo", () => {
+  it("falls back to the typographic logo without (or with an unusable) logo", () => {
     const base = { employee: { name: "Erika Muster", personnelNumber: "4711" }, month: "2026-11", entries: makeEntries(3) };
     const none = latin1(createStatementPdfBytes({ ...base, tenant: generic(null) }));
     expect(none).not.toContain("/XObject");
     expect(none).toContain("(Muster Pflegedienst GmbH) Tj");
     const broken = latin1(createStatementPdfBytes({ ...base, tenant: generic({ jpeg: new Uint8Array([1, 2, 3]), width: 1, height: 1 }) }));
     expect(broken).not.toContain("/XObject");
-    const uwe = latin1(createStatementPdfBytes({ ...base, tenant: { ...uweTenant, logo: { jpeg, width: 40, height: 20 } } }));
-    expect(uwe).not.toContain("/XObject");
   });
 });

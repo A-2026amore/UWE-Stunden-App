@@ -1,14 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { ShiftLike } from "./types";
+import type { BreakPolicy, ShiftLike } from "./types";
 import {
-  BREAK_RULE_THRESHOLDS, NEW_TENANT_BREAK_RULE, UWE_BREAK_POLICY, breakRuleKind, breakRuleSummary, defaultBreakPolicy, errorsForMonth,
-  evaluateDay, issueForDay, necessaryPause, requiredPauseText, statutoryBreakProblems, suggestedPause, thresholdLabel, thresholdsFor,
-  validateBreakPolicy,
+  BREAK_RULE_THRESHOLDS, NEW_TENANT_BREAK_RULE, LEGACY_BREAK_POLICY, breakRuleKind, breakRuleSummary, defaultBreakPolicy,
+  requiredPauseText, statutoryBreakProblems, thresholdLabel, thresholdsFor, validateBreakPolicy,
 } from "./breaks";
+import * as core from "./breaks";
 import { loadLegacy } from "./__legacy__/loadLegacy";
 import { clock, int, pick, rng } from "./__legacy__/random";
 
 const legacy = loadLegacy(["uwe-break-rules.js"]).window.UweBreakRules;
+// The legacy comparisons run with the rules of the old app (no default policy in core).
+type Shifts = Parameters<typeof core.evaluateDay>[0];
+const P = LEGACY_BREAK_POLICY;
+const necessaryPause = (g: number, p: BreakPolicy = P) => core.necessaryPause(g, p);
+const evaluateDay = (s: Shifts, d: string, p: BreakPolicy = P) => core.evaluateDay(s, d, p);
+const issueForDay = (e: ReturnType<typeof core.evaluateDay>, p: BreakPolicy = P) => core.issueForDay(e, p);
+const errorsForMonth = (s: Shifts, m: string, p: BreakPolicy = P) => core.errorsForMonth(s, m, p);
+const suggestedPause = (t: Parameters<typeof core.suggestedPause>[0], s: Shifts, p: BreakPolicy = P) => core.suggestedPause(t, s, p);
 const plain = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
 
 const DURATIONS = [359, 360, 361, 539, 540, 541, 719, 720, 721, 1, 15, 30, 240, 480, 600, 1439];
@@ -101,7 +109,7 @@ describe("breaks – explicit cases", () => {
     const policy = { thresholds: [{ minGrossMinutes: 361, minPauseMinutes: 30 }], maxShiftMinutes: 600, minPauseSegmentMinutes: 10 };
     expect(evaluateDay(day(["08:00", "14:00", 0]), "2026-11-02", policy).required).toBe(0);
     expect(evaluateDay(day(["08:00", "18:30", 30]), "2026-11-02", policy).reason).toContain("höchstens 10 Stunden");
-    expect(UWE_BREAK_POLICY.maxShiftMinutes).toBe(720);
+    expect(LEGACY_BREAK_POLICY.maxShiftMinutes).toBe(720);
   });
 });
 
@@ -137,7 +145,7 @@ describe("breaks – statutory vs. strict rule (§4 ArbZG, client 2026-10-28)", 
     expect(day.missing).toBe(30);
   });
   it("UWE keeps the strict rule; new tenants get the configured default", () => {
-    expect(breakRuleKind(UWE_BREAK_POLICY)).toBe("strict");
+    expect(breakRuleKind(LEGACY_BREAK_POLICY)).toBe("strict");
     expect(NEW_TENANT_BREAK_RULE).toBe("statutory");
     expect(breakRuleKind(defaultBreakPolicy())).toBe(NEW_TENANT_BREAK_RULE);
     expect(defaultBreakPolicy()).toEqual({ thresholds: [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }], maxShiftMinutes: 600, minPauseSegmentMinutes: 15 });

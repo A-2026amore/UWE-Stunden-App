@@ -1,7 +1,7 @@
 # Architektur der Zeiterfassungsplattform
 
 Produktname: „Schichtklar24“ (vorläufig, vorbehaltlich Markenprüfung; eine Konstante in `platform/src/design/branding.ts`). Designsystem: siehe `docs/design.md`.
-UWE – Krankentransporte GmbH ist der erste Mandant, nicht das Produkt.
+UWE – Krankentransporte GmbH ist ein Kunde wie jeder andere, nicht das Produkt.
 
 ## 1. Zielbild
 
@@ -84,11 +84,14 @@ Jeder Eintrag erhält auf dem Gerät eine UUID. Der Server akzeptiert dieselbe I
 gemeldet statt überschrieben. Löschen ist ein „Soft Delete“, jede Änderung landet in
 `time_entry_revisions`.
 
-### ADR-5: Mandantenkonfiguration statt fest eingebauter UWE-Regeln
-Pausenschwellen, 12-Stunden-Grenze, Arbeitszeitkonto (an/aus, Modell Schuljahr/Kalenderjahr,
-Startsaldo, Bundesland, Genehmigung) sind Einstellungen je Mandant. UWE erhält die bisherigen Werte.
-Pausenregel: „gesetzlich“ (mehr als 6/9 h, Standard für neue Mandanten) oder „streng“ (ab genau 6/9 h,
-UWE); nie laxer als § 4 ArbZG ([pausenregeln.md](pausenregeln.md)).
+### ADR-5: Mandantenkonfiguration statt fest eingebauter Firmenregeln
+Pausenschwellen, Höchstdauer, Arbeitszeitkonto (an/aus, Modell Schuljahr/Kalenderjahr,
+Startsaldo, Bundesland, Genehmigung) sind Einstellungen je Mandant. Es gibt keine firmenspezifische Logik,
+Vorgabe oder Marke im Plattform-Code – auch UWE ist ein normaler Kunde (Entscheidung 01.11.2026) und stellt
+seine Werte wie jede Firma selbst ein. Pausenregel: „gesetzlich“ (mehr als 6/9 h, Standard für neue
+Mandanten) oder „streng“ (ab genau 6/9 h, wahlweise); nie laxer als § 4 ArbZG ([pausenregeln.md](pausenregeln.md)).
+Die Regeln der alten App (`LEGACY_BREAK_POLICY`, `LEGACY_WORK_ACCOUNT_POLICY`) dienen nur den
+Vergleichstests und der Altdaten-Übernahme.
 
 ### ADR-6: Frontend-Technik Vite + Preact + TypeScript
 Preact (ca. 4 KB) hält die App auf älteren Smartphones schnell; TypeScript (strict) verhindert

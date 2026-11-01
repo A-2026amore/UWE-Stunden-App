@@ -255,7 +255,7 @@ export interface Repository {
   listTenants(): Promise<TenantOverview[]>;
   createTenant(input: NewTenant): Promise<TenantOverview>;
   setTenantStatus(tenantId: UUID, status: Tenant["status"], reason: string): Promise<Tenant>;
-  /** Offer the import from the old UWE app in the employee app of this tenant (0024). */
+  /** Offer the import from the old Stunden-App in the employee app of this tenant (0024). */
   setLegacyImport(tenantId: UUID, enabled: boolean, reason: string): Promise<Tenant>;
   setLicense(tenantId: UUID, plan: LicensePlan, patch?: LicensePatch): Promise<License>;
 }

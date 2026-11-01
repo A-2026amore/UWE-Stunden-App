@@ -1,7 +1,7 @@
 /**
  * Time and formatting primitives.
  *
- * Ported 1:1 from the legacy UWE Stunden-App (index.html inline script,
+ * Ported 1:1 from the old Stunden-App (index.html inline script,
  * uwe-break-rules.js, uwe-arbeitszeitkonto.js). All durations are integer
  * minutes. User-facing texts keep the legacy German wording.
  */

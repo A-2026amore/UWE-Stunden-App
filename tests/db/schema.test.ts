@@ -27,7 +27,7 @@ describe("schema and seed", () => {
     for (const r of rows) expect(r, r.t).toMatchObject({ rls: true });
   });
 
-  it("keeps tenant-specific rules in settings (no UWE rules for everyone)", async () => {
+  it("keeps tenant-specific rules in settings (no company rules for everyone)", async () => {
     const { rows } = await db.admin.query(
       "select slug, settings #> '{breakPolicy,thresholds,0,minGrossMinutes}' as t, settings #>> '{workAccount,openingMinutes}' as o from public.tenants order by slug",
     );

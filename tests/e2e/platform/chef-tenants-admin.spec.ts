@@ -122,7 +122,7 @@ test("chef changes colour and WhatsApp number: visible for the own tenant only",
 
 test("two tenants show their own logo and phone number", async ({ page }) => {
   await loginEmployee(page);
-  await expect(page.getByRole("img", { name: "Demo Krankentransporte – Logo" })).toHaveAttribute("src", /brands\/uwe\//);
+  await expect(page.getByRole("img", { name: "Demo Krankentransporte – Logo" })).toHaveAttribute("src", /brands\/demo-kt\//);
   await go(page, "#/einstellungen");
   await expect(page.getByRole("link", { name: "Anrufen: 0241 000 000 00" })).toBeVisible();
   await expect(page.getByRole("main")).not.toContainText("030 000 000 00");

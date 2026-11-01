@@ -17,8 +17,8 @@ async function annaAsE1001(page: Page): Promise<void> {
 
 async function openImport(page: Page): Promise<void> {
   await go(page, "#/einstellungen");
-  await page.getByRole("link", { name: "Daten aus der bisherigen UWE-App übernehmen" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "Daten aus der bisherigen UWE-App übernehmen" })).toBeVisible();
+  await page.getByRole("link", { name: "Daten aus der bisherigen Stunden-App übernehmen" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Daten aus der bisherigen Stunden-App übernehmen" })).toBeVisible();
 }
 
 async function chooseBackup(page: Page, name: string, content: string): Promise<void> {
@@ -119,16 +119,16 @@ test("other companies do not see the import; the super admin can switch it on pe
   await loginEmployee(page, "mia@muster-pflege.example", "Mia");
   await go(page, "#/einstellungen");
   await expect(page.getByRole("button", { name: "Abmelden" })).toBeVisible();
-  await expect(page.getByText("Daten aus der bisherigen UWE-App übernehmen")).toHaveCount(0);
+  await expect(page.getByText("Daten aus der bisherigen Stunden-App übernehmen")).toHaveCount(0);
   // The direct link does not open the import either.
   await go(page, "#/einstellungen/import");
-  await expect(page.getByRole("heading", { level: 1, name: "Daten aus der bisherigen UWE-App übernehmen" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1, name: "Daten aus der bisherigen Stunden-App übernehmen" })).toHaveCount(0);
 
   const admin = await page.context().newPage();
   await login(admin, ADMIN, "admin@plattform.example");
   await admin.getByRole("row", { name: /Muster Pflegedienst/ }).getByRole("link", { name: "Muster Pflegedienst GmbH verwalten" }).click();
   await expect(admin.getByTestId("tenant-legacy-import")).toHaveText("ausgeblendet");
-  await admin.getByRole("button", { name: "Übernahme aus alter UWE-App anbieten" }).click();
+  await admin.getByRole("button", { name: "Übernahme aus alter Stunden-App anbieten" }).click();
   const dialog = admin.getByRole("dialog");
   await dialog.getByLabel("Begründung").fill("Kunde hatte die alte App");
   await dialog.getByRole("button", { name: "Anbieten", exact: true }).click();
@@ -136,5 +136,5 @@ test("other companies do not see the import; the super admin can switch it on pe
 
   await page.reload();
   await go(page, "#/einstellungen");
-  await expect(page.getByRole("link", { name: "Daten aus der bisherigen UWE-App übernehmen" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Daten aus der bisherigen Stunden-App übernehmen" })).toBeVisible();
 });

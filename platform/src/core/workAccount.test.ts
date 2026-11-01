@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MonthAllocation, ShiftLike, WorkAccountPolicy } from "./types";
 import {
-  NRW_SUMMER_HOLIDAYS, UWE_WORK_ACCOUNT_POLICY, cycleBalances, cycleForDate, cycleInfoForMonth, cycleStatusForMonth,
+  NRW_SUMMER_HOLIDAYS, LEGACY_WORK_ACCOUNT_POLICY, cycleBalances, cycleForDate, cycleInfoForMonth, cycleStatusForMonth,
   invalidAllocations, nrwHolidayProvider, pickSummerHoliday, refreshHolidayCache, schoolYearCycle, staticHolidayProvider,
   summarizeMonth, validateAllocation, type AccountCycle, type HolidayCache,
 } from "./workAccount";
@@ -11,7 +11,7 @@ import { clock, int, pick, rng } from "./__legacy__/random";
 
 const NOW = new Date("2031-03-15T10:00:00Z");
 const plain = <T>(v: T): T => (v === undefined || v === null ? v : JSON.parse(JSON.stringify(v)));
-const policy = UWE_WORK_ACCOUNT_POLICY;
+const policy = LEGACY_WORK_ACCOUNT_POLICY;
 
 /**
  * Hypothetical cache rows used only to exercise the legacy cache code path

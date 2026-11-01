@@ -5,8 +5,7 @@
  *    needed (the business explicitly rejected squeezing everything onto one
  *    page) – header and table header are repeated on every page, footer
  *    shows "Seite x von y";
- *  - UWE brand: original vector logo + wing watermark (paths copied 1:1);
- *    other tenants: their uploaded logo (as JPEG, see StatementPdfLogo) top
+ *  - every tenant the same way (no company-specific code): the uploaded logo (as JPEG, see StatementPdfLogo) top
  *    left and faint as watermark in the middle of every page, or the company
  *    name as typographic logo in the primary colour when there is no logo;
  *  - optional work-account section; worked hours are never replaced.
@@ -133,25 +132,6 @@ function wrapWords(text: unknown, maxChars = 48): string[] {
 /** Low-level PDF helpers shared with the invoice PDF (invoicePdf.ts). */
 export const pdfPrimitives = { latin, pdfStr, bytes, txt, rect, line, textWidth, wrapWords } as const;
 
-// Original UWE logo and wing shapes, traced from the supplied brand artwork (copied 1:1 from uwe-pdf.js).
-const LOGO_TURQUOISE = "606 195 m 527 209 l 438 231 l 337 261 l 238 296 l 161 329 l 101 360 l 46 395 l 1 433 l 112 402 l 214 382 l 342 362 l 390 350 l 422 339 l 467 318 l 522 281 l 573 235 l h 749 1 m 682 17 l 587 47 l 515 75 l 432 113 l 357 153 l 286 196 l 214 246 l 139 307 l 258 262 l 376 224 l 481 196 l 632 164 l 693 88 l h\n";
-const LOGO_BLACK = "1755 366 m 1755 433 l 1803 433 l 1803 425 l 1765 424 l 1766 403 l 1799 403 l 1798 395 l 1766 395 l 1765 376 l 1803 375 l 1804 366 l h 1687 366 m 1687 375 l 1712 376 l 1712 433 l 1721 433 l 1721 376 l 1745 375 l 1745 366 l h 1625 366 m 1625 433 l 1635 433 l 1636 408 l 1652 408 l 1669 433 l 1680 433 l 1663 408 l 1675 400 l 1679 391 l 1679 383 l 1674 373 l 1662 366 l h 1635 376 m 1661 375 l 1669 383 l 1669 392 l 1661 399 l 1636 400 l h 1520 367 m 1481 366 l 1481 433 l 1491 433 l 1492 411 l 1519 410 l 1531 401 l 1534 394 l 1534 384 l 1531 376 l h 1491 376 m 1518 376 l 1525 386 l 1523 396 l 1515 402 l 1492 402 l h 1343 366 m 1343 433 l 1353 433 l 1354 385 l 1390 432 l 1400 433 l 1400 366 l 1390 366 l 1389 415 l 1352 366 l h 1294 366 m 1267 433 l 1278 433 l 1285 417 l 1316 417 l 1323 433 l 1333 433 l 1307 366 l h 1301 376 m 1313 407 l 1289 408 l 1288 405 l h 1206 366 m 1206 433 l 1216 433 l 1217 408 l 1233 408 l 1250 433 l 1261 433 l 1244 408 l 1252 404 l 1259 394 l 1260 384 l 1255 373 l 1242 366 l h 1216 376 m 1242 375 l 1250 382 l 1250 392 l 1242 399 l 1217 400 l 1215 398 l h 1138 366 m 1138 375 l 1162 376 l 1162 433 l 1172 433 l 1172 376 l 1196 375 l 1196 366 l h 1071 366 m 1071 433 l 1081 433 l 1082 385 l 1118 432 l 1128 433 l 1128 366 l 1118 366 l 1117 415 l 1080 366 l h 1010 366 m 1010 433 l 1058 433 l 1058 425 l 1019 424 l 1020 403 l 1053 403 l 1053 395 l 1020 395 l 1019 376 l 1058 375 l 1058 366 l h 941 366 m 941 433 l 951 433 l 951 416 l 963 403 l 987 433 l 999 433 l 970 397 l 997 366 l 984 366 l 952 402 l 951 366 l h 869 366 m 869 433 l 879 433 l 880 384 l 916 432 l 926 433 l 926 366 l 916 366 l 915 415 l 878 366 l h 820 366 m 794 433 l 804 433 l 811 417 l 843 417 l 849 433 l 860 433 l 833 366 l h 827 376 m 839 407 l 815 408 l 815 403 l h 732 366 m 732 433 l 742 433 l 743 408 l 759 408 l 776 433 l 787 433 l 770 408 l 782 400 l 786 391 l 786 383 l 781 373 l 769 366 l h 742 376 m 768 375 l 776 382 l 776 392 l 768 399 l 743 400 l h 664 366 m 664 433 l 673 433 l 673 417 l 685 403 l 709 433 l 721 433 l 692 396 l 719 366 l 707 366 l 674 402 l 673 366 l h 1571 365 m 1561 368 l 1549 378 l 1543 390 l 1542 404 l 1545 415 l 1553 426 l 1568 434 l 1581 435 l 1596 430 l 1606 421 l 1612 408 l 1612 392 l 1605 377 l 1597 370 l 1584 365 l h 1571 374 m 1589 376 l 1598 384 l 1602 392 l 1602 408 l 1598 416 l 1586 425 l 1573 426 l 1563 422 l 1555 413 l 1552 405 l 1552 394 l 1555 386 l 1561 379 l h 1428 366 m 1416 376 l 1416 390 l 1423 397 l 1453 407 l 1458 413 l 1458 418 l 1448 426 l 1436 426 l 1428 422 l 1420 412 l 1411 415 l 1417 425 l 1429 433 l 1438 435 l 1454 433 l 1461 429 l 1467 421 l 1468 411 l 1466 406 l 1455 398 l 1428 389 l 1425 386 l 1425 380 l 1432 374 l 1442 373 l 1450 376 l 1457 384 l 1466 381 l 1452 367 l 1445 365 l h 1480 0 m 1479 277 l 1683 277 l 1683 227 l 1539 227 l 1537 225 l 1537 164 l 1539 160 l 1663 160 l 1663 111 l 1539 111 l 1537 109 l 1538 51 l 1680 50 l 1680 1 l h 1051 1 m 1134 275 l 1196 274 l 1250 86 l 1305 275 l 1368 275 l 1449 1 l 1390 1 l 1336 198 l 1279 0 l 1224 1 l 1167 196 l 1113 0 l h 785 0 m 785 182 l 791 212 l 806 239 l 820 253 l 841 266 l 863 273 l 892 277 l 920 276 l 940 272 l 959 265 l 978 253 l 999 229 l 1012 193 l 1014 1 l 957 0 l 957 175 l 955 186 l 947 203 l 931 218 l 912 225 l 893 226 l 876 222 l 863 215 l 848 198 l 843 184 l 842 1 l h\n";
-const UWE_WING = "505 163 m 433 176 l 354 196 l 287 216 l 196 248 l 131 276 l 83 301 l 32 334 l 1 361 l 104 333 l 177 319 l 271 305 l 315 295 l 349 284 l 388 266 l 429 239 l 456 217 l 487 186 l h 624 1 m 577 12 l 493 38 l 426 64 l 349 100 l 285 135 l 224 173 l 164 216 l 116 256 l 219 217 l 313 187 l 416 160 l 525 138 l 581 69 l h\n";
-
-function drawOriginalLogo(x: number, top: number, width: number): string {
-  const scale = width / 1805;
-  return "q " + scale + " 0 0 -" + scale + " " + x + " " + top + " cm\n" +
-    "0.000 0.663 0.620 rg\n" + LOGO_TURQUOISE + "f*\n" +
-    "0 0 0 rg\n" + LOGO_BLACK + "f*\nQ\n";
-}
-function drawWingWatermark(): string {
-  const scale = 0.74;
-  const x = (W - 627 * scale) / 2;
-  const top = (H + 363 * scale) / 2;
-  return "q /GSWatermark gs " + scale + " 0 0 -" + scale + " " + x.toFixed(2) + " " + top.toFixed(2) + " cm\n" +
-    "0.000 0.663 0.620 rg\n" + UWE_WING + "f*\nQ\n";
-}
-
 // ---------------------------------------------------------------- colours
 
 interface Palette {
@@ -167,8 +147,8 @@ interface Palette {
   zebra: Rgb;
 }
 
-/** Legacy UWE colours (identical to uwe-pdf.js). */
-const UWE_PALETTE: Palette = {
+/** Fallback colours when the tenant has no valid primary colour. */
+const DEFAULT_PALETTE: Palette = {
   accent: "0.000 0.663 0.620",
   strong: "0.03 0.45 0.49",
   muted: "0.12 0.35 0.37",
@@ -192,7 +172,7 @@ function mix(c: [number, number, number], target: number, amount: number): [numb
 /** Palette derived from the tenant primary colour (#RRGGBB). */
 export function paletteFromPrimary(primaryColor: string | null | undefined): Palette {
   const base = hexToRgb(primaryColor ?? "");
-  if (!base) return UWE_PALETTE;
+  if (!base) return DEFAULT_PALETTE;
   return {
     accent: rgbText(base),
     strong: rgbText(mix(base, 0, 0.3)),
@@ -204,19 +184,15 @@ export function paletteFromPrimary(primaryColor: string | null | undefined): Pal
 
 // ---------------------------------------------------------------- arguments
 
-export type PdfBrand = "uwe" | "generic";
-
 export interface StatementPdfTenant {
   /** Company name used for the typographic logo and the footer. */
   name: string;
-  /** "uwe" renders the original UWE vector logo + wing watermark. */
-  brand?: PdfBrand;
-  /** #RRGGBB accent colour; ignored for the UWE brand (legacy colours). */
+  /** #RRGGBB accent colour. */
   primaryColor?: string | null;
   contact?: Partial<Pick<CompanyContact, "legalName" | "street" | "postalCode" | "city" | "phone" | "email" | "website">> | null;
-  /** Short prefix for file names, e.g. "UWE" (defaults to a cleaned company name). */
+  /** Short prefix for file names (defaults to a cleaned company name). */
   filePrefix?: string;
-  /** Uploaded company logo (generic brand only), already converted to baseline JPEG. */
+  /** Uploaded company logo, already converted to baseline JPEG. */
   logo?: StatementPdfLogo | null;
 }
 
@@ -330,8 +306,7 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   const test = args.test === true;
   if (!employee || !employee.name || !employee.personnelNumber || !/^\d{4}-\d{2}$/.test(month) || !Array.isArray(args.entries) || !args.entries.length)
     throw new Error("Für diesen Monat sind keine gültigen Arbeitszeiten zum Export vorhanden.");
-  const isUwe = tenant.brand === "uwe";
-  const pal = isUwe ? UWE_PALETTE : paletteFromPrimary(tenant.primaryColor);
+  const pal = paletteFromPrimary(tenant.primaryColor);
   const records = args.entries.map((e) => ({ ...asShift(e), note: e.note ?? "" }));
   const entries = records.slice().sort((a, b) =>
     String(a.date).localeCompare(String(b.date)) || String(a.start).localeCompare(String(b.start)) || String(a.end).localeCompare(String(b.end)));
@@ -341,15 +316,12 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   const status = args.status ?? null;
 
   const headerExtra = test ? 39 : 0;
-  const logoInfo = !isUwe && tenant.logo ? jpegInfo(tenant.logo.jpeg) : null;
+  const logoInfo = tenant.logo ? jpegInfo(tenant.logo.jpeg) : null;
   const logoSize = logoInfo ? fit(logoInfo.width, logoInfo.height, 150, 46) : null;
 
   function pageHeader(): string {
     let s = "";
-    if (isUwe) {
-      s += drawWingWatermark();
-      s += drawOriginalLogo(M, H - 15, 250);
-    } else if (logoSize) {
+    if (logoSize) {
       // Uploaded logo (top left, max. 150 × 46 pt). No company name next to it: the logo carries it
       // (owner's decision 30.10.2026); the footer still names the company.
       const [lw, lh] = logoSize;
@@ -549,13 +521,12 @@ export function createStatementPdf(args: StatementPdfArgs): Blob {
 }
 
 /**
- * File name like the legacy "UWE-Stundenzettel-<eid>-<month>.pdf"
- * (with "TEST-" for test data). Prefix: tenant.filePrefix, "UWE" for the
- * UWE brand, otherwise the cleaned company name.
+ * File name "<prefix>-Stundenzettel-<personnel number>-<month>.pdf" like the old app
+ * (with "TEST-" for test data). Prefix: tenant.filePrefix, otherwise the cleaned company name.
  */
-export function statementFileName(args: { tenant: Pick<StatementPdfTenant, "name" | "brand" | "filePrefix">; personnelNumber: string; month: ISOMonth; test?: boolean }): string {
+export function statementFileName(args: { tenant: Pick<StatementPdfTenant, "name" | "filePrefix">; personnelNumber: string; month: ISOMonth; test?: boolean }): string {
   const clean = (s: string) => String(s).replace(/[^a-zA-Z0-9_-]/g, "");
   const ascii = (s: string) => s.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss");
-  const prefix = clean(args.tenant.filePrefix ?? (args.tenant.brand === "uwe" ? "UWE" : ascii(args.tenant.name).replace(/\s+/g, "-"))).slice(0, 40) || "Zeiterfassung";
+  const prefix = clean(args.tenant.filePrefix ?? ascii(args.tenant.name).replace(/\s+/g, "-")).slice(0, 40) || "Zeiterfassung";
   return prefix + "-" + (args.test ? "TEST-" : "") + "Stundenzettel-" + clean(args.personnelNumber) + "-" + args.month + ".pdf";
 }

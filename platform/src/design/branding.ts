@@ -2,7 +2,7 @@
  * White-label support: product identity constants and runtime tenant branding.
  *
  * Product name "Schichtklar24" (subject to a trademark check). Rename it in ONE
- * place: PRODUCT_NAME below. Tenant brands (e.g. UWE) are applied via CSS
+ * place: PRODUCT_NAME below. Tenant brands are applied via CSS
  * variables – separately for the light and the dark colour scheme.
  */
 import type { Branding } from "../core/types";
@@ -223,7 +223,7 @@ export function setAssetBase(base: string): void {
   assetBase = base.endsWith("/") ? base : `${base}/`;
 }
 
-/** Resolves site-root-relative asset paths ("brands/uwe/logo.svg"); passes absolute and data: URLs through. */
+/** Resolves site-root-relative asset paths ("brands/muster/muster-logo.svg"); passes absolute and data: URLs through. */
 export function resolveAsset(url: string | null | undefined): string | null {
   if (!url) return null;
   if (/^(data:|https?:|blob:|\/)/.test(url)) return url;

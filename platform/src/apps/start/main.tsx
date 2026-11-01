@@ -82,13 +82,13 @@ function Start() {
         </Card>
         <Card title="Mandanten in der Demo" muted>
           <ul class="stack-sm" style={{ margin: 0, paddingLeft: "1.2em" }}>
-            <li><strong>Demo Krankentransporte</strong> – UWE-Markenauftritt als Mandanten-Branding, UWE-Pausenregeln, Arbeitszeitkonto pro NRW-Schuljahr mit Startsaldo –100 Std., Pilotlizenz „Kostenlos – Pilot“.</li>
+            <li><strong>Demo Krankentransporte</strong> – fiktives Logo, strenge Pausenregel (ab genau 6 bzw. 9 Stunden), Arbeitszeitkonto pro NRW-Schuljahr mit Startsaldo –100 Std., Übernahme aus der bisherigen Stunden-App, Pilotlizenz „Kostenlos – Pilot“.</li>
             <li><strong>Muster Pflegedienst GmbH</strong> – eigenes Logo und Farben, Arbeitszeitkonto pro Kalenderjahr, Standardkunde im Monatstarif (6,50 € je abrechenbarem Mitarbeiter und Monat; im 12-Monats-Abo 5,00 €, jeweils inkl. USt.).</li>
           </ul>
         </Card>
         <Card><div style={{ maxWidth: "420px" }}><ThemeSwitch hint="Wird nur auf diesem Gerät gespeichert." /></div></Card>
         <div class="row-between">
-          <p class="muted small mb-0">Die bestehende UWE Stunden-App bleibt davon unberührt.</p>
+          <p class="muted small mb-0">Die bisherige Stunden-App bleibt davon unberührt.</p>
           <Button variant="secondary" icon="refresh" onClick={reset} busy={busy}>Demo-Daten zurücksetzen</Button>
         </div>
       </div>

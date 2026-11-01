@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { legacyBackups, snapshots } from "../../../../tests/fixtures/legacy-storage";
-import { UWE_BREAK_POLICY } from "../../core/breaks";
-import { UWE_WORK_ACCOUNT_POLICY } from "../../core/workAccount";
+import { LEGACY_BREAK_POLICY } from "../../core/breaks";
+import { LEGACY_WORK_ACCOUNT_POLICY } from "../../core/workAccount";
 import type { MigrationResult } from "../../core/migration";
 import { personnelNumbersIn, planImport, readLegacyBrowserSnapshot, readSource } from "./legacyImport";
 
@@ -14,7 +14,7 @@ function ok(read: ReturnType<typeof readSource>): MigrationResult {
 }
 
 const plan = (result: MigrationResult, existing = result.entries.slice(0, 0), existingAllocations = result.allocations.slice(0, 0)) =>
-  planImport({ result, existing, existingAllocations, statements: {}, breakPolicy: UWE_BREAK_POLICY, workAccount: UWE_WORK_ACCOUNT_POLICY });
+  planImport({ result, existing, existingAllocations, statements: {}, breakPolicy: LEGACY_BREAK_POLICY, workAccount: LEGACY_WORK_ACCOUNT_POLICY });
 
 describe("legacy import planning", () => {
   it("backup v4: report before writing with month totals old vs new and allocations", () => {

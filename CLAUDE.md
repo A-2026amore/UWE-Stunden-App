@@ -1,8 +1,9 @@
 # CLAUDE.md – Arbeitsanweisungen für dieses Repository
 
 ## Projekt
-Zeiterfassung für UWE – Krankentransporte GmbH (Aachen), wird zur mandantenfähigen SaaS-Plattform
-ausgebaut. Auftraggeber: Arif Bilgen. Kommunikation mit dem Auftraggeber auf Deutsch, kurz und
+Mandantenfähige SaaS-Zeiterfassung (`platform/`, `server/`, `db/`), hervorgegangen aus der bisherigen
+Stunden-App im Repository-Stamm. Alle Firmen sind normale Kunden – auch UWE –, keine firmenspezifische
+Logik, Vorgaben oder Marken im Plattform-Code (Entscheidung 01.11.2026). Auftraggeber: Arif Bilgen. Kommunikation mit dem Auftraggeber auf Deutsch, kurz und
 verständlich; technische Details selbst entscheiden.
 
 ## Harte Grenzen
@@ -10,10 +11,14 @@ verständlich; technische Details selbst entscheiden.
   Freigabe; niemals direkt auf `main` pushen oder mergen. GitHub-Pages-Einstellungen nicht ändern.
 - Keine echten Mitarbeiterdaten in Code, Tests, Seeds, Screenshots. Repository ist öffentlich.
 - Keine Geheimnisse committen. Keine kostenpflichtigen Dienste abschließen.
-- Fachregeln nicht eigenmächtig ändern: Pausen ab genau 6 h ≥ 30 min, ab genau 9 h ≥ 45 min,
-  > 12 h nicht speichern; Arbeitszeitkonto UWE: je NRW-Schuljahr Start –100 h, Schuljahr vom ersten
-  Schultag nach bis zum letzten Schultag vor den Sommerferien; Monatsübertragung mindert nur die
+- Fachregeln nicht eigenmächtig ändern. Pausenregel und Arbeitszeitkonto sind Einstellungen je Firma:
+  Pausen gesetzlich (§4 ArbZG, mehr als 6 h ≥ 30 min, mehr als 9 h ≥ 45 min) oder wahlweise streng (ab
+  genau 6 h / 9 h), nie laxer als das Gesetz; Höchstdauer je Firma (neue Firmen 10 h, höchstens 12 h).
+  Arbeitszeitkonto standardmäßig aus; wahlweise Kalenderjahr oder NRW-Schuljahr (vom ersten Schultag nach
+  bis zum letzten Schultag vor den Sommerferien) mit Startsaldo je Firma. Monatsübertragung mindert nur die
   Abrechnungsstunden, geleistete Stunden bleiben dokumentiert. Ferientermine nie erfinden.
+  Die Regeln der alten App (`LEGACY_BREAK_POLICY`, `LEGACY_WORK_ACCOUNT_POLICY`) gibt es nur für
+  Vergleichstests und die Altdaten-Übernahme, nie als Vorgabe.
 - PDF-Nachweise mehrseitig und gut lesbar – nie alles auf eine Seite quetschen.
 - Produktive Migration, Deployment, Merge nach `main`: nur nach Freigabe.
 

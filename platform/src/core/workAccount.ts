@@ -1,7 +1,7 @@
 /**
  * Work-time account ("Arbeitszeitkonto").
  *
- * Port of the legacy uwe-arbeitszeitkonto.js. The legacy module models one
+ * Port of the legacy uwe-arbeitszeitkonto.js (old Stunden-App). The legacy module models one
  * account per NRW school year: every cycle opens at −100 h (−6000 min), runs
  * from the first school day after the summer holidays to the last school day
  * before the next summer holidays, and older cycles stay documented. The
@@ -9,7 +9,8 @@
  * are booked into the account ("allocation"); the rest is intended for
  * payroll ("billing"). The actually worked minutes are NEVER modified.
  *
- * Generalisations for the multi-tenant platform (UWE behaviour unchanged):
+ * Generalisations for the multi-tenant platform (legacy behaviour reproducible
+ * with LEGACY_WORK_ACCOUNT_POLICY):
  *  - opening balance, start month, federal state, model and approval are
  *    taken from WorkAccountPolicy;
  *  - holiday data comes from a pluggable HolidayProvider (official table +
@@ -33,7 +34,11 @@ import { activeShifts, addDays, daysInMonth, formatHours, isValidMonth, type Shi
 
 // ---------------------------------------------------------------- policy
 
-export const UWE_WORK_ACCOUNT_POLICY: WorkAccountPolicy = Object.freeze({
+/**
+ * Settings of the old Stunden-App (NRW school year, opening −100 h). Only for the equivalence
+ * tests and the import of legacy data – never a tenant default (new tenants: account disabled).
+ */
+export const LEGACY_WORK_ACCOUNT_POLICY: WorkAccountPolicy = Object.freeze({
   enabled: true,
   model: "school-year",
   openingMinutes: -6000,

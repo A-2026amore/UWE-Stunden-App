@@ -1,16 +1,18 @@
 /**
  * Break (pause) rules per working day.
  *
- * Port of the legacy uwe-break-rules.js with the thresholds generalised into
- * a tenant BreakPolicy. With UWE_BREAK_POLICY every output is identical to the
- * legacy module (proven by breaks.equivalence.test.ts).
+ * Port of the legacy uwe-break-rules.js (old Stunden-App in the repository root)
+ * with the thresholds generalised into a tenant BreakPolicy. Every function
+ * takes the tenant's policy – there is no built-in default. With
+ * LEGACY_BREAK_POLICY every output is identical to the legacy module (proven by
+ * breaks.test.ts).
  *
  * Saved hours are never changed automatically – these functions only
  * evaluate and suggest.
  *
  * Legal notes:
- *  - UWE applies the 30/45 minute thresholds from EXACTLY 6:00 / 9:00 hours
- *    of gross shift time ("ab genau 6 Stunden", rule "strict"). §4 ArbZG
+ *  - Rule "strict" applies the 30/45 minute thresholds from EXACTLY 6:00 / 9:00
+ *    hours of gross shift time ("ab genau 6 Stunden", like the old app). §4 ArbZG
  *    requires breaks for working time of MORE THAN 6 / 9 hours (rule
  *    "statutory", 361 / 541). Tenants choose one of both; nothing laxer than
  *    the statute is accepted (validateBreakPolicy, DB migration 0014).
@@ -18,7 +20,7 @@
  *    crosses midnight counts completely for its start date.
  *  - Gaps of ≥ 15 minutes between separate same-day blocks count as rest
  *    (they are unpaid anyway); overnight blocks never contribute gap time.
- *  - The 12-hour limit (`maxShiftMinutes`) applies to the sum of gross time
+ *  - The shift limit (`maxShiftMinutes`, tenant setting) applies to the sum of gross time
  *    per date. Daily maximum working time under §3 ArbZG (8 h, up to 10 h)
  *    is NOT checked – unchanged from legacy.
  */
@@ -28,7 +30,7 @@ import { grossMinutes, parseClock } from "./time";
 /**
  * The two selectable break rules. Thresholds are inclusive (`gross >= minGrossMinutes`):
  *  - "statutory": wording of §4 ArbZG – MORE THAN 6 h → 30 min, MORE THAN 9 h → 45 min (361 / 541).
- *  - "strict":    UWE company rule – FROM EXACTLY 6 h / 9 h (360 / 540), stricter than the statute.
+ *  - "strict":    optional company rule – FROM EXACTLY 6 h / 9 h (360 / 540), stricter than the statute.
  */
 export type BreakRuleKind = "statutory" | "strict";
 
@@ -47,7 +49,7 @@ export const BREAK_RULE_THRESHOLDS: Readonly<Record<BreakRuleKind, BreakPolicy["
  * tests/db/break-policy.test.ts fails while both differ.
  */
 export const NEW_TENANT_BREAK_RULE: BreakRuleKind = "statutory";
-/** Maximum shift length for new tenants (§3 ArbZG: 10 h). UWE keeps 12 h. */
+/** Maximum shift length for new tenants (§3 ArbZG: 10 h); tenants may configure up to 12 h. */
 export const NEW_TENANT_MAX_SHIFT_MINUTES = 600;
 
 /** Statutory minimum (§4 ArbZG) that no tenant configuration may fall below. */
@@ -56,7 +58,11 @@ export const STATUTORY_MINIMUM = Object.freeze({
   minPauseSegmentMinutes: 15,
 });
 
-export const UWE_BREAK_POLICY: BreakPolicy = Object.freeze({
+/**
+ * Rules of the old Stunden-App (legacy code in the repository root): strict 6 h / 9 h, 12 h limit.
+ * Only for the equivalence tests and for checking imported legacy data – never a tenant default.
+ */
+export const LEGACY_BREAK_POLICY: BreakPolicy = Object.freeze({
   thresholds: BREAK_RULE_THRESHOLDS.strict,
   maxShiftMinutes: 720,
   minPauseSegmentMinutes: 15,
@@ -145,7 +151,7 @@ export function requiredPauseText(day: DayEvaluation, policy: BreakPolicy): stri
 }
 
 /** Required pause for the given gross minutes (thresholds are inclusive). */
-export function necessaryPause(gross: number, policy: BreakPolicy = UWE_BREAK_POLICY): number {
+export function necessaryPause(gross: number, policy: BreakPolicy): number {
   if (!Number.isFinite(gross) || gross <= 0) return 0;
   let required = 0;
   for (const t of policy.thresholds) {
@@ -166,7 +172,7 @@ function hoursWord(minutes: number): string {
 export function evaluateDay(
   shifts: readonly (ShiftLike | null | undefined)[] | null | undefined,
   date: ISODate,
-  policy: BreakPolicy = UWE_BREAK_POLICY,
+  policy: BreakPolicy,
 ): DayEvaluation {
   const segment = policy.minPauseSegmentMinutes;
   const max = policy.maxShiftMinutes;
@@ -242,7 +248,7 @@ export function evaluateDay(
 export function suggestedPause(
   candidate: ShiftLike | null | undefined,
   saved: readonly (ShiftLike | null | undefined)[] | null | undefined,
-  policy: BreakPolicy = UWE_BREAK_POLICY,
+  policy: BreakPolicy,
 ): number | null {
   if (!candidate || !candidate.date || !Number.isFinite(grossMinutes(candidate))) return null;
   const id = typeof candidate.id === "string" && candidate.id ? candidate.id : null;
@@ -254,7 +260,7 @@ export function suggestedPause(
 }
 
 /** German problem text for a day ("" when fine). Legacy `issueForDay`. */
-export function issueForDay(day: DayEvaluation, policy: BreakPolicy = UWE_BREAK_POLICY): string {
+export function issueForDay(day: DayEvaluation, policy: BreakPolicy): string {
   if (!day.valid) return day.reason ?? "";
   const missing = day.missing ?? 0;
   if (missing > 0) {
@@ -280,7 +286,7 @@ export interface DayIssue {
 export function errorsForMonth(
   shifts: readonly (ShiftLike | null | undefined)[] | null | undefined,
   month: ISOMonth,
-  policy: BreakPolicy = UWE_BREAK_POLICY,
+  policy: BreakPolicy,
 ): DayIssue[] {
   const dates = [...new Set((shifts || [])
     .filter((x): x is ShiftLike => !!x && !!x.date && x.date.slice(0, 7) === month)

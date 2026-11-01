@@ -372,9 +372,9 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
   const toggleLegacyImport = async () => {
     const enable = !t.legacyImportEnabled;
     const reason = await dialogs.askReason({
-      title: enable ? "Übernahme aus der bisherigen UWE-App anbieten?" : "Übernahme aus der bisherigen UWE-App ausblenden?",
+      title: enable ? "Übernahme aus der bisherigen Stunden-App anbieten?" : "Übernahme aus der bisherigen Stunden-App ausblenden?",
       message: enable
-        ? "Die Mitarbeitenden dieses Mandanten sehen im Profil „Daten aus der bisherigen UWE-App übernehmen“. Nur für Firmen, die die alte UWE Stunden-App genutzt haben."
+        ? "Die Mitarbeitenden dieses Mandanten sehen im Profil „Daten aus der bisherigen Stunden-App übernehmen“. Nur für Firmen, die die bisherige Stunden-App genutzt haben."
         : "Die Mitarbeitenden sehen die Übernahme nicht mehr. Bereits übernommene Zeiten bleiben unverändert.",
       confirmLabel: enable ? "Anbieten" : "Ausblenden", danger: false,
     });
@@ -422,7 +422,7 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
             <dt>Mitarbeitende</dt><dd>{o.activeEmployeeCount} aktiv / {o.employeeCount} gesamt</dd>
             <dt>Arbeitszeitkonto</dt><dd>{t.settings.workAccount.enabled ? (t.settings.workAccount.model === "school-year" ? "Schuljahr" : "Kalenderjahr") : "deaktiviert"}</dd>
             <dt>Demo-Daten</dt><dd>{t.isDemo ? "ja" : "nein"}</dd>
-            <dt>Übernahme aus alter UWE-App</dt><dd data-testid="tenant-legacy-import">{t.legacyImportEnabled ? "angeboten" : "ausgeblendet"}</dd>
+            <dt>Übernahme aus alter Stunden-App</dt><dd data-testid="tenant-legacy-import">{t.legacyImportEnabled ? "angeboten" : "ausgeblendet"}</dd>
           </dl>
           {!readOnly && (
             <div class="btn-row" style={{ marginTop: "var(--space-4)" }}>
@@ -436,7 +436,7 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
           {!readOnly && (
             <div style={{ marginTop: "var(--space-3)" }}>
               <Button variant="secondary" size="sm" icon="upload" onClick={toggleLegacyImport}>
-                {t.legacyImportEnabled ? "Übernahme aus alter UWE-App ausblenden" : "Übernahme aus alter UWE-App anbieten"}
+                {t.legacyImportEnabled ? "Übernahme aus alter Stunden-App ausblenden" : "Übernahme aus alter Stunden-App anbieten"}
               </Button>
             </div>
           )}

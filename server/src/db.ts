@@ -17,7 +17,7 @@ export function createPool(connectionString: string, max = 10): pg.Pool {
     max,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
-    application_name: "uwe-zeit-api",
+    application_name: "zeiterfassung-api",
     types: {
       getTypeParser(oid: number, format?: string) {
         // date → keep "YYYY-MM-DD" (no timezone shifts through JS Date)

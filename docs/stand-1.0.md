@@ -27,7 +27,7 @@ Feature-Branches gehen per Draft-PR nach `release/1.0`. Nichts geht ohne Freigab
 - Bisherige Stunden müssen nicht übernommen werden; produktive Daten nie löschen oder ändern.
 
 ## Offene Entscheidungen
-- Pausenschwelle: entschieden 28.10.2026 – neue Mandanten gesetzlich, UWE streng (umgesetzt).
+- Pausenschwelle: entschieden 28.10.2026 – neue Mandanten gesetzlich, „streng“ wahlweise je Firma (umgesetzt; seit 01.11.2026 keine UWE-Sonderregel mehr im Code).
 - N1: entschieden 28.10.2026 – Korrektur nach Freigabe nur nach dokumentierter Wiederöffnung (Begründung) und erneuter
   Freigabe; Zahlen werden neu berechnet; Abrechnung bleibt unverändert. Umgesetzt in `feature/wiedereroeffnung-rechnungen`
   (Migration 0017), siehe `docs/database.md`.

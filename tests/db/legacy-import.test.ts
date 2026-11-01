@@ -1,5 +1,5 @@
 /**
- * Migration 0024: tenants.legacy_import_enabled – the import from the old UWE app is offered
+ * Migration 0024: tenants.legacy_import_enabled – the import from the old Stunden-App is offered
  * only where the platform switched it on; only super admins change it (with reason, audited).
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

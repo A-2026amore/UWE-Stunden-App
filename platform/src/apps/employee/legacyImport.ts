@@ -1,5 +1,5 @@
 /**
- * Legacy import of the employee app ("Daten aus der bisherigen UWE-App übernehmen").
+ * Legacy import of the employee app ("Daten aus der bisherigen Stunden-App übernehmen").
  *
  * Pure planning logic: reads a legacy backup (v2–v4) or the legacy
  * localStorage keys of the same origin with the core migration
@@ -97,7 +97,7 @@ export function readSource(source: ImportSource, target: ImportTarget, now?: str
     }
     const result = parseLegacyBackup(source.text, opts);
     if (eid === null || (result.report.entriesRead === 0 && result.report.invalid.some((i) => i.key === "backup"))) {
-      return { ok: false, reason: "Die Datei ist keine gültige Sicherung der bisherigen UWE-App (Version 2 bis 4).", report: result.report };
+      return { ok: false, reason: "Die Datei ist keine gültige Sicherung der bisherigen Stunden-App (Version 2 bis 4).", report: result.report };
     }
     return { ok: true, result, personnelNumber: eid, otherPersonnelNumbers: [] };
   }
@@ -108,7 +108,7 @@ export function readSource(source: ImportSource, target: ImportTarget, now?: str
       ok: false,
       reason: numbers.length
         ? `In diesem Browser liegen nur Daten anderer Personalnummern (${numbers.join(", ")}). Es werden ausschließlich Daten zu deiner Personalnummer ${target.personnelNumber} übernommen.`
-        : "In diesem Browser wurden keine Daten der bisherigen UWE-App gefunden.",
+        : "In diesem Browser wurden keine Daten der bisherigen Stunden-App gefunden.",
     };
   }
   const mine: Record<string, string> = {};

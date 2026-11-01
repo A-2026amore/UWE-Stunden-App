@@ -17,7 +17,7 @@ export type UUID = string;
 export interface Branding {
   /** Public URL or data: URL of the company logo. Null → neutral product logo. */
   logoUrl: string | null;
-  /** Small mark used as watermark / app icon (e.g. the UWE wing). */
+  /** Small mark used as watermark / app icon (e.g. a logo symbol). */
   markUrl: string | null;
   /** Hex colours, validated as #RRGGBB. */
   primaryColor: string;
@@ -46,9 +46,9 @@ export interface BreakThreshold {
 }
 
 export interface BreakPolicy {
-  /** UWE: [{360,30},{540,45}] – thresholds are inclusive ("ab genau 6 Stunden"). */
+  /** E.g. [{361,30},{541,45}] (§4 ArbZG) – thresholds are inclusive (`gross >= minGrossMinutes`). */
   thresholds: BreakThreshold[];
-  /** UWE: 720 – longer shifts / days must not be saved. */
+  /** E.g. 600 – longer shifts / days must not be saved. */
   maxShiftMinutes: number;
   /** Pause pieces shorter than this do not count as statutory break (§4 ArbZG: 15). */
   minPauseSegmentMinutes: number;
@@ -59,11 +59,11 @@ export type WorkAccountModel = "school-year" | "calendar-year";
 export interface WorkAccountPolicy {
   enabled: boolean;
   model: WorkAccountModel;
-  /** Opening balance per cycle in minutes. UWE: -6000 (= –100 h). */
+  /** Opening balance per cycle in minutes, e.g. -6000 (= –100 h). */
   openingMinutes: number;
   /** German federal state code for school holidays, e.g. "NW". */
   federalState: string | null;
-  /** First month in which allocations are possible (UWE: "2026-09"). */
+  /** First month in which allocations are possible, e.g. "2026-09". */
   startMonth: ISOMonth;
   /** Monthly allocations require manager approval before they are final. */
   approvalRequired: boolean;
@@ -95,7 +95,7 @@ export interface Tenant {
   retentionMonthsAfterExit?: number | null;
   /**
    * Platform setting (0024, super_admin only): the employee app offers the import from the old
-   * UWE Stunden-App. Missing = false – only the former UWE customer needs it.
+   * Stunden-App. Missing = false (default for every tenant).
    */
   legacyImportEnabled?: boolean;
 }

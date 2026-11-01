@@ -55,7 +55,7 @@ function refusal(e: unknown): never {
 }
 
 async function withOwnerTx<T>(url: string, fn: (c: pg.Client) => Promise<T>): Promise<T> {
-  const c = new pg.Client({ connectionString: url, application_name: "uwe-zeit-cli" });
+  const c = new pg.Client({ connectionString: url, application_name: "zeiterfassung-cli" });
   await c.connect();
   try {
     await c.query("begin");

@@ -54,8 +54,9 @@ bereitgestellt. Das ist Teil der Produktivfreigabe.
 ## Import-Oberfläche in der Mitarbeiter-App (Demo-Build umgesetzt)
 
 Nur sichtbar, wenn der Super-Admin die Übernahme für den Mandanten freigeschaltet hat (Mandant → „Übernahme aus alter
-UWE-App anbieten“, Migration 0024; für UWE bei Einführung automatisch an, für alle anderen Firmen aus).
-Pfad: **Profil → „Daten aus der bisherigen UWE-App übernehmen“** (`#/einstellungen/import`,
+Stunden-App anbieten“, Migration 0024; Standard aus). Migration 0024 hat sie einmalig für bestehende Mandanten mit „UWE“
+im Namen eingeschaltet; danach entscheidet nur noch der Super-Admin – der Code kennt keine Firma.
+Pfad: **Profil → „Daten aus der bisherigen Stunden-App übernehmen“** (`#/einstellungen/import`,
 Code `platform/src/apps/employee/pages/LegacyImport.tsx`, Logik `platform/src/apps/employee/legacyImport.ts`).
 
 1. **Quelle wählen**

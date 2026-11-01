@@ -1,5 +1,5 @@
 /**
- * Lossless migration of legacy UWE Stunden-App data (browser localStorage
+ * Lossless migration of data of the old Stunden-App (browser localStorage
  * snapshots and backup files v2–v4) into platform records.
  *
  * Guarantees:
@@ -14,7 +14,7 @@
  *    they are counted in `report.duplicatesSkipped`.
  */
 import type { ISOMonth, MonthAllocation, TimeEntry, UUID } from "./types";
-import { errorsForMonth } from "./breaks";
+import { LEGACY_BREAK_POLICY, errorsForMonth } from "./breaks";
 import { findOverlap, isRealDate, isValidEntry, isValidMonth, legacyEntryId, legacyFingerprint } from "./time";
 
 export const LEGACY_HOURS_PREFIX = "uwe_hours_2_";
@@ -275,7 +275,7 @@ function addPlausibilityWarnings(entries: TimeEntry[], report: MigrationReport):
     const shifts = list.map((e) => ({ id: e.id, date: e.date, start: e.start, end: e.end, pause: e.pauseMinutes }));
     const months = [...new Set(shifts.map((s) => s.date.slice(0, 7)))].sort();
     for (const month of months) {
-      for (const issue of errorsForMonth(shifts, month))
+      for (const issue of errorsForMonth(shifts, month, LEGACY_BREAK_POLICY))
         report.warnings.push("Pausenhinweis (" + employeeId + ", " + issue.date + "): " + issue.message);
     }
     for (const s of shifts) {

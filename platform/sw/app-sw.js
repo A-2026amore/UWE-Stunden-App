@@ -7,7 +7,7 @@
  *  - Never touches /api/ requests, other origins or non-GET requests.
  *  - Caches only the built app shell (precache list generated at build time).
  *  - Cache names start with "stundenwerk-app-"; only own old versions are deleted.
- *  - Other code on the same origin may delete our cache (the legacy UWE app's
+ *  - Other code on the same origin may delete our cache (the old Stunden-App's
  *    service worker deletes every foreign cache when it updates). Missing
  *    entries are therefore re-cached on every app start and on cache misses.
  *  - A new version waits until the user chooses "Neue Version verfügbar – neu laden".

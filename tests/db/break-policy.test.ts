@@ -25,7 +25,7 @@ describe("break policy vs. §4 ArbZG", () => {
     expect(rows[0].bp).toEqual(defaultBreakPolicy());
   });
 
-  it("seed: UWE replica keeps the strict rule, the generic tenant the statutory one", async () => {
+  it("seed: \"Demo Krankentransporte\" uses the optional strict rule, the other tenant the statutory one", async () => {
     const { rows } = await db.admin.query("select slug, settings #> '{breakPolicy,thresholds}' as t from public.tenants order by slug");
     expect(rows).toEqual([
       { slug: "demo-krankentransporte", t: BREAK_RULE_THRESHOLDS.strict },

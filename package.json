@@ -2,7 +2,7 @@
   "name": "zeiterfassung-plattform",
   "private": true,
   "version": "0.1.0",
-  "description": "Mandantenfähige Zeiterfassungsplattform (Arbeitstitel), hervorgegangen aus der UWE Stunden-App",
+  "description": "Mandantenfähige Zeiterfassungsplattform",
   "type": "module",
   "engines": {
     "node": ">=20"

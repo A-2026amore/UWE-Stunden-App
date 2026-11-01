@@ -6,10 +6,6 @@ import { summarizeMonth } from "../../core/workAccount";
 import type { Employee, MonthAllocation, MonthlyStatement, Tenant, TimeEntry } from "../../core/types";
 import { downloadBlob } from "./format";
 
-export function isUweBrand(tenant: Tenant): boolean {
-  return !!tenant.branding.logoUrl && /(^|\/)brands\/uwe\//.test(tenant.branding.logoUrl);
-}
-
 // ---------------------------------------------------------------- company logo for the PDF
 
 /** Converted logos by logo URL (null = could not be converted → typographic logo). */
@@ -54,18 +50,17 @@ async function rasterLogo(src: string): Promise<StatementPdfLogo | null> {
 /**
  * Converts the tenant logo once (async: image decoding) so that buildStatement
  * can stay synchronous – the share sheet must open directly in the click.
- * The UWE brand uses its vector logo and needs nothing.
  */
 export async function preparePdfLogo(tenant: Tenant): Promise<void> {
   const url = tenant.branding.logoUrl;
-  if (!url || isUweBrand(tenant) || logoCache.has(url) || typeof document === "undefined") return;
+  if (!url || logoCache.has(url) || typeof document === "undefined") return;
   const src = resolveAsset(url);
   logoCache.set(url, src ? await rasterLogo(src) : null);
 }
 
 function pdfLogo(tenant: Tenant): StatementPdfLogo | null {
   const url = tenant.branding.logoUrl;
-  return url && !isUweBrand(tenant) ? logoCache.get(url) ?? null : null;
+  return url ? logoCache.get(url) ?? null : null;
 }
 
 /** Chef-Portal: logo conversion + PDF in one step (download, no share sheet). */
@@ -81,8 +76,7 @@ export function buildStatement(args: {
   const { tenant, employee, month } = args;
   const policy = tenant.settings.workAccount;
   const summary = summarizeMonth({ entries: activeShifts(args.entries), allocations: args.allocations, month, policy });
-  const brand = isUweBrand(tenant) ? "uwe" : "generic";
-  const pdfTenant: StatementPdfArgs["tenant"] = { name: tenant.name, brand, primaryColor: tenant.branding.primaryColor, contact: tenant.contact, logo: pdfLogo(tenant) };
+  const pdfTenant: StatementPdfArgs["tenant"] = { name: tenant.name, primaryColor: tenant.branding.primaryColor, contact: tenant.contact, logo: pdfLogo(tenant) };
   const account: StatementPdfArgs["account"] = policy.enabled && summary.cycle
     ? {
         cycleLabel: summary.cycle.label,

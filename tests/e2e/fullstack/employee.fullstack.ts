@@ -130,7 +130,7 @@ test("service worker: caches only the app shell, re-caches after foreign deletio
   const scope = await page.evaluate(async () => (await navigator.serviceWorker.getRegistration())?.scope);
   expect(new URL(scope!).pathname).toBe("/app/");
 
-  // Another app on the same origin (e.g. the legacy UWE service worker) deletes our cache …
+  // Another app on the same origin (e.g. the service worker of the old Stunden-App) deletes our cache …
   await page.evaluate(async () => { for (const k of await caches.keys()) await caches.delete(k); });
   expect((await cacheState()).keys).toEqual([]);
   // … the next app start fills it again.

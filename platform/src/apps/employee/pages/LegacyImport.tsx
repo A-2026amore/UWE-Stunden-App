@@ -76,12 +76,12 @@ export function LegacyImportPage() {
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { setRefusal({ reason: "Die Datei ist zu groß für eine Sicherung der bisherigen UWE-App." }); return; }
+    if (file.size > 5 * 1024 * 1024) { setRefusal({ reason: "Die Datei ist zu groß für eine Sicherung der bisherigen Stunden-App." }); return; }
     const text = await file.text();
     await analyse({ kind: "backup", fileName: file.name, text }, `Sicherungsdatei „${file.name}“`);
   };
 
-  const onBrowser = () => analyse({ kind: "browser", snapshot: browserSnapshot() }, "Daten der bisherigen UWE-App in diesem Browser");
+  const onBrowser = () => analyse({ kind: "browser", snapshot: browserSnapshot() }, "Daten der bisherigen Stunden-App in diesem Browser");
 
   const confirmImport = async () => {
     if (!analysis) return;
@@ -124,7 +124,7 @@ export function LegacyImportPage() {
     <div class="stack">
       <div>
         <a href="#/einstellungen" class="small">← Zurück zu den Einstellungen</a>
-        <h1 class="page-title" style={{ marginTop: "var(--space-2)" }}>Daten aus der bisherigen UWE-App übernehmen</h1>
+        <h1 class="page-title" style={{ marginTop: "var(--space-2)" }}>Daten aus der bisherigen Stunden-App übernehmen</h1>
         <p class="muted small page-sub">Du siehst zuerst einen Bericht. Erst nach deiner Bestätigung wird etwas gespeichert. Die Daten der bisherigen App werden nur gelesen – nie geändert oder gelöscht.</p>
       </div>
 

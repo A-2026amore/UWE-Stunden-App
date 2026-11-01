@@ -4,6 +4,19 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
+### Geändert
+- Keine UWE-Sonderlogik mehr in der Plattform (Entscheidung 01.11.2026: UWE wird ein normaler Kunde):
+  - Pausenfunktionen haben keine eingebaute Vorgabe mehr; es gilt immer die Regel der Firma, ohne geladene
+    Firma die gesetzliche Standardregel. Die Regeln der alten App heißen `LEGACY_BREAK_POLICY` /
+    `LEGACY_WORK_ACCOUNT_POLICY` und dienen nur Vergleichstests und der Altdaten-Übernahme.
+  - PDF-Nachweis: kein fest eingebautes UWE-Logo und kein UWE-Flügel mehr; jede Firma erscheint mit ihrem
+    hochgeladenen Logo oder ihrem Namen. Dateiname ohne festes „UWE“ (Firmenname bzw. eigenes Kürzel).
+  - Demo-Mandant „Demo Krankentransporte“ mit fiktivem Logo und Slogan statt der UWE-Marke
+    (`brands/uwe/` entfernt; gespeicherte Demo-Daten werden beim Laden umgestellt).
+  - „Daten aus der bisherigen Stunden-App übernehmen“ neutral benannt; weiterhin nur, wenn der Super-Admin es
+    für eine Firma einschaltet.
+  - CLAUDE.md, Architektur- und Fachdoku: Pausenregel und Arbeitszeitkonto als Einstellungen je Firma.
+
 ### Hinzugefügt
 - Arbeitsvertrag je Mitarbeiter mit Soll/Ist und Arbeitszeitkonto (31.10.2026, Migration
   `0025_employment_contracts.sql`, Logik `platform/src/core/employment.ts`):

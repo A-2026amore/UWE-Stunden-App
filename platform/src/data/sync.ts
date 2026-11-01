@@ -27,7 +27,7 @@ import type {
   BreakPolicy, Employee, ISOMonth, MonthAllocation, MonthlyStatement, ShiftLike, Tenant, TimeEntry, UUID,
 } from "../core/types";
 import { activeShifts, findOverlapAcrossDays, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
-import { UWE_BREAK_POLICY, evaluateDay, issueForDay } from "../core/breaks";
+import { defaultBreakPolicy, evaluateDay, issueForDay } from "../core/breaks";
 import { validateAllocation } from "../core/workAccount";
 import { AccessDeniedError, ConflictError, type NewTimeEntry, type Repository, type Session } from "./repository";
 
@@ -132,7 +132,7 @@ export function isNetworkError(e: unknown): boolean {
 export function validateEntryLocally(
   candidate: { id: string; date: string; start: string; end: string; pauseMinutes: number; note: string },
   others: readonly ShiftLike[],
-  policy: BreakPolicy = UWE_BREAK_POLICY,
+  policy: BreakPolicy,
 ): void {
   if (!isRealDate(candidate.date)) throw new Error("Bitte ein gültiges Datum wählen.");
   if (!Number.isFinite(parseClock(candidate.start)) || !Number.isFinite(parseClock(candidate.end))) throw new Error("Bitte Arbeitsbeginn und Ende im Format HH:MM eintragen.");
@@ -316,7 +316,7 @@ export function createSyncingRepository(inner: Repository, opts: SyncOptions): S
     return [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
   }
   function breakPolicy(st: UserState): BreakPolicy {
-    return st.tenant?.settings.breakPolicy ?? UWE_BREAK_POLICY;
+    return st.tenant?.settings.breakPolicy ?? defaultBreakPolicy();
   }
   function assertMonthOpen(st: UserState, month: ISOMonth) {
     const stmt = st.statements[month];

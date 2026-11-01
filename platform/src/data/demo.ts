@@ -22,6 +22,7 @@
  * shows the current code without an app (docs/security.md, "Demo").
  */
 import type {
+  BreakPolicy,
   AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, Branding, CompanyContact, CorrectionRequest,
   Employee, EmploymentContract, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, PromoCode, PromoRedemption, Tenant,
   ContractAcceptance, StatementEvent, SubscriptionInterval, SubscriptionTerm, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
@@ -41,8 +42,8 @@ import {
   type Invoice, type InvoiceDraft, type InvoiceSettings,
 } from "../core/invoice";
 import { retentionEndsAt, type ExportPerson, type ExportRecords, type ExportTimeEntry, type PersonalDataExport, type TenantDataExport } from "../core/privacy";
-import { UWE_BREAK_POLICY, defaultBreakPolicy, evaluateDay, issueForDay, validateBreakPolicy } from "../core/breaks";
-import { UWE_WORK_ACCOUNT_POLICY, summarizeMonth, validateAllocation } from "../core/workAccount";
+import { defaultBreakPolicy, evaluateDay, issueForDay, thresholdsFor, validateBreakPolicy } from "../core/breaks";
+import { summarizeMonth, validateAllocation } from "../core/workAccount";
 import { validateEmploymentInput } from "../core/employment";
 import {
   AccessDeniedError, ConflictError, TwoFactorRequiredError,
@@ -346,7 +347,7 @@ export function validateLogoDataUrl(url: string): void {
 // ------------------------------------------------------------------ seed
 
 // New tenants (and the generic demo tenant, like db/seed.sql) get the default
-// rule from core/breaks.ts; only the UWE replica keeps the strict UWE rule.
+// rule from core/breaks.ts; "Demo Krankentransporte" shows the optional strict rule.
 function defaultSettings(): TenantSettings {
   return {
     breakPolicy: defaultBreakPolicy(),
@@ -355,7 +356,7 @@ function defaultSettings(): TenantSettings {
 }
 
 type Pattern = Array<[string, string, number]>;
-// All patterns satisfy the strict UWE break rules (≥ 6 h → 30 min, ≥ 9 h → 45 min, gaps ≥ 15 min count),
+// All patterns satisfy the strict break rule (≥ 6 h → 30 min, ≥ 9 h → 45 min, gaps ≥ 15 min count),
 // hence also the statutory rule of the generic tenant.
 const KT_PATTERNS: Pattern[] = [
   [["06:30", "14:45", 30]],
@@ -372,27 +373,35 @@ const PFLEGE_PATTERNS: Pattern[] = [
   [["07:00", "12:00", 0]],
 ];
 
+const DEMO_KT_LOGO = "brands/demo-kt/demo-kt-logo.svg";
+const DEMO_KT_MARK = "brands/demo-kt/demo-kt-mark.svg";
+const DEMO_KT_SLOGAN = "Sicher ans Ziel.";
+
 function seedDb(now: Date): DemoDb {
   const created = new Date(now.getTime() - 60 * 86400000).toISOString();
   const today = localISODate(now);
   const currentMonth = monthOf(today);
   const previousMonth = shiftMonth(currentMonth, -1);
 
-  const ktPolicy: WorkAccountPolicy = { ...UWE_WORK_ACCOUNT_POLICY, approvalRequired: true };
+  // Fictional company showing the optional settings: strict break rule, 12 h limit, school-year account.
+  const ktBreaks: BreakPolicy = { thresholds: thresholdsFor("strict"), maxShiftMinutes: 720, minPauseSegmentMinutes: 15 };
+  const ktPolicy: WorkAccountPolicy = {
+    enabled: true, model: "school-year", openingMinutes: -6000, federalState: "NW", startMonth: "2026-09", approvalRequired: true,
+  };
   const tenants: Tenant[] = [
     {
       id: DEMO_TENANT_IDS.kt, slug: "demo-krankentransporte", name: "Demo Krankentransporte", status: "active", isDemo: true,
       branding: {
-        logoUrl: "brands/uwe/uwe-logo.svg", markUrl: "brands/uwe/uwe-fluegel.svg",
-        primaryColor: "#087f89", secondaryColor: "#19363c", accentColor: "#00a99e", slogan: "Verantwortung, die bewegt.",
+        logoUrl: DEMO_KT_LOGO, markUrl: DEMO_KT_MARK,
+        primaryColor: "#087f89", secondaryColor: "#19363c", accentColor: "#00a99e", slogan: DEMO_KT_SLOGAN,
       },
       contact: {
         legalName: "Demo Krankentransporte GmbH (fiktiv)", street: "Beispielstraße 1", postalCode: "52062", city: "Aachen",
         phone: "0241 000 000 00", whatsapp: "492410000000", email: "kontakt@demo-kt.example", website: "https://demo-kt.example",
         contactPerson: "Chef Demo",
       },
-      settings: { breakPolicy: clone(UWE_BREAK_POLICY), workAccount: ktPolicy },
-      // Plays the former UWE customer: the import from the old app is offered (0024).
+      settings: { breakPolicy: ktBreaks, workAccount: ktPolicy },
+      // Shows the import from the old Stunden-App (super-admin setting, 0024).
       legacyImportEnabled: true,
     },
     {
@@ -608,7 +617,11 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     };
     db.invoiceCounters ??= {};
     db.invoices ??= [];
-    // Import from the old UWE app (0024): stored demo databases from before keep it for the UWE-like demo tenant.
+    // Neutral demo brand (no real company's logo): stored demo databases from before get the new files.
+    for (const t of db.tenants) {
+      if (t.branding.logoUrl?.startsWith("brands/uwe/")) t.branding = { ...t.branding, logoUrl: DEMO_KT_LOGO, markUrl: DEMO_KT_MARK, slogan: DEMO_KT_SLOGAN };
+    }
+    // Import from the old Stunden-App (0024): stored demo databases from before keep it for "Demo Krankentransporte".
     for (const t of db.tenants) if (t.legacyImportEnabled === undefined) t.legacyImportEnabled = t.id === DEMO_TENANT_IDS.kt;
     // Subscriptions (0023), like the migration: no trial for existing tenants (window empty), monthly term from the month of creation.
     db.billingSettings = { ...DEFAULT_BILLING_SETTINGS, ...db.billingSettings };

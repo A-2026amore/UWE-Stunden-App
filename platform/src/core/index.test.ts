@@ -6,8 +6,8 @@ describe("core public API", () => {
     const names = [
       "parseClock", "grossMinutes", "netMinutes", "timeWindow", "overlaps", "findOverlap", "findOverlapAcrossDays",
       "formatHours", "parseHours", "formatDateDE", "monthLabelDE", "isValidEntry",
-      "UWE_BREAK_POLICY", "necessaryPause", "evaluateDay", "suggestedPause", "issueForDay", "errorsForMonth",
-      "UWE_WORK_ACCOUNT_POLICY", "NRW_SUMMER_HOLIDAYS", "schoolYearCycle", "cycleForDate", "cycleStatusForMonth",
+      "LEGACY_BREAK_POLICY", "necessaryPause", "evaluateDay", "suggestedPause", "issueForDay", "errorsForMonth",
+      "LEGACY_WORK_ACCOUNT_POLICY", "NRW_SUMMER_HOLIDAYS", "schoolYearCycle", "cycleForDate", "cycleStatusForMonth",
       "summarizeMonth", "cycleBalances", "validateAllocation", "invalidAllocations",
       "migrateLegacySnapshot", "parseLegacyBackup", "createStatementPdf", "statementFileName",
     ];

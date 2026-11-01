@@ -16,7 +16,7 @@ test("employee: pause starts empty, hint names the minimum, too short pause is n
   await expect(pauseField(page)).toHaveValue("");
 
   await fillEntry(page, { date: FREE_DAY, start: "08:00", end: "14:00", note: "E2E Pause" });
-  // UWE replica (strict rule): from exactly 6 h.
+  // "Demo Krankentransporte" (strict rule): from exactly 6 h.
   await expect(hint(page)).toContainText("Für diesen Tag (6,00 Std. Einsatzzeit) sind mindestens 30 Minuten Pause vorgeschrieben (Regel: ab 6 Stunden).");
   await expect(hint(page)).toContainText("Trage nur die Pause ein, die du tatsächlich genommen hast.");
   await expect(hint(page)).not.toContainText("Vorschlag");
