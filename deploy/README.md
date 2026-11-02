@@ -240,6 +240,29 @@ Link (`cli.ts invite-link …`) oder eine eigene Testadresse über `--admin-emai
 Die Demo-Daten aus `db/seed.sql` (`MIGRATE_SEED=1`) sind eine Alternative für reine Vorführungen; beide zusammen
 sind möglich.
 
+## Produktion `app.schichtklar24.de` (eigene, leere Umgebung)
+
+Getrennt von der Testumgebung: Checkout `/srv/stunden-prod`, Container `stunden-prod-app` / `stunden-prod-db`,
+eigenes Datenbank-Volume, eigene Geheimnisse (`deploy/.env`, Rechte 600), eigene Sicherungs-Passphrase
+`/root/.stunden-prod-backup-pass`, eigenes Storage-Box-Repository `stundenwerk-prod`. Die Datenbank startet leer
+(keine Testfirmen, keine Testkonten); die E-Mail-Einstellungen (`SMTP_*`) werden vom Test übernommen.
+
+Voraussetzungen: DNS-Eintrag `app` → Server-IP; das Paket ist über `stunden-test-paket` angekommen und läuft auf
+der Testumgebung (`/var/lib/stunden-test/deployed-commit`). Anderes nimmt das Skript nicht an.
+
+```bash
+# Erstinstallation und jedes spätere Update (vor einem Update wird die laufende Produktion gesichert):
+sudo bash /srv/stunden-test/deploy/prod-bereitstellen.sh <40-stelliger Commit>
+# einmalig danach:
+sudo bash /srv/stunden-prod/deploy/prod-bereitstellen.sh --super-admin <e-mail>   # Passwort verdeckt eingeben
+sudo bash /srv/stunden-prod/deploy/taegliche-sicherung-einrichten.sh prod         # jede Nacht 02:30
+```
+
+Das Skript ergänzt im zentralen Caddyfile nur einen fehlenden Abschnitt für den Host (Kopie vorher unter
+`/root/Caddyfile.vor-schichtklar24-prod`; lehnt Caddy ihn ab, wird die alte Datei zurückgespielt). Andere Abschnitte
+bleiben unverändert. Optionen: `PROD_HOST`, `CADDY_CONTAINER`. Passphrasen und TOTP-Schlüssel danach in KeePassXC
+übernehmen.
+
 ## Was hier nicht geprüft wurde
 
 Das Image wurde in der Entwicklungsumgebung **nicht** gebaut (kein Docker-Daemon). Geprüft wurden
@@ -249,3 +272,5 @@ Laufzeit nur mit Produktionsabhängigkeiten, als Nicht-root-Benutzer) und der Mi
 „Container-Image (Bau + Start)“; derselbe Job legt die Testzugänge an, sichert mit `backup.sh --compose` und
 führt die Wiederherstellungsprobe mit `restore-test.sh --docker` aus. `backup.sh --url` und
 `restore-test.sh --local/--server-url` laufen zusätzlich in `tests/server/backup-restore.test.ts`.
+`prod-bereitstellen.sh` ist nur in seinen Prüfungen ohne Docker getestet (`tests/unit/prod-setup-script.test.ts`);
+der Ablauf mit Docker und Caddy wurde vor dem ersten Einsatz nicht durchgespielt.

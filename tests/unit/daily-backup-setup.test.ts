@@ -27,6 +27,16 @@ async function sh(file: string, env: Record<string, string>): Promise<{ code: nu
   }
 }
 
+async function sh2(file: string, args: string[], env: Record<string, string>): Promise<{ code: number; out: string }> {
+  try {
+    const r = await run("bash", [file, ...args], { env: { ...process.env, ...env }, timeout: 30_000 });
+    return { code: 0, out: r.stdout + r.stderr };
+  } catch (e) {
+    const x = e as { code?: number; stdout?: string; stderr?: string };
+    return { code: typeof x.code === "number" ? x.code : 1, out: `${x.stdout ?? ""}${x.stderr ?? ""}` };
+  }
+}
+
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "daily-backup-"));
   mkdirSync(join(root, "run"));
@@ -103,7 +113,21 @@ describe("daily backup setup", () => {
     expect(deploy).toContain("bash deploy/sicherung.sh");
     expect(deploy).toContain("/run/stunden-test.lock");
     const entryText = readFileSync(entry(), "utf8");
-    expect(entryText).toContain("/run/stunden-test.lock");
+    expect(entryText).toContain("STAGE=test");
+    expect(entryText).toContain("/run/stunden-$STAGE.lock");
+  });
+
+  it("sets up the production environment separately (own units, 02:30, own paths)", async () => {
+    const r = await sh2(join(ROOT, "deploy/taegliche-sicherung-einrichten.sh"), ["prod"], { STUNDEN_ROOT: root });
+    expect(r.code, r.out).toBe(0);
+    const timer = readFileSync(join(root, "etc/systemd/system/stunden-prod-backup.timer"), "utf8");
+    expect(timer).toContain("OnCalendar=*-*-* 02:30:00");
+    const service = readFileSync(join(root, "etc/systemd/system/stunden-prod-backup.service"), "utf8");
+    expect(service).toContain("ExecStart=/usr/local/lib/stunden-prod/daily-backup");
+    expect(service).toContain("BACKUP_PASSPHRASE_FILE=/root/.stunden-prod-backup-pass");
+    expect(service).toContain("WorkingDirectory=/srv/stunden-prod");
+    expect(readFileSync(join(root, "usr/local/lib/stunden-prod/daily-backup"), "utf8")).toContain("STAGE=prod");
+    expect((await sh2(join(ROOT, "deploy/taegliche-sicherung-einrichten.sh"), ["staging"], { STUNDEN_ROOT: root })).code).toBe(2);
   });
 });
 

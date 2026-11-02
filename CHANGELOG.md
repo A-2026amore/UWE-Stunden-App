@@ -5,6 +5,14 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt (Betrieb)
+- Produktionsumgebung: `deploy/prod-bereitstellen.sh <commit>` richtet `app.schichtklar24.de` als eigene, leere
+  Umgebung neben dem Test ein und aktualisiert sie später (nur der Commit, der auf dem Test läuft und aus einem
+  signierten Paket stammt; vor Updates Sicherung). Eigene Geheimnisse, eigene Datenbank, eigenes
+  Storage-Box-Repository; Caddy-Abschnitt nur ergänzen, bei Fehler zurückspielen. Tests der Prüfungen:
+  `tests/unit/prod-setup-script.test.ts` (Ablauf mit Docker nicht durchgespielt).
+- `cli.ts create-super-admin <email>` legt das erste Plattformkonto einer leeren Installation an (Passwort über
+  stdin, Zwei-Faktor bei der ersten Anmeldung). Test: `tests/server/create-super-admin.test.ts`.
+- Tägliche Sicherung und `deploy/sicherung.sh` getrennt für Test und Produktion (`STAGE=prod`, Timer 02:30).
 - Tägliche Sicherung der Testumgebung: `deploy/taegliche-sicherung-einrichten.sh` richtet einmalig den Timer
   `stunden-test-backup.timer` ein (jede Nacht 03:30, verpasste Läufe werden nachgeholt). Er startet
   `deploy/sicherung.sh` – dieselbe Sicherung mit Storage-Box-Kopie und Wiederherstellungsprobe, die bisher nur nach

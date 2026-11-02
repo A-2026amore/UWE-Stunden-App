@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Backup and restore probe of the test environment. Started by deploy/pull-deploy.sh after every deployment and
+# Backup and restore probe of one environment (STAGE=test, default, or STAGE=prod). Started by deploy/pull-deploy.sh after every deployment and
 # daily by stunden-test-backup.timer (installed once with deploy/taegliche-sicherung-einrichten.sh).
 #   1. deploy/backup.sh: encrypted dump of the running database (never changes it), local copies: the last 14,
 #   2. with /root/.stunden-test-restic.env (deploy/storagebox-einrichten.sh) the archive also goes to the Hetzner
@@ -10,9 +10,11 @@
 set -euo pipefail
 
 main() {
-STATE="${STATE_DIR:-/var/lib/stunden-test}"
-RESTIC_ENV="${RESTIC_ENV:-/root/.stunden-test-restic.env}"
-BDIR="${BACKUP_DIR:-/var/backups/stunden-test}"
+STAGE="${STAGE:-test}"
+[[ "$STAGE" =~ ^(test|prod)$ ]] || { echo "STAGE muss test oder prod sein." >&2; exit 2; }
+STATE="${STATE_DIR:-/var/lib/stunden-$STAGE}"
+RESTIC_ENV="${RESTIC_ENV:-/root/.stunden-$STAGE-restic.env}"
+BDIR="${BACKUP_DIR:-/var/backups/stunden-$STAGE}"
 cd "$(dirname "$0")/.."
 mkdir -p "$STATE"
 status() { printf '%s %s\n' "$(date -Is)" "$*" | tee -a "$STATE/status.txt"; }
@@ -35,7 +37,7 @@ if BACKUP_DIR="$BDIR" BACKUP_HOOK="$HOOK" BACKUP_STATUS_FILE="$STATE/last-backup
   SOURCE="lokal"
   if [ -n "$HOOK" ]; then
     FETCH="$(mktemp -d)"
-    if restic restore latest --tag stunden,test --target "$FETCH" --include "$ARCHIVE" --include "$ARCHIVE.sha256" >/dev/null 2>&1 \
+    if restic restore latest --tag "stunden,$STAGE" --target "$FETCH" --include "$ARCHIVE" --include "$ARCHIVE.sha256" >/dev/null 2>&1 \
        && [ -f "$FETCH$ARCHIVE" ]; then
       ARCHIVE="$FETCH$ARCHIVE"; SOURCE="Hetzner Storage Box (restic)"
     else

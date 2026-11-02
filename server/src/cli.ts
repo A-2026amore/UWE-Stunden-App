@@ -22,6 +22,11 @@
  *   node --import ./server/register.mjs server/src/cli.ts export-tenant <tenant-slug> --out <directory>
  *   node --import ./server/register.mjs server/src/cli.ts delete-tenant <tenant-slug> --confirm <tenant-slug> (--after-export <directory> | --without-export)
  *
+ *   node --import ./server/register.mjs server/src/cli.ts create-super-admin <email>
+ *
+ * First platform account of a fresh installation (server/src/superadmin.ts); password via stdin.
+ * Uses MIGRATION_DATABASE_URL (owner).
+ *
  * End of contract (migration 0020, server/src/offboarding.ts): complete export of
  * a tenant in any status (JSON + CSV + checksums) and deletion of a deactivated
  * tenant in one transaction. Both are audited. Uses MIGRATION_DATABASE_URL (owner).
@@ -35,6 +40,7 @@ import { INVITE_ROLES, createOperatorInvitation, inviteLinkBase, oneTimeLink, ty
 import { loadConfig } from "./config.ts";
 import { createMailer, type Mail } from "./mailer.ts";
 import { runBillingJobs } from "./subscription.ts";
+import { SuperAdminRefused, createSuperAdmin } from "./superadmin.ts";
 
 const USAGE = [
   "Aufruf:",
@@ -43,6 +49,7 @@ const USAGE = [
   "  cli.ts seed-test-env --confirm-test-environment [--domain=stunden-test.example] [--admin-email=…]   (nur Testumgebung)",
   "  cli.ts export-tenant <mandant-kurzname> --out <verzeichnis>                     (Vertragsende: Gesamtexport)",
   "  cli.ts delete-tenant <mandant-kurzname> --confirm <mandant-kurzname> (--after-export <verzeichnis> | --without-export)",
+  "  cli.ts create-super-admin <email>                             (erstes Plattformkonto, Passwort über stdin)",
   "  cli.ts billing-jobs                                            (Tarif-Erinnerungen und Monatsrechnungen einmal ausführen)",
 ].join("\n");
 
@@ -221,6 +228,23 @@ async function runRefusable(fn: () => Promise<void>) {
   }
 }
 
+async function createSuperAdminCmd(args: string[]) {
+  const [email] = args;
+  if (!email || args.length !== 1) usage();
+  const url = ownerUrl();
+  const password = await readLine();
+  try {
+    const r = await createSuperAdmin(url, email, password);
+    console.log(`Super-Admin ${r.email} angelegt. Anmelden unter /admin/ – die Zwei-Faktor-Anmeldung wird dabei eingerichtet.`);
+  } catch (e) {
+    if (e instanceof SuperAdminRefused) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    throw e;
+  }
+}
+
 async function exportTenantCmd(args: string[]) {
   const { positional, opts } = parseOptions(args, ["--out"], []);
   const out = opts.get("--out");
@@ -283,6 +307,7 @@ async function main() {
   else if (cmd === "export-tenant") await exportTenantCmd(args);
   else if (cmd === "delete-tenant") await deleteTenantCmd(args);
   else if (cmd === "billing-jobs") await billingJobsCmd(args);
+  else if (cmd === "create-super-admin") await createSuperAdminCmd(args);
   else usage();
 }
 
