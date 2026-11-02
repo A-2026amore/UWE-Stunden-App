@@ -141,6 +141,8 @@ Zusätzlich (prüfbar, verschlüsselt, mit Wiederherstellungsprobe):
 |---|---|
 | `deploy/backup.sh --compose deploy/.env` | `pg_dump` (Custom-Format) + Rollen ohne Passwörter + Manifest, mit GPG verschlüsselt (öffentlicher Schlüssel `BACKUP_GPG_RECIPIENT` oder `BACKUP_PASSPHRASE_FILE`), SHA-256-Prüfsumme, optional Übergabe an restic (`BACKUP_HOOK`) |
 | `deploy/restore-test.sh --docker --migrations db/migrations <archiv>` | spielt das Archiv in einen Wegwerf-Container ohne Netz ein und prüft Zeilenzahlen, Migrationsstand und RLS; die laufende Umgebung bleibt unberührt |
+| `deploy/sicherung.sh` | Testumgebung: `backup.sh`, Kopie auf die Storage Box (falls eingerichtet), Rückholung und `restore-test.sh`; läuft nach jeder Bereitstellung und täglich |
+| `sudo bash deploy/taegliche-sicherung-einrichten.sh` | einmalig: Timer `stunden-test-backup.timer`, jede Nacht 03:30 `deploy/sicherung.sh` (nur vom freigegebenen und bereitgestellten Commit, wartet auf eine laufende Bereitstellung); verpasste Läufe werden nachgeholt |
 
 Einrichtung, Zeitplan, restic-Übergabe und die Notfall-Wiederherstellung Schritt für Schritt:
 [`docs/betrieb.md`](../docs/betrieb.md), Abschnitt 5.1.
@@ -174,8 +176,9 @@ Bauen, Migrationen, Neustart, Healthcheck (`deploy/update-test.sh <commit>`), ei
 Nach drei Fehlversuchen mit demselben Commit wird bis zur nächsten Freigabe nicht erneut gebaut. Ein neuerer Stand auf
 dem Branch `stunden-test-deploy` wird nur im Status gemeldet. Liegt `/root/.stunden-test-restic.env` vor (Variablen
 `RESTIC_REPOSITORY`, `RESTIC_PASSWORD_FILE`), geht das Archiv per restic auf die Hetzner Storage Box und die Probe
-nutzt die von dort zurückgeholte Kopie. Ergebnisse: `stunden-test-freigeben --status`,
-`/var/lib/stunden-test/status.txt` und `journalctl -u stunden-test-deploy`.
+nutzt die von dort zurückgeholte Kopie (`deploy/sicherung.sh`). Dieselbe Sicherung läuft nach einmaliger Einrichtung
+mit `deploy/taegliche-sicherung-einrichten.sh` auch jede Nacht. Ergebnisse: `stunden-test-freigeben --status`,
+`/var/lib/stunden-test/status.txt`, `journalctl -u stunden-test-deploy` und `journalctl -u stunden-test-backup`.
 
 **Neue Version freigeben:** Commit auf GitHub ansehen, dann auf dem Server `stunden-test-freigeben <commit>`. Der
 GitHub-Workflow „Testumgebung prüfen“ (`.github/workflows/test-env-check.yml`) startet, wenn genau dieser Commit auf

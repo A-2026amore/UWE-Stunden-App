@@ -5,8 +5,7 @@
 # When the approved commit is not running yet:
 #   update-test.sh (backup if a DB exists, build, migrate, restart, health check),
 #   test accounts once  → /root/stundenwerk-testzugaenge.txt (mode 600, never in the journal),
-#   backup + restore test (deploy/backup.sh, deploy/restore-test.sh --docker); with /root/.stunden-test-restic.env
-#   the archive also goes to the Hetzner Storage Box (restic) and the restore test uses the copy fetched back from there.
+#   backup + restore test (deploy/sicherung.sh, also daily via stunden-test-backup.timer).
 # After 3 failed attempts with the same commit it stops retrying until a new commit is approved.
 # Result lines (no secrets) go to the journal and /var/lib/stunden-test/status.txt.
 set -euo pipefail
@@ -17,10 +16,12 @@ main() {
 BRANCH="stunden-test-deploy"
 STATE=/var/lib/stunden-test
 ACCOUNTS=/root/stundenwerk-testzugaenge.txt
-RESTIC_ENV=/root/.stunden-test-restic.env
 APPROVED_FILE=/etc/stunden-test/approved-commit
 cd "$(dirname "$0")/.."
 mkdir -p "$STATE"
+# One job at a time: the daily backup (stunden-test-backup.service) takes the same lock.
+exec 9>/run/stunden-test.lock
+flock 9
 status() { printf '%s %s\n' "$(date -Is)" "$*" | tee -a "$STATE/status.txt"; }
 
 TARGET="$({ tr -d '[:space:]' < "$APPROVED_FILE"; } 2>/dev/null || true)"
@@ -71,38 +72,9 @@ if [ ! -s "$ACCOUNTS" ] && [ ! -e "$STATE/seeded" ]; then
     fi )
 fi
 
-# Backup and restore test (never touches the running database).
-HOOK=""
-if [ -f "$RESTIC_ENV" ] && [ "$(stat -c '%u %a' "$RESTIC_ENV")" != "0 600" ]; then
-  status "FEHLER: $RESTIC_ENV muss root gehören und Rechte 600 haben – Storage Box wird nicht genutzt"
-elif [ -f "$RESTIC_ENV" ]; then
-  # shellcheck disable=SC1090
-  set -a; . "$RESTIC_ENV"; set +a
-  HOOK='restic backup --quiet --tag stunden --tag "$STAGE" "$@"'
-fi
-BDIR=/var/backups/stunden-test
-if BACKUP_DIR="$BDIR" BACKUP_HOOK="$HOOK" BACKUP_STATUS_FILE="$STATE/last-backup" deploy/backup.sh --compose deploy/.env > "$STATE/backup.log" 2>&1; then
-  ARCHIVE="$(ls -t "$BDIR"/*.tar.gpg | head -n1)"
-  SOURCE="lokal"
-  if [ -n "$HOOK" ]; then
-    FETCH="$(mktemp -d)"
-    if restic restore latest --tag stunden,test --target "$FETCH" --include "$ARCHIVE" --include "$ARCHIVE.sha256" >/dev/null 2>&1 \
-       && [ -f "$FETCH$ARCHIVE" ]; then
-      ARCHIVE="$FETCH$ARCHIVE"; SOURCE="Hetzner Storage Box (restic)"
-    else
-      status "FEHLER: Abruf aus der Storage Box fehlgeschlagen – Wiederherstellungsprobe mit lokaler Kopie"
-    fi
-  fi
-  if deploy/restore-test.sh --docker --migrations db/migrations "$ARCHIVE" > "$STATE/restore.log" 2>&1; then
-    status "OK: Sicherung + Wiederherstellungsprobe bestanden (Quelle: $SOURCE)"
-  else
-    status "FEHLER: Wiederherstellungsprobe fehlgeschlagen ($STATE/restore.log)"
-  fi
-else
-  status "FEHLER: Sicherung fehlgeschlagen ($STATE/backup.log)"
-fi
-[ -z "${FETCH:-}" ] || rm -rf "$FETCH"
-[ -n "$HOOK" ] || status "Hinweis: Storage Box nicht eingebunden ($RESTIC_ENV fehlt) – Sicherung nur lokal in $BDIR"
+# Backup and restore test (never touches the running database): deploy/sicherung.sh, also run daily by
+# stunden-test-backup.timer (deploy/taegliche-sicherung-einrichten.sh).
+bash deploy/sicherung.sh || true
 }
 main "$@"
 exit

@@ -4,6 +4,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
+### Hinzugefügt (Betrieb)
+- Tägliche Sicherung der Testumgebung: `deploy/taegliche-sicherung-einrichten.sh` richtet einmalig den Timer
+  `stunden-test-backup.timer` ein (jede Nacht 03:30, verpasste Läufe werden nachgeholt). Er startet
+  `deploy/sicherung.sh` – dieselbe Sicherung mit Storage-Box-Kopie und Wiederherstellungsprobe, die bisher nur nach
+  jeder Bereitstellung lief – und nur vom freigegebenen, bereitgestellten Commit. Bereitstellung und Sicherung laufen
+  nie gleichzeitig (gemeinsame Sperre). Tests: `tests/unit/daily-backup-setup.test.ts`.
+
 ### Sicherheit
 - Einladungen für eine Adresse mit bestehendem Konto werden nur noch in einer angemeldeten Sitzung genau dieses
   Kontos verknüpft (Migration 0026). Vorher genügte der Einladungslink. Eine Leitung konnte so über den Link-Weg

@@ -117,5 +117,8 @@ davon ab.
   (`deploy/storagebox-einrichten.sh`; Sub-Account „AppZentrale24 Backup“, Repository `stundenwerk-test` in dessen
   Verzeichnis). Danach gehen Sicherungen und Paket-Kopien per restic auf die Box. Die Passwortdateien
   `/root/.stunden-test-restic-pass` und `/root/.stunden-test-backup-pass` gehören zusätzlich in KeePassXC.
-  Sicherungen entstehen bisher nur bei jeder Bereitstellung, nicht täglich.
+  Eingerichtet und geprüft am 02.11.2026 (Probe hochgeladen, zurückgeholt, unverändert).
+- Tägliche Sicherung: einmalig `sudo bash /srv/stunden-test/deploy/taegliche-sicherung-einrichten.sh` (Timer
+  `stunden-test-backup.timer`, jede Nacht 03:30, mit Storage-Box-Kopie und Wiederherstellungsprobe). Ohne diesen
+  Schritt entstehen Sicherungen nur bei jeder Bereitstellung. Auf der Storage Box wird nichts automatisch gelöscht.
 - `deploy/test-env-check.sh` konnte aus der Entwicklungsumgebung nicht gegen die echte Adresse laufen (Netzsperre).
