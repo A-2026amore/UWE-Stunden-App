@@ -31,7 +31,7 @@ describe("subscription of an existing tenant", () => {
   it("leadership and platform staff read; employees and other tenants do not", async () => {
     const r = await t.call("GET", `/api/tenants/${B}/subscription`, { cookie: cookies.ownerB });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ tenantId: B, trialEndsOn: null, current: { interval: "monthly", startsOn: "2026-10-01" }, annualPriceCents: 500, monthlyPriceCents: 650,
+    expect(r.body).toMatchObject({ tenantId: B, trialEndsOn: null, current: { interval: "monthly", startsOn: "2026-10-01" }, annualPriceCents: 499, monthlyPriceCents: 699,
       contract: { termsVersion: "bestand" } });
     expect((await t.call("GET", `/api/tenants/${A}/subscription`, { cookie: cookies.managerA })).status).toBe(200);
     expect((await t.call("GET", `/api/tenants/${A}/subscription`, { cookie: cookies.support })).status).toBe(200);
@@ -60,7 +60,7 @@ describe("subscription of an existing tenant", () => {
     await new Promise((res) => setTimeout(res, 20));
     expect(t.mails).toHaveLength(1);
     expect(t.mails[0]).toMatchObject({ to: "inhaberin@muster-pflegedienst.example", subject: "Kündigungsbestätigung – Muster Pflegedienst GmbH" });
-    expect(t.mails[0]!.text).toContain("Monatstarif (6,50 €");
+    expect(t.mails[0]!.text).toContain("Monatstarif (6,99 €");
     expect(t.mails[0]!.text).toMatch(/läuft bis einschließlich \d{2}\.\d{2}\.\d{4}/);
     const w = await t.call("POST", `/api/tenants/${B}/subscription/withdraw`, { cookie: cookies.ownerB, body: {} });
     expect(w.status).toBe(200);
@@ -94,8 +94,8 @@ describe("billing settings (patch)", () => {
       cookie: cookies.superAdmin, body: { trialWindowFrom: today, trialWindowUntil: today, trialMonths: 3, cancelNoticeDays: 7, reason: "Einführungsangebot" },
     });
     expect(r.status).toBe(200);
-    expect(r.body).toMatchObject({ trialWindowFrom: today, trialWindowUntil: today, trialMonths: 3, cancelNoticeDays: 7, defaultPriceCents: 500 });
-    const old = await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 500, reason: "Unverändert" } });
+    expect(r.body).toMatchObject({ trialWindowFrom: today, trialWindowUntil: today, trialMonths: 3, cancelNoticeDays: 7, defaultPriceCents: 499 });
+    const old = await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 499, reason: "Unverändert" } });
     expect(old.status).toBe(200);
   });
 });
@@ -196,7 +196,7 @@ describe("billing job (run once)", () => {
     expect(r.reminders).toBe(1);
     expect(sent[0]).toMatchObject({ to: "inhaber@abo-neu.example" });
     expect(sent[0]!.subject).toContain("Ihre kostenlose Testphase endet am");
-    expect(sent[0]!.text).toContain("Ab dem Folgemonat wird der Monatstarif (6,50 € je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.) berechnet.");
+    expect(sent[0]!.text).toContain("Ab dem Folgemonat wird der Monatstarif (6,99 € je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.) berechnet.");
     expect((await runBillingJobs(t.pool, () => undefined)).reminders).toBe(0);
     if (Number(today.slice(8, 10)) < 2) return; // monthly invoices start on the 2nd
 
@@ -211,10 +211,10 @@ describe("billing job (run once)", () => {
     });
     const mails: Mail[] = [];
     const run = await runBillingJobs(t.pool, (m) => mails.push(...m));
-    expect(run.invoices.issued).toEqual([expect.objectContaining({ tenantId: B, grossCents: 650 })]);
+    expect(run.invoices.issued).toEqual([expect.objectContaining({ tenantId: B, grossCents: 699 })]);
     const inv = run.invoices.issued[0]!;
     expect(mails).toEqual([expect.objectContaining({ to: "inhaberin@muster-pflegedienst.example", subject: expect.stringMatching(new RegExp(`^Neue Rechnung ${inv.number} für \\S+ \\d{4}$`)) })]);
-    expect(mails[0]!.text).toContain("6,50 €");
+    expect(mails[0]!.text).toContain("6,99 €");
     expect(mails[0]!.text).toContain("Chef-Portal unter „Abrechnung“");
     const again = await runBillingJobs(t.pool, () => undefined);
     expect(again.invoices.issued).toEqual([]);

@@ -3,8 +3,8 @@
  * The database implements the same rules in SQL; the demo repository uses this module.
  * Dates are calendar days in Europe/Berlin (ISODate), months are ISOMonth.
  *
- *  - Two plans: "annual" = 12-month subscription at the platform default price (5,00 € gross),
- *    "monthly" = monthly plan (6,50 € gross). Without a choice the monthly plan applies.
+ *  - Two plans: "annual" = 12-month subscription at the platform default price (4,99 € gross),
+ *    "monthly" = monthly plan (6,99 € gross; prices of 02.11.2026, migration 0028). Without a choice the monthly plan applies.
  *  - Introductory offer: a tenant created on a day inside the trial window set by the super admin
  *    gets a free trial until the end of the calendar month in which `trialMonths` months end
  *    (PostgreSQL date arithmetic). Billing starts with the following month.
@@ -21,7 +21,7 @@ import type { ISODate, ISOMonth, SubscriptionInterval } from "./types";
 
 export const TERM_MONTHS = 12;
 export const RENEWAL_MONTHS = 6;
-export const DEFAULT_MONTHLY_PRICE_CENTS = 650;
+export const DEFAULT_MONTHLY_PRICE_CENTS = 699;
 export const DEFAULT_TRIAL_MONTHS = 3;
 
 /** Shown with every promo code (mail and UI), legal draft 0.9.3. */
@@ -32,7 +32,7 @@ export const PROMO_TERMS_NOTE = "Rabatt bis auf Weiteres; der Anbieter kann ihn 
  * /rechtliches/agb (AGB + Anlage A + Anlage B) and /rechtliches/avv (AVV + Anlage 1 TOM), texts in
  * platform/public/rechtliches-texte (drafts, not approved). Change together with the texts.
  */
-export const TERMS_VERSION = "AGB 0.9.4, Anlage A 0.9.4, Anlage B 0.9.1";
+export const TERMS_VERSION = "AGB 0.9.5, Anlage A 0.9.5, Anlage B 0.9.1";
 export const DPA_VERSION = "AVV 0.9.2, Anlage 1 (TOM) 0.9.1";
 
 export const INTERVAL_LABEL: Record<SubscriptionInterval, string> = {

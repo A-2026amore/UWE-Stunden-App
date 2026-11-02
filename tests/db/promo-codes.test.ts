@@ -30,9 +30,9 @@ const redeem = (user: string, tenant: string, code: string) =>
   db.as(user, async (q) => (await q.query("select public.tenant_redeem_promo_code($1, $2) as r", [tenant, code])).rows[0].r, { commit: true });
 
 describe("gross prices", () => {
-  it("the default price is 5,00 € gross; the invoice draft contains the VAT", async () => {
-    expect((await db.admin.query("select default_price_cents from public.billing_settings")).rows[0].default_price_cents).toBe(500);
-    expect(await cond("2026-07")).toEqual({ unit_price_cents: 500, condition: "standard" });
+  it("the default price is 4,99 € gross; the invoice draft contains the VAT", async () => {
+    expect((await db.admin.query("select default_price_cents from public.billing_settings")).rows[0].default_price_cents).toBe(499);
+    expect(await cond("2026-07")).toEqual({ unit_price_cents: 499, condition: "standard" });
   });
 });
 
@@ -79,7 +79,7 @@ describe("promo codes", () => {
 
   it("100 %: the price is 0 € in every month of the redemption until the super admin ends it", async () => {
     await db.admin.query("update public.promo_redemptions set redeemed_at = '2026-07-15 10:00 Europe/Berlin' where tenant_id = $1", [B]);
-    expect(await cond("2026-06")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond("2026-06")).toEqual({ unit_price_cents: 499, condition: "standard" });
     expect(await cond("2026-07")).toEqual({ unit_price_cents: 0, condition: "promo" });
     expect(await cond("2026-09")).toEqual({ unit_price_cents: 0, condition: "promo" });
     const b = await db.as(U.ownerB, async (q) => (await q.query("select public.tenant_billing($1, '2026-08') as b", [B])).rows[0].b);
@@ -104,7 +104,7 @@ describe("promo codes", () => {
     expect(r).toMatchObject({ code: "START-100", endReason: "Aktion vorbei" });
     await db.admin.query("update public.promo_redemptions set ended_at = '2026-09-20 12:00 Europe/Berlin' where tenant_id = $1", [B]);
     expect(await cond("2026-09")).toEqual({ unit_price_cents: 0, condition: "promo" });
-    expect(await cond("2026-10")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond("2026-10")).toEqual({ unit_price_cents: 499, condition: "standard" });
     expect((await pgError(db.as(U.superAdmin, (q) => q.query("select public.platform_end_promo_redemption($1, 'nochmal')", [B])))).code).toBe("55000");
     // the same code cannot be redeemed twice by one tenant
     await db.admin.query("update public.promo_codes set max_redemptions = null where code = 'START-100'");

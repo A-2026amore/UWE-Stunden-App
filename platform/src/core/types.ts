@@ -162,9 +162,9 @@ export type BillingStatus = "open" | "invoiced" | "paid" | "waived";
 export type BillableReason = "employee" | "leader_with_time";
 
 export interface BillingSettings {
-  /** Gross price (incl. VAT) per billable employee and month in cents for the 12-month subscription (default 500 = 5,00 €). */
+  /** Gross price (incl. VAT) per billable employee and month in cents for the 12-month subscription (default 499 = 4,99 €, migration 0028). */
   defaultPriceCents: number;
-  /** Gross price per billable employee and month for the monthly plan (default 650 = 6,50 €, migration 0023). */
+  /** Gross price per billable employee and month for the monthly plan (default 699 = 6,99 €, migration 0028). */
   monthlyPriceCents: number;
   /** Introductory offer (migration 0023): tenants created on a day in [from, until] get a free trial. Null = no offer. */
   trialWindowFrom: ISODate | null;
@@ -212,7 +212,7 @@ export interface TenantFeatures {
 
 // ---------------------------------------------------------------- subscription (migration 0023)
 
-/** "annual" = 12-month subscription (5,00 €), renews by 6 months unless cancelled; "monthly" = monthly plan (6,50 €). */
+/** "annual" = 12-month subscription (4,99 €), renews by 6 months unless cancelled; "monthly" = monthly plan (6,99 €). */
 export type SubscriptionInterval = "monthly" | "annual";
 
 /** One subscription term of a tenant. Terms start on the first and end on the last day of a month. */

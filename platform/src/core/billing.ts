@@ -4,8 +4,8 @@
  * the demo repository uses this module. Money in integer cents, time as instants
  * (ms / ISO strings) – month boundaries in Europe/Berlin.
  *
- *  - 5,00 € gross (incl. VAT) per billable employee and month in the 12-month subscription,
- *    6,50 € in the monthly plan (decision 30.10.2026, subscription.ts / migration 0023),
+ *  - 4,99 € gross (incl. VAT) per billable employee and month in the 12-month subscription,
+ *    6,99 € in the monthly plan (decision 02.11.2026, migration 0028; Basic 1,99 €, edition.ts),
  *    no base fee, no minimum, no tiers. Free trial only as introductory offer (trial window).
  *  - Promo codes (migration 0022): a discount of 1–100 % on the price that applies
  *    otherwise, for every month the redemption period touches, until the super admin ends it.
@@ -20,8 +20,8 @@ import type {
 } from "./types";
 import { DEFAULT_BASIC_MONTHLY_PRICE_CENTS, DEFAULT_BASIC_PRICE_CENTS } from "./edition";
 
-/** Platform default: 5,00 € gross (incl. VAT) per billable employee and month. */
-export const DEFAULT_EMPLOYEE_PRICE_CENTS = 500;
+/** Platform default (Pro): 4,99 € gross (incl. VAT) per billable employee and month. */
+export const DEFAULT_EMPLOYEE_PRICE_CENTS = 499;
 export const BILLING_TIME_ZONE = "Europe/Berlin";
 /** Shown next to every amount: prices are gross since 30.10.2026. */
 export const VAT_NOTE = "inkl. gesetzlicher USt.";

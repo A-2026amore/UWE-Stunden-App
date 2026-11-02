@@ -6,11 +6,11 @@ import { BASE } from "./helpers";
 test("AGB page shows AGB, Anlage A and Anlage B with the draft notice and the accepted version", async ({ page }) => {
   await page.goto(`${BASE}/rechtliches/agb/`);
   await expect(page.getByTestId("legal-draft")).toContainText("Entwurf");
-  await expect(page.getByTestId("legal-version")).toHaveText("Fassung: AGB 0.9.4, Anlage A 0.9.4, Anlage B 0.9.1");
+  await expect(page.getByTestId("legal-version")).toHaveText("Fassung: AGB 0.9.5, Anlage A 0.9.5, Anlage B 0.9.1");
   await expect(page.getByRole("heading", { level: 1, name: /Allgemeine Geschäftsbedingungen/ })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: /Anlage A/ })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: /Anlage B/ })).toBeVisible();
-  await expect(page.locator(".legal-text")).toContainText("Stand: Entwurf 0.9.4");
+  await expect(page.locator(".legal-text")).toContainText("Stand: Entwurf 0.9.5");
   // no horizontal page scroll on phones
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 });

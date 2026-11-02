@@ -8,13 +8,15 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
 
 ## Kurz gesagt
 
-- **12-Monats-Abo: 5,00 € brutto** je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.
-  (bei 19 %: 4,20 € netto + 0,80 € USt.).
-- **Monatstarif: 6,50 € brutto** je abrechenbarem Mitarbeiter und Monat. **Ohne Wahl gilt der Monatstarif.**
+- **12-Monats-Abo: 4,99 € brutto** je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.
+  (bei 19 %: 4,19 € netto + 0,80 € USt.).
+- **Monatstarif: 6,99 € brutto** je abrechenbarem Mitarbeiter und Monat. **Ohne Wahl gilt der Monatstarif.**
+- Preise seit 02.11.2026 (Migration 0028); vorher 5,00 € / 6,50 €. Die Migration stellt die gespeicherten Preise nur
+  um, wenn sie noch auf 5,00 € / 6,50 € standen; abgeschlossene Abrechnungsmonate behalten ihren Preis.
 - Diese Preise gelten für **Pro**. **Basic** (nur Zeiten erfassen und Monatsnachweise) kostet **1,99 € brutto** in
   beiden Tarifen (seit 02.11.2026, siehe unten).
 - Keine Grundgebühr, keine Mindestanzahl, keine Staffeln.
-- Beispiel 20 Mitarbeitende: 100,00 € im 12-Monats-Abo, 130,00 € im Monatstarif (jeweils brutto).
+- Beispiel 20 Mitarbeitende: 99,80 € im 12-Monats-Abo, 139,80 € im Monatstarif (jeweils brutto, Pro); Basic 39,80 €.
 - **Keine kostenlosen Konten** für neue Kunden. Rabatte bis 100 % gibt es nur über **Aktionscodes**
   (siehe unten); der Rabatt läuft, bis der Super-Admin ihn beendet. Sonderpreise je Kunde bleiben möglich.
 - Es ist **kein Zahlungsdienstleister** angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.
@@ -24,7 +26,7 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
 - **Basic** – 1,99 € brutto je abrechenbarem Mitarbeiter und Monat (12-Monats-Abo und Monatstarif, Einstellung des
   Super-Admins): Zeiten erfassen (mit Pausenregel), Monatsnachweis senden; Chef-Portal mit Mitarbeitern, Arbeitszeiten,
   Monatsnachweisen, PDF/CSV, Firmenprofil, Abrechnung, Datenschutz, Protokoll.
-- **Pro** – Preise wie bisher (5,00 € / 6,50 €): zusätzlich Vertragsdaten mit Soll/Ist, Arbeitszeitkonto,
+- **Pro** – 4,99 € (12-Monats-Abo) / 6,99 € (Monatstarif): zusätzlich Vertragsdaten mit Soll/Ist, Arbeitszeitkonto,
   Stundenübersicht, Korrekturanfragen, Übernahme aus der alten Stunden-App.
 - Die Firma wählt bei der Freischaltung; ohne Wahl und für alle bestehenden Firmen gilt Pro. Wechsel im Chef-Portal
   unter „Abrechnung“ (nur Inhaber): **Pro ab sofort** (der laufende Monat kostet den Pro-Preis), **Basic ab dem
@@ -40,7 +42,7 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
 
 | | 12-Monats-Abo | Monatstarif |
 |---|---|---|
-| Preis je Mitarbeiter/Monat (brutto) | 5,00 € (Standardpreis) | 6,50 € |
+| Preis je Mitarbeiter/Monat (brutto, Pro) | 4,99 € (Standardpreis) | 6,99 € |
 | Laufzeit | 12 Monate fest, ab dem 1. eines Monats | monatlich |
 | Verlängerung | jeweils um 6 Monate, wenn nicht bis zum letzten Tag der Laufzeit gekündigt (Kündigungsfrist in Tagen einstellbar, Standard 0) | läuft weiter |
 | Kündigung | zum Ende der Laufzeit; wahlweise „danach im Monatstarif weiter“ | zum Ende des laufenden Monats |
@@ -60,9 +62,9 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
 - **Willkommenscode:** Optional ein Aktionscode, der in der Einladung jedes neuen Mandanten steht, solange er
   einlösbar ist.
 - **Bestehende Kunden** (vor 0023): keine Testphase. Bis zum Ende des Monats der Umstellung gilt die
-  bisherige Regel (Standardpreis 5,00 €, kein Vertrag nötig); ab dem Folgemonat (`termsFrom`) der Monatstarif,
+  bisherige Regel (Standardpreis, kein Vertrag nötig); ab dem Folgemonat (`termsFrom`) der Monatstarif,
   sofern der Inhaber nichts anderes wählt. In der Demo (heute 20.11.2026) wird „Muster Pflegedienst“ daher bis
-  November mit 5,00 €, ab Dezember mit 6,50 € berechnet. Der Vertragsschluss gilt als erfolgt („bestand“).
+  November mit 4,99 €, ab Dezember mit 6,99 € berechnet. Der Vertragsschluss gilt als erfolgt („bestand“).
 - **Kündigung eines geplanten Wechsels:** Ist das 12-Monats-Abo gewählt, hat aber noch nicht begonnen, nimmt
   „Kündigen“ den Wechsel zurück; der Monatstarif läuft weiter.
 - **Vor dem Vertragsschluss** lehnen Plattform und Demo Änderungen ab (Tarif, Arbeitszeiten, Mitarbeitende,
@@ -108,7 +110,7 @@ Technisch: Jede Status- und Rollenänderung wird mit Zeitpunkt in einer Historie
 ## Preise und Sonderkonditionen (Super-Admin)
 
 - **Preise und Tarifeinstellungen** (Super-Admin → „Preismodell“, ein Formular mit Begründung):
-  12-Monats-Abo (Standardpreis, 5,00 €), Monatstarif (6,50 €), Einführungsangebot von/bis, Testphase in
+  12-Monats-Abo (Standardpreis, 4,99 €), Monatstarif (6,99 €), Einführungsangebot von/bis, Testphase in
   Monaten, Kündigungsfrist in Tagen, Willkommenscode. Jede Änderung steht im Plattform-Protokoll.
 - **Sonderkondition je Kunde** (Mandanten → Verwalten → Lizenz):
   - eigener Preis je Mitarbeiter, brutto (z. B. 3,50 €),

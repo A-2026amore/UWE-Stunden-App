@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { ADMIN, CHEF, NOW, freeze, go, login, patchDb, statValue } from "./helpers";
 
 // Subscription (migration 0023), demo frozen at 20.11.2026: Muster Pflegedienst is an existing tenant, so the old
-// 5,00 € rule applies until 30.11.2026 and the monthly plan from 01.12.2026; the owner is "leitung@muster-pflege.example".
+// 4,99 € rule applies until 30.11.2026 and the monthly plan from 01.12.2026; the owner is "leitung@muster-pflege.example".
 
 test.beforeEach(async ({ page }) => {
   await freeze(page);
@@ -18,8 +18,8 @@ test("owner: switch to the 12-month subscription, cancel with monthly afterwards
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
   await openBilling(page);
   const tariff = page.locator(".card", { has: page.getByRole("heading", { name: "Tarif", exact: true }) });
-  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 € je Mitarbeiter/Monat ab 01.12.2026");
-  await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
+  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,99 € je Mitarbeiter/Monat ab 01.12.2026");
+  await expect(statValue(page, "Preis je Person")).toHaveText("4,99 €");
 
   await tariff.getByRole("button", { name: "Zum 12-Monats-Abo wechseln" }).click();
   const confirm = page.getByRole("dialog", { name: "Zum 12-Monats-Abo wechseln?" });
@@ -28,19 +28,19 @@ test("owner: switch to the 12-month subscription, cancel with monthly afterwards
   await expect(confirm).toContainText("um 6 Monate, wenn Sie nicht bis 30.11.2027 kündigen");
   await confirm.getByRole("button", { name: "Verbindlich wechseln" }).click();
   await expect(page.locator(".toast").filter({ hasText: "12-Monats-Abo ab 01.12.2026 gewählt." })).toBeVisible();
-  await expect(page.getByTestId("subscription-plan")).toContainText("12-Monats-Abo: 5,00 € je Mitarbeiter/Monat ab 01.12.2026");
+  await expect(page.getByTestId("subscription-plan")).toContainText("12-Monats-Abo: 4,99 € je Mitarbeiter/Monat ab 01.12.2026");
   await expect(page.getByTestId("subscription-next")).toHaveCount(0);
   await expect(tariff.getByRole("button", { name: "Zum 12-Monats-Abo wechseln" })).toHaveCount(0);
-  await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
+  await expect(statValue(page, "Preis je Person")).toHaveText("4,99 €");
 
   // December: the subscription runs.
   await page.clock.setFixedTime(new Date("2026-12-10T10:00:00+01:00"));
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await openBilling(page);
-  await expect(page.getByTestId("subscription-plan")).toContainText("12-Monats-Abo: 5,00 €");
+  await expect(page.getByTestId("subscription-plan")).toContainText("12-Monats-Abo: 4,99 €");
   await expect(page.getByTestId("subscription-term-end")).toContainText("30.11.2027");
-  await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
+  await expect(statValue(page, "Preis je Person")).toHaveText("4,99 €");
 
   await tariff.getByRole("button", { name: "Kündigen" }).click();
   const cancel = page.getByRole("dialog", { name: "12-Monats-Abo kündigen?" });
@@ -87,7 +87,7 @@ test("owner: cancelling a planned switch undoes it, the monthly plan runs on", a
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await openBilling(page);
   const tariff = page.locator(".card", { has: page.getByRole("heading", { name: "Tarif", exact: true }) });
-  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 €");
+  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,99 €");
   await tariff.getByRole("button", { name: "Zum 12-Monats-Abo wechseln" }).click();
   const confirm = page.getByRole("dialog", { name: "Zum 12-Monats-Abo wechseln?" });
   await expect(confirm).toContainText("beginnt am 01.02.2027");
@@ -104,7 +104,7 @@ test("owner: cancelling a planned switch undoes it, the monthly plan runs on", a
   await cancel.getByRole("button", { name: "Kündigen", exact: true }).click();
   await expect(page.locator(".toast").filter({ hasText: "Wechsel zum 12-Monats-Abo zurückgenommen." })).toBeVisible();
   await expect(page.getByTestId("subscription-next")).toHaveCount(0);
-  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 €");
+  await expect(page.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,99 €");
   await expect(tariff.getByRole("button", { name: "Kündigung zurücknehmen" })).toHaveCount(0);
 
   // Cancelling the monthly plan ends the contract: the warning is shown.
@@ -187,7 +187,7 @@ test("super-admin: trial window and welcome code; the owner of a new tenant firs
   await submit.click();
   await expect(chef.getByRole("heading", { level: 1, name: "Abrechnung" })).toBeVisible();
   await expect(chef.getByTestId("subscription-facts")).toContainText("kostenlos bis 28.02.2027");
-  await expect(chef.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,50 € je Mitarbeiter/Monat ab 01.03.2027");
+  await expect(chef.getByTestId("subscription-plan")).toContainText("Monatstarif: 6,99 € je Mitarbeiter/Monat ab 01.03.2027");
   await expect(statValue(chef, "Preis je Person")).toHaveText("0,00 €");
 
   await page.reload();

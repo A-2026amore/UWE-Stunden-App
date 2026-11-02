@@ -60,7 +60,7 @@ describe("billing of blocked tenants", () => {
   it("block on the 10th: that month is billed, the following month is 0 € (suspended)", async () => {
     await history([["active", "2026-06-01 00:00 Europe/Berlin", "2026-08-10 09:00 Europe/Berlin"],
                    ["suspended", "2026-08-10 09:00 Europe/Berlin", null, "Offene Rechnung"]]);
-    expect(await cond("2026-08")).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond("2026-08")).toEqual({ unit_price_cents: 499, condition: "standard" });
     expect(await cond("2026-09")).toEqual({ unit_price_cents: 0, condition: "tenant_suspended" });
     const sep = await overview("2026-09");
     expect(sep).toMatchObject({ condition: "tenant_suspended", unit_price_cents: 0, amount_cents: 0, block_reason: "Offene Rechnung" });

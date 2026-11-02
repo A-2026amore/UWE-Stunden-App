@@ -7,7 +7,7 @@ import {
 const active = (from: string, to: string | null = null, role: StatusPeriod["role"] = "employee"): StatusPeriod => ({ status: "active", role, from, to });
 
 describe("price examples of the client", () => {
-  it.each([[5, 2500], [20, 10000], [100, 50000], [0, 0], [1, 500]])("%i billable employees → %i cents", (n, cents) => {
+  it.each([[5, 2495], [20, 9980], [100, 49900], [0, 0], [1, 499]])("%i billable employees → %i cents", (n, cents) => {
     expect(billingAmount(n, DEFAULT_EMPLOYEE_PRICE_CENTS)).toBe(cents);
   });
   it("rejects fractions and negative values", () => {

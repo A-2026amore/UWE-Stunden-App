@@ -83,7 +83,7 @@ function Start() {
         <Card title="Mandanten in der Demo" muted>
           <ul class="stack-sm" style={{ margin: 0, paddingLeft: "1.2em" }}>
             <li><strong>Demo Krankentransporte</strong> – fiktives Logo, strenge Pausenregel (ab genau 6 bzw. 9 Stunden), Arbeitszeitkonto pro NRW-Schuljahr mit Startsaldo –100 Std., Übernahme aus der bisherigen Stunden-App, Pilotlizenz „Kostenlos – Pilot“.</li>
-            <li><strong>Muster Pflegedienst GmbH</strong> – eigenes Logo und Farben, Arbeitszeitkonto pro Kalenderjahr, Standardkunde im Monatstarif (6,50 € je abrechenbarem Mitarbeiter und Monat; im 12-Monats-Abo 5,00 €, jeweils inkl. USt.).</li>
+            <li><strong>Muster Pflegedienst GmbH</strong> – eigenes Logo und Farben, Arbeitszeitkonto pro Kalenderjahr, Standardkunde im Monatstarif (Pro: 6,99 € je abrechenbarem Mitarbeiter und Monat; im 12-Monats-Abo 4,99 €, jeweils inkl. USt.).</li>
           </ul>
         </Card>
         <Card><div style={{ maxWidth: "420px" }}><ThemeSwitch hint="Wird nur auf diesem Gerät gespeichert." /></div></Card>

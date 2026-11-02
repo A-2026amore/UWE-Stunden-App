@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { ADMIN, CHEF, confirmDialog, freeze, go, login } from "./helpers";
 
-// Demo (frozen today 20.11.2026): Muster Pflegedienst GmbH, October 2026 = 3 × 5,00 € = 15,00 € brutto (12,61 € netto + 2,39 € USt.); before the subscription model (0023) the old standard price applies.
+// Demo (frozen today 20.11.2026): Muster Pflegedienst GmbH, October 2026 = 3 × 4,99 € = 14,97 € brutto (12,58 € netto + 2,39 € USt.); before the subscription model (0023) the old standard price applies.
 // The demo invoice settings are fictional and complete ("Schichtklar24 Demo GmbH (Testdaten)").
 
 test.beforeEach(async ({ page }) => {
@@ -39,8 +39,8 @@ test("super-admin: draft, invoice with gapless number and PDF, cancellation; own
   expect(pdf.name).toBe("Rechnung-SW-2026-000001.pdf");
   expect(pdf.text.startsWith("%PDF-")).toBe(true);
   expect(pdf.text).toContain("SW-2026-000001");
-  expect(pdf.text).toContain("15,00");
-  expect(pdf.text).toContain("12,61");
+  expect(pdf.text).toContain("14,97");
+  expect(pdf.text).toContain("12,58");
   expect(pdf.text).toContain("2,39");
   for (const personal of ["Mia Musterfrau", "Noah Normal", "Olga Ohnename"]) expect(pdf.text).not.toContain(personal);
   const all = page.getByRole("table", { name: "Alle Rechnungen" });

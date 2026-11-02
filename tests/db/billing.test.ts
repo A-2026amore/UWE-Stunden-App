@@ -67,7 +67,7 @@ beforeAll(async () => {
              '{"legalName": "Abrechnung Test GmbH", "street": "", "postalCode": "", "city": ""}', '2026-08-01 00:00 Europe/Berlin')`, [C]);
   await db.admin.query("insert into public.licenses (tenant_id, plan, billing, valid_from) values ($1, 'standard', 'manual', '2026-08-01')", [C]);
   // Subscription (0023): tenant C is created after 0023 (no legacy rule); it has the 12-month subscription, so
-  // the platform default price ("standard", 5,00 €) applies – without a choice the monthly plan (6,50 €) would.
+  // the platform default price ("standard", 4,99 €) applies – without a choice the monthly plan (6,99 €) would.
   await db.admin.query("update public.subscription_terms set billing_interval = 'annual', automatic = false where tenant_id = $1", [C]);
   await db.admin.query(
     `insert into public.employees (id, tenant_id, user_id, personnel_number, display_name, role, status)
@@ -107,7 +107,7 @@ describe("billable persons (Europe/Berlin)", () => {
     const b = await billing(OWNER_C_USER, C, "2026-09");
     const names = b.lines.map((l: { displayName: string }) => l.displayName);
     expect(names.sort()).toEqual(["Befördert", "Gesperrt Mitte", "Inhaberin Test", "Leitung Mit Zeiten", "Spät September", "Voll Aktiv"].sort());
-    expect(b).toMatchObject({ billableCount: 6, unitPriceCents: 500, amountCents: 3000, condition: "standard", status: "open", final: false, currency: "EUR" });
+    expect(b).toMatchObject({ billableCount: 6, unitPriceCents: 499, amountCents: 2994, condition: "standard", status: "open", final: false, currency: "EUR" });
     const reasons = Object.fromEntries(b.lines.map((l: { displayName: string; reason: string }) => [l.displayName, l.reason]));
     expect(reasons["Inhaberin Test"]).toBe("leader_with_time");
     expect(reasons["Leitung Mit Zeiten"]).toBe("leader_with_time");
@@ -119,7 +119,7 @@ describe("billable persons (Europe/Berlin)", () => {
     const b = await billing(OWNER_C_USER, C, "2026-10");
     const names = b.lines.map((l: { displayName: string }) => l.displayName).sort();
     expect(names).toEqual(["Früh Oktober", "Spät September", "Voll Aktiv"]);
-    expect(b.amountCents).toBe(1500);
+    expect(b.amountCents).toBe(1497);
   });
 
   it("August: deactivation on 31.08. 23:59 still counts for August", async () => {
@@ -141,14 +141,14 @@ describe("billable persons (Europe/Berlin)", () => {
     expect(a.lines.find((l: { displayName: string }) => l.displayName === "Robin Leitung")?.reason).toBe("leader_with_time");
     expect(a.lines.map((l: { displayName: string }) => l.displayName)).not.toContain("Alex Beispiel");
     const b = await billing(U.ownerB, B, "2026-10");
-    expect(b).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 1, amountCents: 500, interval: null, trialEndsOn: null });
+    expect(b).toMatchObject({ condition: "standard", unitPriceCents: 499, billableCount: 1, amountCents: 499, interval: null, trialEndsOn: null });
     expect(b.lines.map((l: { displayName: string }) => l.displayName)).toEqual(["Charlie Test"]);
   });
 
   it("history: months back to the tenant's creation", async () => {
     const rows = await db.as(OWNER_C_USER, async (q) => (await q.query("select * from public.tenant_billing_history($1, 36)", [C])).rows);
     expect(rows[rows.length - 1].month).toBe("2026-08");
-    expect(rows.find((r) => r.month === "2026-09")).toMatchObject({ billable_count: 6, amount_cents: 3000 });
+    expect(rows.find((r) => r.month === "2026-09")).toMatchObject({ billable_count: 6, amount_cents: 2994 });
   });
 });
 
@@ -157,7 +157,7 @@ describe("conditions and default price", () => {
     await db.admin.query(
       "update public.licenses set employee_price_cents = 350, condition_valid_from = '2026-09-15', condition_valid_until = '2026-12-31', condition_note = 'Rabatt' where tenant_id = $1", [C]);
     expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ condition: "special", unitPriceCents: 350, amountCents: 2100 });
-    expect(await billing(OWNER_C_USER, C, "2026-08")).toMatchObject({ condition: "standard", unitPriceCents: 500 });
+    expect(await billing(OWNER_C_USER, C, "2026-08")).toMatchObject({ condition: "standard", unitPriceCents: 499 });
 
     await db.admin.query("update public.licenses set free_of_charge = true where tenant_id = $1", [C]);
     expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ condition: "free", unitPriceCents: 0, amountCents: 0, billableCount: 6 });
@@ -170,7 +170,7 @@ describe("conditions and default price", () => {
     await db.admin.query(
       `update public.licenses set plan = 'standard', billing = 'manual', free_of_charge = false, employee_price_cents = null,
               condition_valid_from = null, condition_valid_until = null, condition_note = null where tenant_id = $1`, [C]);
-    expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ condition: "standard", unitPriceCents: 500 });
+    expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ condition: "standard", unitPriceCents: 499 });
   });
 
   it("invalid conditions are rejected by the database", async () => {
@@ -198,7 +198,7 @@ describe("conditions and default price", () => {
       expect(audit).toMatchObject({ action: "billing_settings.default_price", reason: "Preisanpassung Test", actor_id: U.superAdmin });
       expect(audit.after).toEqual({ defaultPriceCents: 600 });
     } finally {
-      await db.as(U.superAdmin, (q) => q.query("select public.platform_set_default_price(500, 'Zurück auf Standard')"), { commit: true });
+      await db.as(U.superAdmin, (q) => q.query("select public.platform_set_default_price(499, 'Zurück auf Standard')"), { commit: true });
     }
   });
 });
@@ -207,24 +207,24 @@ describe("billing status and frozen months", () => {
   it("leaving 'open' freezes count and amount; later changes do not alter the month", async () => {
     const p = await db.as(U.superAdmin, async (q) =>
       (await q.query("select * from public.platform_set_billing_status($1, '2026-09', 'invoiced', 'RE-2026-09-001')", [C])).rows[0], { commit: true });
-    expect(p).toMatchObject({ status: "invoiced", billable_count: 6, unit_price_cents: 500, amount_cents: 3000, condition: "standard" });
+    expect(p).toMatchObject({ status: "invoiced", billable_count: 6, unit_price_cents: 499, amount_cents: 2994, condition: "standard" });
 
     // A new person active in September and a new default price – the frozen month stays.
     const late = await person("Nachgetragen", [["active", "employee", "2026-09-20 08:00+02", null]]);
     await db.as(U.superAdmin, (q) => q.query("select public.platform_set_default_price(700, 'Test Einfrieren')"), { commit: true });
     try {
       const b = await billing(OWNER_C_USER, C, "2026-09");
-      expect(b).toMatchObject({ final: true, status: "invoiced", billableCount: 6, amountCents: 3000 });
+      expect(b).toMatchObject({ final: true, status: "invoiced", billableCount: 6, amountCents: 2994 });
       expect(b.lines.map((l: { displayName: string }) => l.displayName)).not.toContain("Nachgetragen");
 
       // Status changes keep the snapshot; reopening needs a reason and computes live again.
       await db.as(U.superAdmin, (q) => q.query("select public.platform_set_billing_status($1, '2026-09', 'paid')", [C]), { commit: true });
-      expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ status: "paid", amountCents: 3000 });
+      expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ status: "paid", amountCents: 2994 });
       expect((await pgError(db.as(U.superAdmin, (q) => q.query("select public.platform_set_billing_status($1, '2026-09', 'open')", [C])))).code).toBe("22023");
       await db.as(U.superAdmin, (q) => q.query("select public.platform_set_billing_status($1, '2026-09', 'open', 'Korrektur Test')", [C]), { commit: true });
       expect(await billing(OWNER_C_USER, C, "2026-09")).toMatchObject({ status: "open", final: false, billableCount: 7, unitPriceCents: 700 });
     } finally {
-      await db.as(U.superAdmin, (q) => q.query("select public.platform_set_default_price(500, 'Zurück')"), { commit: true });
+      await db.as(U.superAdmin, (q) => q.query("select public.platform_set_default_price(499, 'Zurück')"), { commit: true });
       await db.admin.query("update public.employee_status_history set valid_from = '2026-11-01 00:00+01' where employee_id = $1", [late]);
     }
 
@@ -273,7 +273,7 @@ describe("tenant isolation and data protection", () => {
     for (const user of [U.superAdmin, U.support]) {
       const rows = await db.as(user, async (q) => (await q.query("select * from public.platform_billing_overview('2026-09')")).rows);
       const c = rows.find((r) => r.tenant_id === C);
-      expect(c).toMatchObject({ billable_count: 6, amount_cents: 3000, unit_price_cents: 500 });
+      expect(c).toMatchObject({ billable_count: 6, amount_cents: 2994, unit_price_cents: 499 });
       const text = JSON.stringify(rows);
       for (const name of ["Voll Aktiv", "Inhaberin Test", "Sam Probe", "Charlie Test"]) expect(text).not.toContain(name);
       expect((await pgError(billing(user, C, "2026-09"))).code).toBe("42501");

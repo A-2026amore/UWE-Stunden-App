@@ -58,7 +58,7 @@ describe("invoice settings", () => {
 describe("issuing invoices", () => {
   it("without mandatory data only a draft (no number) is possible", async () => {
     const d = await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-06') as d", [B])).rows[0].d);
-    expect(d).toMatchObject({ draft: true, number: null, netCents: 420, vatCents: 80, grossCents: 500, servicePeriodStart: "2026-06-01", servicePeriodEnd: "2026-06-30" });
+    expect(d).toMatchObject({ draft: true, number: null, netCents: 419, vatCents: 80, grossCents: 499, servicePeriodStart: "2026-06-01", servicePeriodEnd: "2026-06-30" });
     expect(d.missing.length).toBeGreaterThan(0);
     expect(JSON.stringify(d)).not.toContain("Charlie");
     const e = await pgError(sa((q) => q.query("select public.platform_issue_invoice($1, '2026-06')", [B]), false));
@@ -72,12 +72,12 @@ describe("issuing invoices", () => {
     await sa((q) => q.query("select public.platform_set_invoice_settings($1, 'Absenderangaben erfasst')", [COMPLETE]));
     const inv = await sa(async (q) => (await q.query("select * from public.platform_issue_invoice($1, '2026-06')", [B])).rows[0]);
     const year = new Date().getFullYear();
-    expect(inv).toMatchObject({ kind: "invoice", number: `SW-${year}-000001`, seq: 1, month: "2026-06", net_cents: 420, vat_cents: 80, gross_cents: 500, vat_rate_confirmed: false });
+    expect(inv).toMatchObject({ kind: "invoice", number: `SW-${year}-000001`, seq: 1, month: "2026-06", net_cents: 419, vat_cents: 80, gross_cents: 499, vat_rate_confirmed: false });
     expect(inv.recipient).toMatchObject({ name: "Muster Pflegedienst GmbH (Testdaten)", street: "Musterallee 99", postalCode: "54321" });
     expect(inv.issuer).toMatchObject({ issuerName: COMPLETE.issuerName, taxNumber: COMPLETE.taxNumber, vatId: COMPLETE.vatId });
-    expect(inv.lines).toEqual([{ description: "Zeiterfassung Pro – abrechenbare Mitarbeitende 06/2026", quantity: 1, unitPriceCents: 500, amountCents: 500 }]);
+    expect(inv.lines).toEqual([{ description: "Zeiterfassung Pro – abrechenbare Mitarbeitende 06/2026", quantity: 1, unitPriceCents: 499, amountCents: 499 }]);
     const p = (await db.admin.query("select status, billable_count, amount_cents, note from public.billing_periods where tenant_id = $1 and month = '2026-06'", [B])).rows[0];
-    expect(p).toEqual({ status: "invoiced", billable_count: 1, amount_cents: 500, note: `Rechnung SW-${year}-000001` });
+    expect(p).toEqual({ status: "invoiced", billable_count: 1, amount_cents: 499, note: `Rechnung SW-${year}-000001` });
     const audit = (await db.admin.query("select action, tenant_id from public.audit_log where entity = 'invoice'")).rows;
     expect(audit).toEqual([{ action: "invoice.issue", tenant_id: B }]);
   });
@@ -147,8 +147,8 @@ describe("issuing invoices", () => {
     const short = await pgError(sa((q) => q.query("select public.platform_cancel_invoice($1, 'x')", [orig.id]), false));
     expect(short.code).toBe("22023");
     const c = await sa(async (q) => (await q.query("select * from public.platform_cancel_invoice($1, 'Falsche Anschrift')", [orig.id])).rows[0]);
-    expect(c).toMatchObject({ kind: "cancellation", seq: 4, net_cents: -420, vat_cents: -80, gross_cents: -500, cancels_invoice_id: orig.id, cancel_reason: "Falsche Anschrift" });
-    expect(c.lines[0]).toMatchObject({ quantity: 1, unitPriceCents: -500, amountCents: -500 });
+    expect(c).toMatchObject({ kind: "cancellation", seq: 4, net_cents: -419, vat_cents: -80, gross_cents: -499, cancels_invoice_id: orig.id, cancel_reason: "Falsche Anschrift" });
+    expect(c.lines[0]).toMatchObject({ quantity: 1, unitPriceCents: -499, amountCents: -499 });
     const o = (await db.admin.query("select cancelled_at, cancelled_by_invoice_id from public.invoices where id = $1", [orig.id])).rows[0];
     expect(o.cancelled_by_invoice_id).toBe(c.id);
     const again = await pgError(sa((q) => q.query("select public.platform_cancel_invoice($1, 'Falsche Anschrift')", [orig.id]), false));
@@ -203,7 +203,7 @@ describe("invoiced month guard (0021)", () => {
       expect(e.message).toContain(inv.number);
     }
     const frozen = (await db.admin.query("select status, amount_cents from public.billing_periods where tenant_id = $1 and month = '2026-06'", [B])).rows[0];
-    expect(frozen).toEqual({ status: "invoiced", amount_cents: 500 });
+    expect(frozen).toEqual({ status: "invoiced", amount_cents: 499 });
     await sa((q) => q.query("select public.platform_set_billing_status($1, '2026-06', 'paid', 'Zahlung eingegangen')", [B]));
     await sa((q) => q.query("select public.platform_cancel_invoice($1, 'Monat wird neu berechnet')", [inv.id]));
     await sa((q) => q.query("select public.platform_set_billing_status($1, '2026-06', 'open', 'Monat wird neu berechnet')", [B]));

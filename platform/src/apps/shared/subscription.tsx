@@ -21,7 +21,7 @@ export function priceOf(sub: TenantSubscription, interval: SubscriptionTerm["int
   return interval === "annual" ? sub.annualPriceCents : sub.monthlyPriceCents;
 }
 
-/** "5,00 € je Mitarbeiter und Monat" */
+/** "4,99 € je Mitarbeiter und Monat" */
 export function priceLine(sub: TenantSubscription, interval: SubscriptionTerm["interval"], edition?: Edition): string {
   return `${formatEuro(priceOf(sub, interval, edition))} je abrechenbarem Mitarbeiter und Monat`;
 }

@@ -12,6 +12,8 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   und Chef-Portal. Regressionstest: `tests/server/invitation-preregistration.test.ts`.
 
 ### Geändert
+- Pro-Preise 4,99 € (12-Monats-Abo) und 6,99 € (Monatstarif) brutto statt 5,00 € / 6,50 € (Entscheidung
+  02.11.2026, Migration 0028); Basic bleibt 1,99 €. AGB und Anlage A Entwurf 0.9.5.
 - Keine UWE-Sonderlogik mehr in der Plattform (Entscheidung 01.11.2026: UWE wird ein normaler Kunde):
   - Pausenfunktionen haben keine eingebaute Vorgabe mehr; es gilt immer die Regel der Firma, ohne geladene
     Firma die gesetzliche Standardregel. Die Regeln der alten App heißen `LEGACY_BREAK_POLICY` /

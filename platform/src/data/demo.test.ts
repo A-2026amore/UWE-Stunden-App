@@ -384,13 +384,13 @@ describe("demo repository – price model (billing)", () => {
     expect(hist.map((h) => h.month)).toEqual(["2026-10", "2026-09", "2026-08"]);
   });
 
-  it("standard customer: 3 employees × 5,00 € = 15,00 € before the subscription model, monthly plan afterwards", async () => {
-    // Existing tenants (0023): the model starts with the month after the seed day (here 01.11.2026); earlier months keep 5,00 €.
+  it("standard customer: 3 employees × 4,99 € = 14,97 € before the subscription model, monthly plan afterwards", async () => {
+    // Existing tenants (0023): the model starts with the month after the seed day (here 01.11.2026); earlier months keep the standard price (4,99 €).
     const { repo } = await as("leitung@muster-pflege.example");
-    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "standard", unitPriceCents: 500, billableCount: 3, amountCents: 1500, interval: null, trialEndsOn: null });
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-10")).toMatchObject({ condition: "standard", unitPriceCents: 499, billableCount: 3, amountCents: 1497, interval: null, trialEndsOn: null });
     expect((await repo.getTenantSubscription(DEMO_TENANT_IDS.pflege)).current).toMatchObject({ interval: "monthly", startsOn: "2026-11-01", endsOn: null });
     vi.setSystemTime(new Date("2026-11-05T10:00:00"));
-    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-11")).toMatchObject({ condition: "monthly", unitPriceCents: 650, interval: "monthly" });
+    expect(await repo.getTenantBilling(DEMO_TENANT_IDS.pflege, "2026-11")).toMatchObject({ condition: "monthly", unitPriceCents: 699, interval: "monthly" });
   });
 
   it("no foreign billing, no billing for employees", async () => {
@@ -428,17 +428,17 @@ describe("demo repository – price model (billing)", () => {
     const rev = await repo.getPlatformRevenue("2026-09");
     expect(rev.paymentProvider).toBe("none");
     expect(JSON.stringify(rev)).not.toMatch(/Anna|Mia|Emil/);
-    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1500, status: "open", interval: null });
-    expect(rev.totals).toMatchObject({ amountCents: 0, demoAmountCents: 1500 }); // both seed tenants are demo tenants
+    expect(rev.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)).toMatchObject({ billableCount: 3, amountCents: 1497, status: "open", interval: null });
+    expect(rev.totals).toMatchObject({ amountCents: 0, demoAmountCents: 1497 }); // both seed tenants are demo tenants
 
     await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-10", "invoiced")).rejects.toThrow("Monatsende");
     await expect(repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "waived")).rejects.toThrow("Grund");
-    expect(await repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "invoiced", "RE-1")).toMatchObject({ status: "invoiced", final: true, amountCents: 1500 });
+    expect(await repo.setBillingStatus(DEMO_TENANT_IDS.pflege, "2026-09", "invoiced", "RE-1")).toMatchObject({ status: "invoiced", final: true, amountCents: 1497 });
 
     await repo.setDefaultPrice(600, "Preisanpassung Test");
     expect((await repo.getBillingSettings()).defaultPriceCents).toBe(600);
     const after = await repo.getPlatformRevenue("2026-09");
-    expect(after.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1500); // frozen
+    expect(after.rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1497); // frozen
     // October is before the subscription model: the default price applies; the monthly price does not.
     expect((await repo.getPlatformRevenue("2026-10")).rows.find((r) => r.tenantId === DEMO_TENANT_IDS.pflege)?.amountCents).toBe(1800);
     await repo.updateBillingSettings({ monthlyPriceCents: 700, reason: "Preisanpassung Test" });
@@ -472,7 +472,7 @@ describe("demo repository – subscription (0023)", () => {
   it("existing tenant: monthly from the month of creation; owner switches to annual from the next month, cancels and withdraws", async () => {
     const { repo, storage } = await as("leitung@muster-pflege.example");
     let sub = await repo.getTenantSubscription(PFLEGE);
-    expect(sub).toMatchObject({ trialEndsOn: null, inTrial: false, ended: false, annualPriceCents: 500, monthlyPriceCents: 650, cancelNoticeDays: 0 });
+    expect(sub).toMatchObject({ trialEndsOn: null, inTrial: false, ended: false, annualPriceCents: 499, monthlyPriceCents: 699, cancelNoticeDays: 0 });
     expect(sub.current).toMatchObject({ interval: "monthly", endsOn: null });
     expect(sub.next).toBeNull();
 
@@ -480,7 +480,7 @@ describe("demo repository – subscription (0023)", () => {
     expect(sub.current).toMatchObject({ interval: "monthly", endsOn: "2026-11-30" });
     expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: null, currentTermEndsOn: "2027-11-30" });
     await expect(repo.chooseSubscription(PFLEGE, "monthly")).rejects.toThrow("nur zum Ende der Laufzeit");
-    expect((await repo.getTenantBilling(PFLEGE, "2026-11"))).toMatchObject({ condition: "monthly", unitPriceCents: 650 });
+    expect((await repo.getTenantBilling(PFLEGE, "2026-11"))).toMatchObject({ condition: "monthly", unitPriceCents: 699 });
 
     // Cancelling the planned switch undoes it: the monthly plan runs on.
     sub = await repo.cancelSubscription(PFLEGE, {});
@@ -496,11 +496,11 @@ describe("demo repository – subscription (0023)", () => {
     sub = await repo.withdrawCancellation(PFLEGE);
     expect(sub.next).toMatchObject({ interval: "annual", startsOn: "2026-12-01", endsOn: null, cancelledAt: null });
 
-    // In December the annual term runs: price 5,00 €; cancel → end 30.11.2027, monthly afterwards.
+    // In December the annual term runs: price 4,99 €; cancel → end 30.11.2027, monthly afterwards.
     vi.setSystemTime(new Date("2026-12-10T10:00:00+01:00"));
     const other = createDemoRepository(storage, { now: NOW });
     await other.signIn("leitung@muster-pflege.example", DEMO_PASSWORD);
-    expect(await other.getTenantBilling(PFLEGE, "2026-12")).toMatchObject({ condition: "standard", unitPriceCents: 500, interval: "annual" });
+    expect(await other.getTenantBilling(PFLEGE, "2026-12")).toMatchObject({ condition: "standard", unitPriceCents: 499, interval: "annual" });
     sub = await other.cancelSubscription(PFLEGE, { thenMonthly: true });
     expect(sub.current).toMatchObject({ interval: "annual", endsOn: "2027-11-30", thenMonthly: true });
     expect(sub.next).toMatchObject({ interval: "monthly", startsOn: "2027-12-01", endsOn: null });
@@ -547,7 +547,7 @@ describe("demo repository – subscription (0023)", () => {
     await expect(repo.updateBillingSettings({ trialMonths: 3 } as never)).rejects.toThrow("Grund");
     const code = await repo.createPromoCode({ code: "WILLKOMMEN-10", discountPercent: 10, note: null, maxRedemptions: null, redeemableUntil: null });
     const st = await repo.updateBillingSettings({ trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 3, welcomePromoCodeId: code.id, reason: "Aktion Winter" });
-    expect(st).toMatchObject({ defaultPriceCents: 500, monthlyPriceCents: 650, trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 3, welcomePromoCodeId: code.id, welcomePromoCode: "WILLKOMMEN-10" });
+    expect(st).toMatchObject({ defaultPriceCents: 499, monthlyPriceCents: 699, trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 3, welcomePromoCodeId: code.id, welcomePromoCode: "WILLKOMMEN-10" });
     const o = await repo.createTenant({ name: "Test Fahrdienst", slug: "test-fahrdienst", plan: "standard", isDemo: true, ownerEmail: "inhaber@test-fahrdienst.example" });
     const sub = await repo.getTenantSubscription(o.tenant.id);
     // 20.11.2026 + 3 months − 1 day = 19.02.2027 → trial until the end of February; March is the first paid month.

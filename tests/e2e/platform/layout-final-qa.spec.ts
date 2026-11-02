@@ -43,7 +43,7 @@ test("super-admin price model: the price sentence wraps on phones", async ({ pag
   await login(page, ADMIN, "admin@plattform.example");
   await expect(page.getByRole("heading", { level: 1, name: "Mandanten" })).toBeVisible();
   await go(page, "#/lizenzen");
-  await expect(page.getByTestId("default-price")).toContainText("5,00");
+  await expect(page.getByTestId("default-price")).toContainText("4,99");
   expect(await overflowX(page.getByTestId("default-price"))).toBeLessThanOrEqual(0);
   await noPageScroll(page);
 });

@@ -4,15 +4,15 @@
 > oder Steuerberatung. Platzhalter `[OFFEN: …]`, offene Rechtsfragen **⚠ Rechtsfrage**, Entscheidungen des
 > Anbieters **▶ Entscheidung**.
 
-Stand: Entwurf 0.9.4 vom 02.11.2026 (Versionen Basic 1,99 EUR und Pro; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif 6,50 EUR,
+Stand: Entwurf 0.9.5 vom 02.11.2026 (Pro 4,99 EUR / 6,99 EUR; davor 0.9.4 vom 02.11.2026: Versionen Basic 1,99 EUR und Pro; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif 6,50 EUR,
 Verlängerung um 6 Monate, Brevo – Entscheidungen des Anbieters vom 30.10.2026; davor 0.9.2 vom 30.10.2026 und 0.9.1
 vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0`, wird im App-Thread angepasst).
 
 > **Kurz erklärt (für den Anbieter, nicht Vertragstext):** Wer sich in den ersten 6 Monaten nach dem Marktstart
 > anmeldet, bekommt 3 Monate kostenlos (Einführungsaktion). Danach gibt es keine Gratismonate mehr, nur noch die
 > festen Preise und Rabattcodes, die der Anbieter z. B. per Mail an neue Firmen verschickt. Nach der Testphase
-> zahlt die Firma je Mitarbeiter und Monat 5,00 EUR (12-Monats-Abo, 12 Monate fest) oder 6,50 EUR (Monatstarif,
-> jeden Monat kündbar). Das 12-Monats-Abo verlängert sich um 6 Monate, wenn nicht spätestens am letzten Tag der
+> zahlt die Firma je Mitarbeiter und Monat in Pro 4,99 EUR (12-Monats-Abo, 12 Monate fest) oder 6,99 EUR (Monatstarif,
+> jeden Monat kündbar), in Basic 1,99 EUR. Das 12-Monats-Abo verlängert sich um 6 Monate, wenn nicht spätestens am letzten Tag der
 > Laufzeit gekündigt wird. Das ist nur zulässig, weil ausschließlich Firmen (Unternehmer) Kunden werden können.
 
 ## § 1 Preise und Tarife
@@ -22,13 +22,14 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
 
    | Tarif | Preis je Mitarbeitendem und Monat | Laufzeit | Kündigung |
    |---|---|---|---|
-   | **12-Monats-Abo** | **5,00 EUR** (darin rund 0,80 EUR USt., rund 4,20 EUR netto) | 12 Monate fest, danach Verlängerung um jeweils 6 Monate (§ 5) | spätestens am letzten Tag der Laufzeit (§ 5 Abs. 3) |
-   | **Monatstarif** | **6,50 EUR** (darin rund 1,04 EUR USt., rund 5,46 EUR netto) | unbestimmte Zeit | zum Ende jedes Kalendermonats (§ 5 Abs. 5) |
+   | **12-Monats-Abo** | **4,99 EUR** (darin rund 0,80 EUR USt., rund 4,19 EUR netto) | 12 Monate fest, danach Verlängerung um jeweils 6 Monate (§ 5) | spätestens am letzten Tag der Laufzeit (§ 5 Abs. 3) |
+   | **Monatstarif** | **6,99 EUR** (darin rund 1,12 EUR USt., rund 5,87 EUR netto) | unbestimmte Zeit | zum Ende jedes Kalendermonats (§ 5 Abs. 5) |
 
    Die Preise in der Tabelle gelten für die Version **Pro**. Für die Version **Basic** (§ 1c) beträgt das Entgelt
    in beiden Tarifen **1,99 EUR** je abrechenbarem Mitarbeitenden und Monat (darin rund 0,32 EUR USt., rund 1,67 EUR
    netto); Laufzeit und Kündigung wie in der Tabelle.
-   **▶ Entscheidung (02.11.2026):** zwei Versionen, Basic 1,99 EUR je Mitarbeiter und Monat.
+   **▶ Entscheidung (02.11.2026):** zwei Versionen, Basic 1,99 EUR je Mitarbeiter und Monat; Pro 4,99 EUR im
+   12-Monats-Abo und 6,99 EUR im Monatstarif (vorher 5,00 / 6,50 EUR).
 
    Die Rechnung weist den Gesamtbetrag, den Nettobetrag, den Steuersatz und den Steuerbetrag aus; die Umsatzsteuer
    wird aus dem Monatsgesamtbetrag herausgerechnet (kaufmännisch auf ganze Cent gerundet).
@@ -39,8 +40,8 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
    gelten nur, wenn sie im Angebot oder in der Bestellung in Textform vereinbart sind; sie gelten für jeden
    Kalendermonat, den der vereinbarte Zeitraum ganz oder teilweise berührt. Nachlässe auf das Entgelt gewährt der
    Anbieter im Übrigen nur über Aktionscodes (§ 4a).
-4. Beispiele (brutto, je Monat): 5 Mitarbeitende → 25,00 EUR im 12-Monats-Abo bzw. 32,50 EUR im Monatstarif;
-   20 → 100,00 / 130,00 EUR; 100 → 500,00 / 650,00 EUR.
+4. Beispiele Pro (brutto, je Monat): 5 Mitarbeitende → 24,95 EUR im 12-Monats-Abo bzw. 34,95 EUR im Monatstarif;
+   20 → 99,80 / 139,80 EUR; 100 → 499,00 / 699,00 EUR. Basic: 5 → 9,95 EUR; 20 → 39,80 EUR; 100 → 199,00 EUR.
    **▶ Entscheidung (getroffen 30.10.2026):** Bruttopreise, um mit Wettbewerbern vergleichbar zu sein. Bruttopreis-
    angaben gegenüber Unternehmern sind zulässig; die Preisangabenverordnung gilt nur gegenüber Verbrauchern. Website
    und Registrierung sollten einheitlich „inkl. USt.“ und deutlich „nur für Unternehmen“ ausweisen.
@@ -286,7 +287,7 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
 4. Der Preis nach § 1 ist ein Bruttopreis. Ändert sich der gesetzliche Umsatzsteuersatz, bleibt der Bruttopreis
    unverändert; es ändert sich nur der darin enthaltene Steuer- und Nettobetrag.
    **▶ Entscheidung:** Alternativ den Nettobetrag festhalten und eine Steueränderung weitergeben (dann wäre der
-   Bruttopreis nicht mehr fest 5,00 EUR). Die Software hält derzeit den Bruttopreis fest.
+   Bruttopreis nicht mehr fest 4,99 EUR). Die Software hält derzeit den Bruttopreis fest.
 
 ## § 7 Anbieterwechsel und Datenrückgabe (Data Act)
 

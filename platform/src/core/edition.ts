@@ -6,7 +6,7 @@
  *    sees the times, accepts statements and downloads PDF/CSV. 1,99 € gross per billable employee
  *    and month (12-month subscription and monthly plan, platform settings).
  *  - Pro: everything (employment contract data with target/actual, work account, hours overview,
- *    correction requests, import from the old app). 5,00 € / 6,50 € as before.
+ *    correction requests, import from the old app). 4,99 € / 6,99 € (decision 02.11.2026, migration 0028).
  *  - Without a stored change a tenant is Pro (every tenant before 0027).
  *  - Pro applies from the current month. Basic from the next month; in a running 12-month subscription
  *    only after the current term; before the first paid month (trial) from the first paid month.

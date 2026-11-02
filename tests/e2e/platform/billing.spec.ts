@@ -3,7 +3,7 @@ import { ADMIN, APP, CHEF, freeze, go, login, statValue } from "./helpers";
 
 // Demo data (frozen today 20.11.2026, seed relative to it): Demo Krankentransporte is a free pilot
 // with 4 active employees; Muster Pflegedienst is a standard customer with 3 employees (owner without times).
-// Existing tenants keep the old 5,00 € rule until the subscription model starts for them (01.12.2026, migration 0023).
+// Existing tenants keep the old 4,99 € rule until the subscription model starts for them (01.12.2026, migration 0023).
 
 test.beforeEach(async ({ page }) => {
   await freeze(page);
@@ -20,14 +20,14 @@ test("chef: billing preview with billable persons, gross amount and VAT note", a
   await openBilling(page, "leitung@muster-pflege.example");
   await expect(page.locator(".alert-title", { hasText: "Vorschau" })).toBeVisible();
   await expect(statValue(page, "Abrechenbare Personen")).toHaveText("3");
-  await expect(statValue(page, "Preis je Person")).toHaveText("5,00 €");
-  await expect(statValue(page, "Summe brutto")).toHaveText("15,00 €");
+  await expect(statValue(page, "Preis je Person")).toHaveText("4,99 €");
+  await expect(statValue(page, "Summe brutto")).toHaveText("14,97 €");
   await expect(page.locator(".stat", { hasText: "Summe brutto" })).toContainText("inkl. gesetzlicher USt.");
   const table = page.getByRole("table", { name: "Abrechenbare Personen" });
   for (const name of ["Mia Musterfrau", "Noah Normal", "Olga Ohnename"]) await expect(table).toContainText(name);
   // The owner records no own times → free.
   await expect(table).not.toContainText("Petra Leitung");
-  await expect(page.getByText("3 × 5,00 € = 15,00 € inkl. gesetzlicher USt.")).toBeVisible();
+  await expect(page.getByText("3 × 4,99 € = 14,97 € inkl. gesetzlicher USt.")).toBeVisible();
 
   // Past month: preliminary until the operator closes it.
   await page.getByLabel("Monat").selectOption("2026-10");
@@ -65,20 +65,20 @@ test("chef: lock an employee – no sign-in, still billed this month", async ({ 
 test("super-admin: revenue numbers without names, close a month, change the default price", async ({ page }) => {
   await login(page, ADMIN, "admin@plattform.example");
   await expect(page.getByRole("heading", { level: 1, name: "Mandanten" })).toBeVisible();
-  await expect(page.getByRole("row", { name: /Muster Pflegedienst/ })).toContainText("5,00 € je Mitarbeiter/Monat (Standardpreis)");
+  await expect(page.getByRole("row", { name: /Muster Pflegedienst/ })).toContainText("4,99 € je Mitarbeiter/Monat (Standardpreis)");
   await go(page, "#/umsatz");
   await expect(page.getByRole("heading", { level: 1, name: "Umsatz" })).toBeVisible();
   await expect(page.getByText("Zahlungsdienstleister: keiner (manuelle Abrechnung)")).toBeVisible();
 
   const main = page.getByRole("main");
   const pflege = page.getByRole("row", { name: /Muster Pflegedienst/ });
-  await expect(pflege).toContainText("15,00 €");
+  await expect(pflege).toContainText("14,97 €");
   await expect(pflege).toContainText("Standardpreis");
   await expect(pflege).toContainText("Vorschau");
   await expect(page.getByRole("row", { name: /Demo Krankentransporte/ })).toContainText("Kostenlos – Pilot");
   // Both demo tenants are not revenue.
   await expect(statValue(page, "Umsatz brutto")).toHaveText("0,00 €");
-  await expect(statValue(page, "Demo-Mandanten")).toHaveText("15,00 €");
+  await expect(statValue(page, "Demo-Mandanten")).toHaveText("14,97 €");
   for (const personal of ["Mia Musterfrau", "Anna Beispiel", "Petra Leitung"]) await expect(main).not.toContainText(personal);
   // The current month cannot be closed.
   await expect(page.getByRole("button", { name: /Abrechnungsstatus .* ändern/ })).toHaveCount(0);
@@ -96,8 +96,8 @@ test("super-admin: revenue numbers without names, close a month, change the defa
 
   // New 12-month (standard) price: November (still the old rule for this tenant) changes, the closed October stays.
   await go(page, "#/lizenzen");
-  await expect(page.getByTestId("default-price")).toContainText("5,00 €");
-  await expect(page.getByTestId("monthly-price")).toContainText("6,50 €");
+  await expect(page.getByTestId("default-price")).toContainText("4,99 €");
+  await expect(page.getByTestId("monthly-price")).toContainText("6,99 €");
   await page.getByLabel("12-Monats-Abo (€ brutto)").fill("6,00");
   await page.getByLabel("Grund (Protokoll)").fill("Preisanpassung Test");
   await page.getByRole("button", { name: "Einstellungen speichern" }).click();
@@ -106,7 +106,7 @@ test("super-admin: revenue numbers without names, close a month, change the defa
   await go(page, "#/umsatz");
   await expect(pflege).toContainText("18,00 €");
   await page.getByLabel("Monat").selectOption("2026-10");
-  await expect(pflege).toContainText("15,00 €");
+  await expect(pflege).toContainText("14,97 €");
 
   // Audit (platform protocol).
   await go(page, "#/protokoll");
@@ -119,7 +119,7 @@ test("super-admin: revenue numbers without names, close a month, change the defa
   await openBilling(chef, "leitung@muster-pflege.example");
   await chef.getByLabel("Monat").selectOption("2026-10");
   await expect(chef.getByText("Abgeschlossen: Oktober 2026")).toBeVisible();
-  await expect(statValue(chef, "Summe brutto")).toHaveText("15,00 €");
+  await expect(statValue(chef, "Summe brutto")).toHaveText("14,97 €");
 });
 
 test("super-admin: special condition for a tenant", async ({ page }) => {

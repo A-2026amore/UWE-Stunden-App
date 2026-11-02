@@ -80,19 +80,19 @@ describe("rules in SQL = core rules", () => {
 });
 
 describe("existing and seed tenants", () => {
-  it("legacy: subscription model from the next month (terms_from); earlier months keep the default price, no retroactive 6,50 €", async () => {
+  it("legacy: subscription model from the next month (terms_from); earlier months keep the default price, no retroactive 6,99 €", async () => {
     const termsFrom = nextFirst(today);
     expect((await db.admin.query("select terms_from::text as t from public.tenant_subscriptions where tenant_id = $1", [B])).rows[0].t).toBe(termsFrom);
     const s = await sub(U.ownerB, B);
     expect(s).toMatchObject({
       tenantId: B, trialEndsOn: null, inTrial: false, firstPaidMonth: "2026-10", ended: false, next: null, contractEndsOn: null, withdrawable: null,
-      annualPriceCents: 500, monthlyPriceCents: 650, termMonths: 12, renewalMonths: 6, cancelNoticeDays: 0,
+      annualPriceCents: 499, monthlyPriceCents: 699, termMonths: 12, renewalMonths: 6, cancelNoticeDays: 0,
       current: { interval: "monthly", startsOn: termsFrom, endsOn: null, currentTermEndsOn: null, cancelledAt: null, thenMonthly: false },
       contract: { termsVersion: "bestand", dpaVersion: "bestand", interval: "monthly", acceptedByName: null },
     });
-    expect(await cond(B, "2026-10")).toEqual({ unit_price_cents: 500, condition: "standard" });
-    expect(await cond(B, month(today))).toEqual({ unit_price_cents: 500, condition: "standard" });
-    expect(await cond(B, month(termsFrom))).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond(B, "2026-10")).toEqual({ unit_price_cents: 499, condition: "standard" });
+    expect(await cond(B, month(today))).toEqual({ unit_price_cents: 499, condition: "standard" });
+    expect(await cond(B, month(termsFrom))).toEqual({ unit_price_cents: 699, condition: "monthly" });
     expect(await cond(A, "2026-10")).toEqual({ unit_price_cents: 0, condition: "pilot_free" });
     // a later correction of the start date keeps the legacy start of the terms
     await db.admin.query("update public.tenants set created_at = created_at - interval '1 day' where id = $1", [B]);
@@ -135,8 +135,8 @@ describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026
     expect(plan.add!.startsOn).toBe(nextFirst(today));
     expect(s).toMatchObject({ current: { interval: "monthly" }, next: { interval: "annual", startsOn: plan.add!.startsOn, currentTermEndsOn: annualTermEnd(plan.add!.startsOn, 0) } });
     // current month stays monthly, the next month is billed at the 12-month price
-    expect(await cond(B, month(today))).toEqual({ unit_price_cents: 650, condition: "monthly" });
-    expect(await cond(B, month(plan.add!.startsOn))).toEqual({ unit_price_cents: 500, condition: "standard" });
+    expect(await cond(B, month(today))).toEqual({ unit_price_cents: 699, condition: "monthly" });
+    expect(await cond(B, month(plan.add!.startsOn))).toEqual({ unit_price_cents: 499, condition: "standard" });
     expect(await pgError(call(U.ownerB, "select public.tenant_choose_subscription($1, 'annual') as s", [B])))
       .toMatchObject({ code: "55000", message: "Das 12-Monats-Abo läuft bereits." });
     expect((await pgError(call(U.ownerB, "select public.tenant_choose_subscription($1, 'monthly') as s", [B]))).message)
@@ -164,7 +164,7 @@ describe("plan choice, cancellation, withdrawal (tenant B, monthly since 10/2026
     ]);
     expect(s.next).toMatchObject({ interval: "monthly", startsOn: annual.startsOn });
     expect(s.withdrawable).toMatchObject({ interval: "annual", startsOn: annual.startsOn, endsOn: end, thenMonthly: true });
-    expect(await cond(B, month(annual.startsOn))).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond(B, month(annual.startsOn))).toEqual({ unit_price_cents: 699, condition: "monthly" });
     const w = await call(U.ownerB, "select public.tenant_withdraw_cancellation($1) as s", [B]);
     expect((await terms(B)).map((t) => [t.interval, t.startsOn, t.endsOn])).toEqual([
       ["monthly", "2026-10-01", end],
@@ -240,15 +240,15 @@ describe("frozen months and issued invoices stay unchanged", () => {
     expect((await terms(A)).map((x) => [x.interval, x.startsOn])).toEqual([["monthly", "2026-06-01"]]);
     await sa((q) => q.query("select public.platform_set_billing_status($1, '2026-07', 'invoiced', 'Test')", [A]));
     const frozen = (await db.admin.query("select condition, unit_price_cents, amount_cents from public.billing_periods where tenant_id = $1 and month = '2026-07'", [A])).rows[0];
-    expect(frozen).toMatchObject({ condition: "monthly", unit_price_cents: 650 });
+    expect(frozen).toMatchObject({ condition: "monthly", unit_price_cents: 699 });
     await settings({ monthlyPriceCents: 700 });
     try {
       const jul = await db.as(U.ownerA, async (q) => (await q.query("select public.tenant_billing($1, '2026-07') as b", [A])).rows[0].b);
-      expect(jul).toMatchObject({ final: true, condition: "monthly", unitPriceCents: 650, amountCents: frozen.amount_cents, interval: "monthly" });
+      expect(jul).toMatchObject({ final: true, condition: "monthly", unitPriceCents: 699, amountCents: frozen.amount_cents, interval: "monthly" });
       const aug = await db.as(U.ownerA, async (q) => (await q.query("select public.tenant_billing($1, '2026-08') as b", [A])).rows[0].b);
       expect(aug).toMatchObject({ final: false, condition: "monthly", unitPriceCents: 700 });
     } finally {
-      await settings({ monthlyPriceCents: 650 });
+      await settings({ monthlyPriceCents: 699 });
     }
   });
 
@@ -261,8 +261,8 @@ describe("frozen months and issued invoices stay unchanged", () => {
     const annual = await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-08') as d", [A])).rows[0].d);
     expect(annual.lines[0].description).toBe("Zeiterfassung Pro – abrechenbare Mitarbeitende 08/2026 (12-Monats-Abo)");
     expect(annual.condition).toBe("standard");
-    // the frozen July keeps its snapshot (monthly, 6,50 €)
-    expect((await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-07') as d", [A])).rows[0].d)).lines[0].unitPriceCents).toBe(650);
+    // the frozen July keeps its snapshot (monthly, 6,99 €)
+    expect((await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-07') as d", [A])).rows[0].d)).lines[0].unitPriceCents).toBe(699);
     await sa((q) => q.query("select public.platform_create_promo_code('HALB-TEST', 50)"));
     await db.as(U.ownerA, (q) => q.query("select public.tenant_redeem_promo_code($1, 'HALB-TEST')", [A]), { commit: true });
     await db.admin.query("update public.promo_redemptions set redeemed_at = '2026-08-01 00:00 Europe/Berlin' where tenant_id = $1", [A]);
@@ -287,7 +287,7 @@ describe("settings (super admin)", () => {
     for (const patch of bad) expect((await pgError(settings(patch))).code, JSON.stringify(patch)).toBe("22023");
     expect((await pgError(settings({ trialMonths: 2 }, ""))).code).toBe("22023");
     const s = await settings({ trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 2, cancelNoticeDays: 14 }, "Einführungsangebot");
-    expect(s).toMatchObject({ defaultPriceCents: 500, monthlyPriceCents: 650, trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 2, cancelNoticeDays: 14 });
+    expect(s).toMatchObject({ defaultPriceCents: 499, monthlyPriceCents: 699, trialWindowFrom: "2026-11-01", trialWindowUntil: "2026-12-31", trialMonths: 2, cancelNoticeDays: 14 });
     const audit = (await db.admin.query("select action, before, after, reason, actor_id from public.audit_log where action = 'billing_settings.update' order by created_at desc limit 1")).rows[0];
     expect(audit).toMatchObject({ reason: "Einführungsangebot", actor_id: U.superAdmin, after: { trialMonths: 2, cancelNoticeDays: 14 } });
     expect(audit.before).toMatchObject({ cancelNoticeDays: 0 });
@@ -339,7 +339,7 @@ describe("new tenant: trial, contract conclusion, reminders", () => {
       current: { interval: "monthly", startsOn: `${firstPaidMonthFor(today, trial)}-01`, endsOn: null } });
     expect(await cond(C, month(today))).toEqual({ unit_price_cents: 0, condition: "trial" });
     expect(await cond(C, month(trial))).toEqual({ unit_price_cents: 0, condition: "trial" });
-    expect(await cond(C, firstPaidMonthFor(today, trial))).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond(C, firstPaidMonthFor(today, trial))).toEqual({ unit_price_cents: 699, condition: "monthly" });
     const t = await db.as(OWNER_C_USER, async (q) => (await q.query("select public.tenant_billing($1, $2) as b", [C, month(today)])).rows[0].b);
     expect(t).toMatchObject({ condition: "trial", amountCents: 0, trialEndsOn: trial, interval: null });
   });
@@ -416,7 +416,7 @@ describe("new tenant: trial, contract conclusion, reminders", () => {
     const r = await claim(addDays(trial, -14));
     expect(r).toEqual([expect.objectContaining({
       tenant_id: C, tenant_name: "Abo Test GmbH", kind: "trial_end", ref_date: trial, next_interval: "annual",
-      annual_price_cents: 500, monthly_price_cents: 650, emails: ["inhaber@abo-test.example"],
+      annual_price_cents: 499, monthly_price_cents: 699, emails: ["inhaber@abo-test.example"],
     })]);
     expect(await claim(addDays(trial, -3))).toEqual([]); // only once
     // request roles cannot claim
@@ -481,16 +481,16 @@ describe("automatic monthly invoices", () => {
 
     const rows = await run(second());
     const forB = rows.find((r) => r.tenant_id === B);
-    expect(forB).toMatchObject({ month: prev(), gross_cents: 650, problem: null, emails: ["inhaberin@muster-pflegedienst.example"] });
+    expect(forB).toMatchObject({ month: prev(), gross_cents: 699, problem: null, emails: ["inhaberin@muster-pflegedienst.example"] });
     expect(forB.number).toMatch(/^SW-\d{4}-000001$/);
     const forA = rows.find((r) => r.tenant_id === A);
     expect(forA).toMatchObject({ invoice_id: null, emails: [] });
     expect(forA.problem).toContain("Anschrift des Kunden");
     expect(rows.find((r) => r.tenant_id === C)).toBeUndefined(); // trial: 0 €
     const period = (await db.admin.query("select status, amount_cents from public.billing_periods where tenant_id = $1 and month = $2", [B, prev()])).rows[0];
-    expect(period).toEqual({ status: "invoiced", amount_cents: 650 });
+    expect(period).toEqual({ status: "invoiced", amount_cents: 699 });
     const audit = (await db.admin.query("select actor_id, after, reason from public.audit_log where action = 'invoice.issue' and tenant_id = $1", [B])).rows;
-    expect(audit).toEqual([{ actor_id: null, after: expect.objectContaining({ issuedBy: "system", grossCents: 650 }), reason: "Automatische Monatsrechnung (System)" }]);
+    expect(audit).toEqual([{ actor_id: null, after: expect.objectContaining({ issuedBy: "system", grossCents: 699 }), reason: "Automatische Monatsrechnung (System)" }]);
   });
 
   it("idempotent; a cancelled month is not issued again automatically; the super admin can still reissue", async () => {
@@ -501,7 +501,7 @@ describe("automatic monthly invoices", () => {
     await sa((q) => q.query("select public.platform_cancel_invoice($1, 'Testkorrektur')", [inv.id]));
     expect((await run(second())).find((r) => r.tenant_id === B)).toBeUndefined();
     const manual = await sa(async (q) => (await q.query("select * from public.platform_issue_invoice($1, $2)", [B, prev()])).rows[0]);
-    expect(manual).toMatchObject({ kind: "invoice", month: prev(), gross_cents: 650 });
+    expect(manual).toMatchObject({ kind: "invoice", month: prev(), gross_cents: 699 });
     const numbers = (await db.admin.query("select seq from public.invoices order by seq")).rows.map((r) => r.seq);
     expect(numbers).toEqual([1, 2, 3]); // gapless: invoice, cancellation, reissue
     expect((await pgError(db.as(U.superAdmin, (q) => q.query("select * from auth.issue_monthly_invoices()")))).code).toBe("42501");

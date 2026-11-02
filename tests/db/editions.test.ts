@@ -54,7 +54,7 @@ describe("defaults", () => {
   it("every tenant is Pro without a change; Basic prices 1,99 € in both plans", async () => {
     expect(await features(U.emp1A, A)).toEqual({ edition: "pro", pro: true, nextEdition: null });
     expect(await sub(U.ownerA, A)).toMatchObject({ edition: "pro", firstPaidEdition: "pro", nextEdition: null, proFeatures: true,
-      basicAnnualPriceCents: 199, basicMonthlyPriceCents: 199, annualPriceCents: 500, monthlyPriceCents: 650 });
+      basicAnnualPriceCents: 199, basicMonthlyPriceCents: 199, annualPriceCents: 499, monthlyPriceCents: 699 });
     const st = await sa(async (q) => (await q.query("select public.platform_billing_settings() as s")).rows[0].s);
     expect(st).toMatchObject({ basicPriceCents: 199, basicMonthlyPriceCents: 199 });
   });
@@ -82,7 +82,7 @@ describe("choosing the edition (monthly plan)", () => {
     expect(await choose(U.ownerA, A, "pro")).toMatchObject({ edition: "pro", nextEdition: null });
     expect(await editions(A)).toEqual([]);
     expect(await pgError(choose(U.ownerA, A, "pro"))).toMatchObject({ code: "55000", message: "Diese Version ist bereits gewählt." });
-    expect(await cond(A, month(expected))).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond(A, month(expected))).toEqual({ unit_price_cents: 699, condition: "monthly" });
     const audit = (await db.admin.query("select action, actor_id from public.audit_log where tenant_id = $1 and action = 'subscription.edition'", [A])).rows;
     expect(audit).toHaveLength(2);
     expect(audit[0]).toMatchObject({ actor_id: U.ownerA });
@@ -176,7 +176,7 @@ describe("contract conclusion with edition and Basic prices", () => {
     // already planned; Pro withdraws it
     expect((await pgError(choose(OWNER_C_USER, C, "basic"))).code).toBe("55000");
     expect(await choose(OWNER_C_USER, C, "pro")).toMatchObject({ firstPaidEdition: "pro", nextEdition: null });
-    expect(await cond(C, paid)).toEqual({ unit_price_cents: 650, condition: "monthly" });
+    expect(await cond(C, paid)).toEqual({ unit_price_cents: 699, condition: "monthly" });
     // during the trial Basic is planned from the first paid month again
     expect((await choose(OWNER_C_USER, C, "basic")).nextEdition).toEqual({ edition: "basic", startsOn: `${paid}-01` });
   });
