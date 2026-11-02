@@ -1038,6 +1038,18 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     });
   });
 
+  // Free offer "until further notice" (0029): on = from the current month; off = until endsOn (last day of a month).
+  router.add("PUT", "/api/platform/billing/free-offer", async (ctx) => {
+    const b = v.object(ctx.body, ["on", "endsOn", "reason"]);
+    const on = v.bool(b.on, "Kostenlos");
+    const endsOn = on || b.endsOn === undefined || b.endsOn === null || b.endsOn === "" ? null : v.date(b.endsOn, "Kostenlos bis");
+    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Änderung angeben.");
+    return app.asUser(ctx, async (q) => {
+      const r = await one(q, "select public.platform_set_free_offer($1, $2::date, $3) as s", [on, endsOn, reason]);
+      return json(200, r!.s as BillingSettings);
+    });
+  });
+
   router.add("GET", "/api/platform/billing", async (ctx) => {
     const month = v.month(ctx.query.get("month"));
     return app.asUser(ctx, async (q) => {

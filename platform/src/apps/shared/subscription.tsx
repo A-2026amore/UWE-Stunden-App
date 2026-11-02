@@ -7,6 +7,7 @@ import { EDITION_LABEL, editionChangeStart } from "../../core/edition";
 import { VAT_NOTE, berlinDateOf, formatEuro } from "../../core/billing";
 import { INTERVAL_LABEL, addDays, cancellationEnd, planCancel, planChoice, type TermChange, type TermRow } from "../../core/subscription";
 import { formatDateDE, monthLabelDE } from "./format";
+import { Alert } from "../../design";
 
 /** Today as Berlin calendar day (same "today" as the subscription rules). */
 export const berlinToday = (): ISODate => berlinDateOf(Date.now());
@@ -109,5 +110,20 @@ export function SubscriptionFacts({ sub, today = berlinToday() }: { sub: TenantS
         <dd data-testid="subscription-contract-end">{formatDateDE(sub.contractEndsOn)}</dd>
       </>}
     </dl>
+  );
+}
+
+/** Free offer of the platform (migration 0029): shown on the billing page and at contract conclusion. */
+export function FreeOfferNotice({ sub }: { sub: TenantSubscription }) {
+  const offer = sub.freeOffer;
+  if (!offer) return null;
+  return (
+    <Alert tone="success" title="Zurzeit kostenlos">
+      <p data-testid="free-offer-notice">
+        {offer.endsOn
+          ? <>Die Nutzung ist bis einschließlich {formatDateDE(offer.endsOn)} kostenlos, mit allen Pro-Funktionen. Danach gelten die Preise unten.</>
+          : <>Die Nutzung ist bis auf Weiteres kostenlos, mit allen Pro-Funktionen. Die Preise unten gelten erst, wenn wir das Angebot beenden; das kündigen wir mindestens einen Monat vorher an.</>}
+      </p>
+    </Alert>
   );
 }

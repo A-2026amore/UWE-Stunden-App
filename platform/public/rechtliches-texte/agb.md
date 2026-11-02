@@ -5,7 +5,7 @@
 > Platzhalter stehen in `[OFFEN: …]`, offene Rechtsfragen sind mit **⚠ Rechtsfrage** markiert.
 > Der Produktname „Schichtklar24“ ist vorläufig (Markenrecherche beim DPMA/EUIPO steht aus).
 
-Stand: Entwurf 0.9.5 vom 02.11.2026 (Pro-Preise 4,99 EUR / 6,99 EUR; davor 0.9.4 vom 02.11.2026: Versionen Basic und Pro, Anlage A § 1c; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif
+Stand: Entwurf 0.9.6 vom 02.11.2026 (Nutzung bis auf Weiteres kostenlos, Anlage A § 1d; davor 0.9.5 vom 02.11.2026: Pro-Preise 4,99 EUR / 6,99 EUR; davor 0.9.4 vom 02.11.2026: Versionen Basic und Pro, Anlage A § 1c; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif
 6,50 EUR, Verlängerung um 6 Monate, nur Unternehmer; davor 0.9.2 vom 30.10.2026 und 0.9.1 vom 29.10.2026)
 
 ## § 1 Geltungsbereich, Vertragspartner

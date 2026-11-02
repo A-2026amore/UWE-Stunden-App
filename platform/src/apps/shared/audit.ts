@@ -58,6 +58,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "billing_period.status": "Abrechnungsstatus geändert",
   "billing_settings.default_price": "Standardpreis geändert",
   "billing_settings.update": "Preise und Tarifeinstellungen geändert",
+  "billing_settings.free_offer": "Kostenloses Angebot geändert",
   "subscription.accept": "Vertrag abgeschlossen (AGB/AVV)",
   "subscription.choose": "Tarif gewählt",
   "subscription.cancel": "Vertrag gekündigt",

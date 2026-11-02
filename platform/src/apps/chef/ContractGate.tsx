@@ -13,7 +13,7 @@ import { Alert, Button, Checkbox } from "../../design";
 import { errorText } from "../shared/hooks";
 import { formatDateDE, monthLabelDE } from "../shared/format";
 import { ProductMark, TenantLogo } from "../shared/ui";
-import { berlinToday, choiceStart, priceLine, priceOf } from "../shared/subscription";
+import { FreeOfferNotice, berlinToday, choiceStart, priceLine, priceOf } from "../shared/subscription";
 import type { AreaRepository } from "../shared/repo";
 
 /** Legal pages (built by platform/rechtliches); relative to /chef/. */
@@ -57,6 +57,7 @@ export function ContractGate({ repo, tenant, me, sub, onAccepted, onSignOut }: {
         ) : (
           <form class="stack" onSubmit={accept} noValidate>
             <p>Bevor Sie das Chef-Portal nutzen, schließen Sie den Vertrag für <strong>{tenant.name}</strong> ab.</p>
+            <FreeOfferNotice sub={sub} />
             {trial && (
               <Alert tone="success" title="Einführungsangebot">
                 <p data-testid="contract-trial">Kostenlos bis {formatDateDE(trial)}. Der erste bezahlte Monat ist {monthLabelDE(sub.firstPaidMonth)}.</p>

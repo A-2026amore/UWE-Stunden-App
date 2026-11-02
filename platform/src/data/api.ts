@@ -464,6 +464,9 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     updateBillingSettings(patch) {
       return request<BillingSettings>("PUT", "/api/platform/billing/settings", patch);
     },
+    setFreeOffer(on, endsOn, reason) {
+      return request<BillingSettings>("PUT", "/api/platform/billing/free-offer", { on, endsOn, reason });
+    },
     setBillingStatus(tenantId, month, status, note) {
       return request<BillingMonthSummary>("PUT", `/api/platform/tenants/${enc(tenantId)}/billing/${enc(month)}`, note === undefined ? { status } : { status, note });
     },

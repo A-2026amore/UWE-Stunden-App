@@ -17,6 +17,7 @@ import { errorText, useAsync } from "../shared/hooks";
 import { auditLabel } from "../shared/audit";
 import { InvoicesPage } from "./pages/Invoices";
 import { PromoCodesPage, TenantPromoCard } from "./pages/PromoCodes";
+import { FreeOfferCard } from "./FreeOfferCard";
 import { DEFAULT_MONTHLY_PRICE_CENTS, INTERVAL_LABEL, PROMO_TERMS_NOTE } from "../../core/subscription";
 import { DEFAULT_BASIC_MONTHLY_PRICE_CENTS, DEFAULT_BASIC_PRICE_CENTS, EDITION_FEATURES, EDITION_LABEL } from "../../core/edition";
 import { SubscriptionFacts, berlinToday } from "../shared/subscription";
@@ -73,6 +74,7 @@ function rowPriceText(r: PlatformRevenueRow | undefined, l: License | null, defa
   if (r.condition === "promo") return promoText(r);
   if (r.condition === "trial") return `0,00 € – Testphase${r.trialEndsOn ? ` bis ${formatDateDE(r.trialEndsOn)}` : ""}`;
   if (r.condition === "ended") return "0,00 € – kein laufender Vertrag";
+  if (r.condition === "platform_free") return "0,00 € – zurzeit kostenlos";
   if (r.condition === "pilot_free" || r.condition === "free" || r.condition.startsWith("tenant_")) return priceText(l, defaultPriceCents);
   const label = r.condition === "standard" && r.interval ? INTERVAL_LABEL[r.interval] : BILLING_CONDITION_LABEL[r.condition];
   return `${formatEuro(r.unitPriceCents)} je Mitarbeiter/Monat (${label}${r.edition === "basic" ? `, ${EDITION_LABEL.basic}` : ""})`;
@@ -598,6 +600,7 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
   return (
     <div class="stack">
       <h1 class="page-title">Preismodell</h1>
+      {st && <FreeOfferCard settings={st} readOnly={readOnly} onChange={() => setTick((x) => x + 1)} />}
       <div class="grid-2">
         <StatTile label="Pro · 12-Monats-Abo" value={<span data-testid="default-price">{formatEuro(current)}</span>} tone="brand"
           hint={`je Mitarbeiter/Monat, ${VAT_NOTE} · 12 Monate fest, verlängert sich um 6 Monate`} />

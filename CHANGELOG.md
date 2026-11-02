@@ -4,6 +4,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
+### Hinzugefügt
+- „Alles kostenlos“ (Entscheidung 02.11.2026, Migration 0029): Der Super-Admin stellt die Nutzung für alle Firmen
+  bis auf Weiteres kostenlos (Preismodell → „Alles kostenlos“). Kostenlose Monate kosten 0 €, alle Firmen haben alle
+  Pro-Funktionen, Chef-Portal und Vertragsabschluss zeigen „Zurzeit kostenlos“. Beenden mit mindestens einem Monat
+  Vorlauf zum Monatsende. AGB / Anlage A Entwurf 0.9.6 (§ 1d).
+
 ### Hinzugefügt (Betrieb)
 - Tägliche Sicherung der Testumgebung: `deploy/taegliche-sicherung-einrichten.sh` richtet einmalig den Timer
   `stunden-test-backup.timer` ein (jede Nacht 03:30, verpasste Läufe werden nachgeholt). Er startet

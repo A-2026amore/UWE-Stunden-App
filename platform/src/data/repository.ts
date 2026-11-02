@@ -16,7 +16,7 @@
  */
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
-  Employee, EmploymentContract, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
+  Employee, EmploymentContract, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
   NewPromoCode, PromoCode, PromoRedemption, SubscriptionInterval, TenantBillingMonth, TenantSubscription, Edition, TenantFeatures, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
@@ -301,6 +301,11 @@ export interface BillingApi {
   setDefaultPrice(cents: number, reason: string): Promise<BillingSettings>;
   /** super_admin: prices, trial window, notice days, welcome code (migration 0023); only given fields change, reason required. */
   updateBillingSettings(patch: BillingSettingsPatch): Promise<BillingSettings>;
+  /**
+   * super_admin: free offer "until further notice" (migration 0029). on = free from the current month;
+   * off = free until `endsOn` (last day of a month, at least the end of the next month). Reason required.
+   */
+  setFreeOffer(on: boolean, endsOn: ISODate | null, reason: string): Promise<BillingSettings>;
   /**
    * super_admin: manual billing status of a past month. Leaving "open" freezes
    * the month; "waived" and reopening ("open") need a note.

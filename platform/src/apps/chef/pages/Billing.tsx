@@ -7,7 +7,7 @@ import { INTERVAL_LABEL, PROMO_TERMS_NOTE, addMonthsToDate, addDays } from "../.
 import { Alert, Button, Card, Checkbox, Dialog, InputField, SelectField, StatTile, StatusPill, Table, TextareaField, useDialogs, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, currentMonth, dateTimeDE, formatDateDE, monthLabelDE } from "../../shared/format";
-import { SubscriptionFacts, berlinToday, cancelDeadline, cancelPlan, choiceStart, openTerm, priceLine } from "../../shared/subscription";
+import { FreeOfferNotice, SubscriptionFacts, berlinToday, cancelDeadline, cancelPlan, choiceStart, openTerm, priceLine } from "../../shared/subscription";
 import { useChef } from "../context";
 import { TenantInvoices } from "../TenantInvoices";
 import { EditionCard, editionPrices } from "../EditionCard";
@@ -31,6 +31,7 @@ export function BillingPage() {
         Keine Grundgebühr, keine Mindestanzahl. Vertragskonditionen und Aktionsrabatte sind in den Zahlen unten berücksichtigt.
       </p>
       {sub.error && <Alert tone="danger" live>{sub.error}</Alert>}
+      {sub.data && <FreeOfferNotice sub={sub.data} />}
       {sub.data && <TariffCard sub={sub.data} pilot={b?.plan === "pilot_free"} />}
       {sub.data && <EditionCard sub={sub.data} />}
       <PromoCard />
@@ -65,6 +66,9 @@ export function BillingPage() {
           )}
           {b.condition === "ended" && (
             <Alert tone="info" title={BILLING_CONDITION_LABEL.ended}><p>Für diesen Monat besteht kein Vertrag. Es wird nichts berechnet.</p></Alert>
+          )}
+          {b.condition === "platform_free" && (
+            <Alert tone="success" title={BILLING_CONDITION_LABEL.platform_free}><p>Dieser Monat wird nicht berechnet. Die Anzahl wird nur zur Information angezeigt.</p></Alert>
           )}
           {(b.condition === "free" || b.condition === "pilot_free") && (
             <Alert tone="success" title={BILLING_CONDITION_LABEL[b.condition]}><p>Das Konto ist kostenlos. Die Anzahl wird nur zur Information angezeigt.</p></Alert>

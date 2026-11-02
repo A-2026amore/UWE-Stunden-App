@@ -5,6 +5,8 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EMAILS, IDS, PASSWORD, startTestServer, type TestServer } from "./support/server.ts";
+import { earliestFreeEnd } from "../../platform/src/core/free-offer";
+import { berlinDateOf } from "../../platform/src/core/billing";
 
 let t: TestServer;
 const cookies: Record<string, string> = {};
@@ -72,7 +74,7 @@ describe("platform revenue (numbers only)", () => {
   it("default price (12-month subscription): super-admin only, reason required, audited", async () => {
     expect((await t.call("GET", "/api/platform/billing/settings", { cookie: cookies.support })).body).toEqual({
       defaultPriceCents: 499, monthlyPriceCents: 699, trialWindowFrom: null, trialWindowUntil: null, trialMonths: 3, cancelNoticeDays: 0,
-      welcomePromoCodeId: null, welcomePromoCode: null, basicPriceCents: 199, basicMonthlyPriceCents: 199, currency: "EUR",
+      welcomePromoCodeId: null, welcomePromoCode: null, basicPriceCents: 199, basicMonthlyPriceCents: 199, freeOffer: null, currency: "EUR",
     });
     expect((await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.support, body: { defaultPriceCents: 600, reason: "Test" } })).status).toBe(403);
     expect((await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 600 } })).status).toBe(400);
@@ -88,6 +90,27 @@ describe("platform revenue (numbers only)", () => {
     expect(entry.before).toMatchObject({ defaultPriceCents: 499 });
     expect(entry.after).toMatchObject({ defaultPriceCents: 600 });
     await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 499, reason: "Zurück" } });
+  });
+
+  it("free offer (0029): super admin only, reason required; months cost 0 €; off with one month notice", async () => {
+    const body = { on: true, reason: "Erfahrungen sammeln" };
+    expect((await t.call("PUT", "/api/platform/billing/free-offer", { cookie: cookies.support, body })).status).toBe(403);
+    expect((await t.call("PUT", "/api/platform/billing/free-offer", { cookie: cookies.superAdmin, body: { on: true } })).status).toBe(400);
+    const on = await t.call("PUT", "/api/platform/billing/free-offer", { cookie: cookies.superAdmin, body });
+    expect(on.status).toBe(200);
+    expect(on.body.freeOffer).toMatchObject({ endsOn: null });
+    expect((await t.call("PUT", "/api/platform/billing/free-offer", { cookie: cookies.superAdmin, body })).status).toBe(409);
+    const month = (on.body.freeOffer.since as string).slice(0, 7);
+    expect((await t.call("GET", `/api/tenants/${B}/billing?month=${month}`, { cookie: cookies.ownerB })).body).toMatchObject({ condition: "platform_free", unitPriceCents: 0, amountCents: 0 });
+    expect((await t.call("GET", `/api/tenants/${B}/subscription`, { cookie: cookies.ownerB })).body).toMatchObject({ freeOffer: { endsOn: null }, proFeatures: true });
+    const early = await t.call("PUT", "/api/platform/billing/free-offer", { cookie: cookies.superAdmin, body: { on: false, endsOn: `${month}-15`, reason: "Ende" } });
+    expect(early.status).toBe(400);
+    const end = earliestFreeEnd(berlinDateOf(Date.now()));
+    const off = await t.call("PUT", "/api/platform/billing/free-offer", { cookie: cookies.superAdmin, body: { on: false, endsOn: end, reason: "Ende" } });
+    expect(off.body.freeOffer).toMatchObject({ endsOn: end });
+    const audit = await t.call("GET", "/api/platform/audit?limit=20", { cookie: cookies.support });
+    expect(audit.body.filter((e: { action: string }) => e.action === "billing_settings.free_offer")).toHaveLength(2);
+    await t.db.admin.query("delete from public.platform_free_periods");
   });
 
   it("special conditions through the licence route", async () => {

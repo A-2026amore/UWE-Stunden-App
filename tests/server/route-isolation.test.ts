@@ -140,6 +140,7 @@ const ROUTE_RULES: Record<string, Rule> = {
   "GET /api/tenants/:tenantId/billing/history": { scope: "tenant", allowed: ["managerA"] },
   "GET /api/platform/billing/settings": { scope: "tenant", allowed: ["support"] },
   "PUT /api/platform/billing/settings": { scope: "tenant", body: { defaultPriceCents: 1, reason: "Fremdzugriff" } },
+  "PUT /api/platform/billing/free-offer": { scope: "tenant", body: { on: false, endsOn: "2030-12-31", reason: "Fremdzugriff" } },
   "GET /api/platform/billing": { scope: "tenant", allowed: ["support"], query: "month=2026-10" },
   "PUT /api/platform/tenants/:tenantId/billing/:month": { scope: "tenant", body: { status: "paid" }, params: { month: "2026-09" } },
 
