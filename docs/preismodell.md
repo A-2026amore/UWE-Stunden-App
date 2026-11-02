@@ -21,6 +21,22 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
   (siehe unten); der Rabatt läuft, bis der Super-Admin ihn beendet. Sonderpreise je Kunde bleiben möglich.
 - Es ist **kein Zahlungsdienstleister** angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.
 
+## Bis auf Weiteres kostenlos (seit 02.11.2026, Migration 0029)
+
+- Entscheidung des Auftraggebers: Die Nutzung ist für alle Firmen bis auf Weiteres kostenlos, um Erfahrungen zu
+  sammeln. Die Preise bleiben gespeichert und gelten wieder, sobald das Angebot endet.
+- Schalter im Super-Admin unter „Preismodell“ → „Alles kostenlos“ (nur Super-Admin, Grund Pflicht, Protokoll).
+  Einschalten: kostenlos ab dem laufenden Monat, ohne Ende. Beenden: zum letzten Tag eines Monats, frühestens zum
+  Ende des nächsten Monats (ein Monat Vorlauf, Anlage A § 1d). Erneut einschalten nimmt ein geplantes Ende zurück.
+- Wirkung: Jeder Monat, den das Angebot berührt, kostet 0 € (Kondition „Zurzeit kostenlos“, `platform_free`);
+  gesperrte Firmen und Piloten behalten ihre Kondition; abgeschlossene Monate bleiben unverändert. Alle Firmen haben
+  in dieser Zeit alle Pro-Funktionen. Erinnerungsmails (Ende der Testphase, Verlängerung) entfallen, solange der
+  Folgemonat kostenlos ist. Chef-Portal und Vertragsabschluss zeigen den Hinweis „Zurzeit kostenlos“.
+- Die Migration schaltet das Angebot nicht ein; das macht der Super-Admin.
+- Beim Beenden die Firmen per E-Mail informieren (nicht automatisch). Kündigungen zum Ende des Angebots während
+  eines 12-Monats-Abos werden von Hand bearbeitet.
+- Regeln: `platform/src/core/free-offer.ts`, SQL in `db/migrations/0029_free_offer.sql`.
+
 ## Versionen Basic und Pro (seit 02.11.2026, Migration 0027)
 
 - **Basic** – 1,99 € brutto je abrechenbarem Mitarbeiter und Monat (12-Monats-Abo und Monatstarif, Einstellung des

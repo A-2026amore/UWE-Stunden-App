@@ -149,7 +149,15 @@ export type BillingCondition = "standard" | "special" | "free" | "pilot_free"
   /** Free introductory trial (migration 0023): the month contains at least one trial day. */
   | "trial"
   /** No subscription term covers the month (cancelled / ended): 0 € (migration 0023). */
-  | "ended";
+  | "ended"
+  /** Free offer of the platform "until further notice" touches the month: 0 € (migration 0029). */
+  | "platform_free";
+
+/** Free offer of the platform (migration 0029): free from `since`, until `endsOn` (null = until further notice). */
+export interface FreeOffer {
+  since: ISODate;
+  endsOn: ISODate | null;
+}
 
 /** Block of a customer covering a whole month (status and start of the block). */
 export interface TenantBlock {
@@ -179,6 +187,8 @@ export interface BillingSettings {
   /** Basic gross prices per billable employee and month (migration 0027, default 199 = 1,99 €). */
   basicPriceCents: number;
   basicMonthlyPriceCents: number;
+  /** Current or coming free offer (migration 0029), null = everybody pays the prices. */
+  freeOffer: FreeOffer | null;
   currency: "EUR";
 }
 
@@ -279,6 +289,8 @@ export interface TenantSubscription {
   nextEdition: { edition: Edition; startsOn: ISODate } | null;
   /** Pro functions available today (Pro, or during the free trial). */
   proFeatures: boolean;
+  /** Free offer of the platform (migration 0029), null = the prices apply. */
+  freeOffer: FreeOffer | null;
   basicAnnualPriceCents: number;
   basicMonthlyPriceCents: number;
 }

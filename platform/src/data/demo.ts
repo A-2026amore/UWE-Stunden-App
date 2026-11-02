@@ -36,6 +36,7 @@ import {
   DEFAULT_MONTHLY_PRICE_CENTS, DEFAULT_TRIAL_MONTHS, DPA_VERSION, RENEWAL_MONTHS, TERMS_VERSION, TERM_MONTHS, currentAnnualEnd, firstDayOf, firstPaidMonthFor,
   monthOfDate, planCancel, planChoice, planWithdraw, subscriptionView, termForMonth, trialEndsOnFor, type TermChange, type TermRow,
 } from "../core/subscription";
+import { freeIn, freeOfferOf, setFreeOffer, type FreePeriod } from "../core/free-offer";
 import { DEFAULT_BASIC_MONTHLY_PRICE_CENTS, DEFAULT_BASIC_PRICE_CENTS, PRO_ONLY_MESSAGE, editionFor, hasPro, nextEdition, planEdition, applyEdition, type EditionRow } from "../core/edition";
 import { activeShifts, addDays, findOverlapAcrossDays, grossMinutes, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
 import {
@@ -177,7 +178,7 @@ interface DemoSubscription {
 }
 
 /** Billing settings added with migration 0023 (the default price stays in DemoDb.defaultPriceCents). */
-type DemoBillingSettings = Omit<BillingSettings, "defaultPriceCents" | "welcomePromoCode" | "currency">;
+type DemoBillingSettings = Omit<BillingSettings, "defaultPriceCents" | "welcomePromoCode" | "currency" | "freeOffer">;
 
 const DEFAULT_BILLING_SETTINGS: DemoBillingSettings = {
   monthlyPriceCents: DEFAULT_MONTHLY_PRICE_CENTS, basicPriceCents: DEFAULT_BASIC_PRICE_CENTS, basicMonthlyPriceCents: DEFAULT_BASIC_MONTHLY_PRICE_CENTS, trialWindowFrom: null, trialWindowUntil: null, trialMonths: DEFAULT_TRIAL_MONTHS,
@@ -220,6 +221,8 @@ interface DemoDb {
   /** Added with subscriptions (0023). */
   billingSettings?: DemoBillingSettings;
   subscriptions?: DemoSubscription[];
+  /** Free offer periods (like public.platform_free_periods, migration 0029). */
+  freePeriods?: FreePeriod[];
   /** Added with employment contracts (0025). */
   employmentContracts?: EmploymentContract[];
 }
@@ -959,7 +962,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     }
     const lic = db.licenses.find((l) => l.tenantId === tenantId) ?? null;
     const block = tenantBlockFor((db.tenantStatusHistory ?? []).filter((h) => h.tenantId === tenantId), month);
-    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block, promoOf(db, tenantId, month), subscription);
+    const { condition, unitPriceCents } = billingConditionFor(lic, db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, month, block, promoOf(db, tenantId, month), subscription, freeIn(db.freePeriods ?? [], month));
     const lines = billingLines(db, tenantId, month);
     return {
       month, status: "open", final: false, condition, plan: lic?.plan ?? null, unitPriceCents,
@@ -988,7 +991,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
   function billingSettingsOf(db: DemoDb): BillingSettings {
     const st = { ...DEFAULT_BILLING_SETTINGS, ...db.billingSettings };
     return { defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, ...st,
-      welcomePromoCode: st.welcomePromoCodeId ? db.promoCodes?.find((c) => c.id === st.welcomePromoCodeId)?.code ?? null : null, currency: "EUR" };
+      welcomePromoCode: st.welcomePromoCodeId ? db.promoCodes?.find((c) => c.id === st.welcomePromoCodeId)?.code ?? null : null,
+      freeOffer: freeOfferOf(db.freePeriods ?? [], berlinToday()), currency: "EUR" };
   }
   /** Like private.assert_contract (0023): changes only after the owner has concluded the contract. */
   function assertContract(db: DemoDb, tenantId: UUID) {
@@ -1027,7 +1031,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       edition: editionFor(sub.editions ?? [], monthOfDate(today)),
       firstPaidEdition: editionFor(sub.editions ?? [], firstPaidMonthFor(sub.createdOn, sub.trialEndsOn)),
       nextEdition: nextEdition(sub.editions ?? [], today),
-      proFeatures: hasPro(sub.editions ?? [], today, sub.trialEndsOn),
+      proFeatures: proFeatures(db, tenantId),
+      freeOffer: freeOfferOf(db.freePeriods ?? [], today),
       basicAnnualPriceCents: st.basicPriceCents, basicMonthlyPriceCents: st.basicMonthlyPriceCents,
     };
   }
@@ -1037,7 +1042,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
   /** Like private.has_pro (0027): Pro functions today (Pro or trial). Tenants without subscription data: Pro. */
   function proFeatures(db: DemoDb, tenantId: UUID): boolean {
     const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
-    return !sub || hasPro(sub.editions ?? [], berlinToday(), sub.trialEndsOn);
+    return !sub || freeIn(db.freePeriods ?? [], monthOfDate(berlinToday())) || hasPro(sub.editions ?? [], berlinToday(), sub.trialEndsOn);
   }
   /** Like private.assert_pro (0027): members of a Basic tenant cannot use Pro functions. */
   function assertPro(db: DemoDb, s: { tenantId?: UUID | null }, tenantId: UUID) {
@@ -2327,6 +2332,19 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const after = billingSettingsOf(db);
         addAudit(db, s, { tenantId: null, action: "billing_settings.update", entity: "billing_settings", entityId: "default", before, after, reason: r });
         return after;
+      });
+    },
+
+    async setFreeOffer(on, endsOn, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(reason, "Bitte einen Grund für die Änderung angeben.");
+        const today = berlinToday();
+        const before = { freeOffer: freeOfferOf(db.freePeriods ?? [], today) };
+        db.freePeriods = setFreeOffer(db.freePeriods ?? [], on, endsOn, today);
+        addAudit(db, s, { tenantId: null, action: "billing_settings.free_offer", entity: "billing_settings", entityId: "default", before,
+          after: { freeOffer: freeOfferOf(db.freePeriods, today) }, reason: r });
+        return billingSettingsOf(db);
       });
     },
 

@@ -4,7 +4,7 @@
 > oder Steuerberatung. Platzhalter `[OFFEN: …]`, offene Rechtsfragen **⚠ Rechtsfrage**, Entscheidungen des
 > Anbieters **▶ Entscheidung**.
 
-Stand: Entwurf 0.9.5 vom 02.11.2026 (Pro 4,99 EUR / 6,99 EUR; davor 0.9.4 vom 02.11.2026: Versionen Basic 1,99 EUR und Pro; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif 6,50 EUR,
+Stand: Entwurf 0.9.6 vom 02.11.2026 (Nutzung bis auf Weiteres kostenlos, § 1d; davor 0.9.5 vom 02.11.2026: Pro 4,99 EUR / 6,99 EUR; davor 0.9.4 vom 02.11.2026: Versionen Basic 1,99 EUR und Pro; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif 6,50 EUR,
 Verlängerung um 6 Monate, Brevo – Entscheidungen des Anbieters vom 30.10.2026; davor 0.9.2 vom 30.10.2026 und 0.9.1
 vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0`, wird im App-Thread angepasst).
 
@@ -14,6 +14,8 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
 > zahlt die Firma je Mitarbeiter und Monat in Pro 4,99 EUR (12-Monats-Abo, 12 Monate fest) oder 6,99 EUR (Monatstarif,
 > jeden Monat kündbar), in Basic 1,99 EUR. Das 12-Monats-Abo verlängert sich um 6 Monate, wenn nicht spätestens am letzten Tag der
 > Laufzeit gekündigt wird. Das ist nur zulässig, weil ausschließlich Firmen (Unternehmer) Kunden werden können.
+> Seit 02.11.2026 kann der Anbieter die Nutzung bis auf Weiteres für alle kostenlos stellen (§ 1d); das Ende kündigt
+> er mindestens einen Monat vorher an.
 
 ## § 1 Preise und Tarife
 
@@ -36,7 +38,7 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
 2. Es gibt **keinen Grundpreis**, keine Einrichtungsgebühr, keine Mindestanzahl und keine Mengenstaffel. Auch im
    12-Monats-Abo wird jeden Monat nur die tatsächliche Zahl abrechenbarer Mitarbeitender berechnet; eine Mindestzahl
    wird nicht vereinbart. Die feste Laufzeit betrifft nur die Kündigung, nicht die Personenzahl.
-3. Außer in der Testphase (§ 1a) und soweit ein Aktionscode (§ 4a) gilt, ist jede Nutzung entgeltpflichtig. Abweichende Preise (Sonderkonditionen)
+3. Außer in der Testphase (§ 1a), während der kostenlosen Nutzung (§ 1d) und soweit ein Aktionscode (§ 4a) gilt, ist jede Nutzung entgeltpflichtig. Abweichende Preise (Sonderkonditionen)
    gelten nur, wenn sie im Angebot oder in der Bestellung in Textform vereinbart sind; sie gelten für jeden
    Kalendermonat, den der vereinbarte Zeitraum ganz oder teilweise berührt. Nachlässe auf das Entgelt gewährt der
    Anbieter im Übrigen nur über Aktionscodes (§ 4a).
@@ -117,6 +119,22 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
 5. Nach einem Wechsel zu Basic bleiben die mit Pro-Funktionen erfassten Daten gespeichert, sie sind aber nicht mehr
    sichtbar und können nicht mehr geändert werden. Nach einem Wechsel zurück zu Pro sind sie wieder verfügbar. Für
    Aufbewahrung und Löschung gelten die vertraglichen Regeln unverändert.
+
+## § 1d Kostenlose Nutzung bis auf Weiteres
+
+1. Der Anbieter kann die Nutzung des Dienstes für alle Kunden **bis auf Weiteres kostenlos** stellen. Solange das
+   gilt, wird für keinen Kalendermonat, den das kostenlose Angebot ganz oder teilweise berührt, ein Entgelt berechnet,
+   und alle Funktionen der Version Pro stehen unabhängig von der gewählten Version (§ 1c) zur Verfügung. Der
+   Vertrag (Tarif, Version, Laufzeit) besteht unverändert weiter; kostenlose Monate zählen zur Laufzeit (§ 5).
+2. Der Anbieter beendet das kostenlose Angebot mit einer Frist von **mindestens einem Monat zum Ende eines
+   Kalendermonats**. Er teilt das Ende allen Kunden in Textform (z. B. per E-Mail) und im Chef-Portal unter
+   „Abrechnung“ mit. Ab dem folgenden Kalendermonat gelten die Preise nach § 1 für den gewählten Tarif und die
+   gewählte Version.
+3. Der Kunde kann den Vertrag bis zum Ende des kostenlosen Angebots in Textform zu diesem Zeitpunkt kündigen,
+   auch während einer festen Laufzeit (§ 5). Dann entsteht kein Entgelt.
+   **▶ Entscheidung (02.11.2026):** Nutzung bis auf Weiteres kostenlos, um Erfahrungen zu sammeln; die Preise
+   bleiben hinterlegt. Die Kündigung nach Abs. 3 während eines 12-Monats-Abos bearbeitet der Anbieter von Hand
+   (Laufzeit im Super-Admin beenden), die Software bietet dafür keinen eigenen Knopf.
 
 ## § 2 Wer ist „abrechenbar“?
 

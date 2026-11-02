@@ -37,6 +37,7 @@ export const BILLING_CONDITION_LABEL: Record<BillingCondition, string> = {
   monthly: "Monatstarif",
   trial: "Testphase – kostenlos",
   ended: "Kein laufender Vertrag – nicht berechnet",
+  platform_free: "Zurzeit kostenlos",
 };
 
 export const BILLING_STATUS_LABEL: Record<string, string> = {
@@ -225,11 +226,13 @@ export interface SubscriptionForMonth {
  * subscription data the platform default applies (behaviour before 0023). A promo discount
  * (0022) reduces the resulting price.
  */
-export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null, promo?: Pick<PromoPeriod, "discountPercent"> | null, subscription?: SubscriptionForMonth | null): { condition: BillingCondition; unitPriceCents: number } {
+export function billingConditionFor(license: LicenseCondition | null, defaultPriceCents: number, month: ISOMonth, block?: TenantBlock | null, promo?: Pick<PromoPeriod, "discountPercent"> | null, subscription?: SubscriptionForMonth | null, platformFree = false): { condition: BillingCondition; unitPriceCents: number } {
   const b = monthBounds(month);
   if (block) return { condition: block.status === "suspended" ? "tenant_suspended" : "tenant_deactivated", unitPriceCents: 0 };
   const active = license && license.status === "active" ? license : null;
   if (active?.plan === "pilot_free") return { condition: "pilot_free", unitPriceCents: 0 };
+  // free offer of the platform (migration 0029): after block and pilot, before everything else
+  if (platformFree) return { condition: "platform_free", unitPriceCents: 0 };
   const applies = !!active && (active.conditionValidFrom === null || active.conditionValidFrom <= b.lastDay)
     && (active.conditionValidUntil === null || active.conditionValidUntil >= b.firstDay);
   if (applies && active.freeOfCharge) return { condition: "free", unitPriceCents: 0 };

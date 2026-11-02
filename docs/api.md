@@ -273,6 +273,10 @@ In Basic lehnt die Datenbank Pro-Funktionen für Personen der Firma mit 409 ab (
 Pro-Version …“): Korrekturanfrage stellen, Vertragsdaten speichern, Arbeitszeitkonto einschalten, Übertrag aufs Konto.
 `PUT /api/platform/billing/settings` kennt zusätzlich `basicPriceCents` und `basicMonthlyPriceCents`.
 
+| `setFreeOffer` | `PUT /api/platform/billing/free-offer` `{on: true, reason}` (kostenlos ab dem laufenden Monat, unbefristet) oder `{on: false, endsOn, reason}` (Ende = letzter Tag eines Monats, frühestens Ende des nächsten Monats) → `BillingSettings` mit `freeOffer` · 400 ungültiges Ende · 409 bereits kostenlos / nicht unbefristet (Migration 0029) | Super-Admin |
+
+`BillingSettings` und `TenantSubscription` enthalten `freeOffer` (`{since, endsOn}` oder `null`); ein kostenloser Monat hat die Kondition `platform_free` (0 €).
+
 Bis zum Vertragsschluss lehnt die Datenbank Schreibzugriffe von Personen der Firma ab (Zeiteinträge, neue
 Mitarbeitende, Einladungen, Tarifwechsel/Kündigung): 409 „Die Firma ist noch nicht freigeschaltet: Der Inhaber muss
 zuerst den Nutzungsbedingungen zustimmen.“ Bestehende Firmen (vor 0023) gelten als abgeschlossen (`termsVersion: "bestand"`).

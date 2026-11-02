@@ -4,6 +4,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
+### Hinzugefügt
+- „Alles kostenlos“ (Entscheidung 02.11.2026, Migration 0029): Der Super-Admin stellt die Nutzung für alle Firmen
+  bis auf Weiteres kostenlos (Preismodell → „Alles kostenlos“). Kostenlose Monate kosten 0 €, alle Firmen haben alle
+  Pro-Funktionen, Chef-Portal und Vertragsabschluss zeigen „Zurzeit kostenlos“. Beenden mit mindestens einem Monat
+  Vorlauf zum Monatsende. AGB / Anlage A Entwurf 0.9.6 (§ 1d).
+
 ### Hinzugefügt (Betrieb)
 - Produktionsumgebung: `deploy/prod-bereitstellen.sh <commit>` richtet `app.schichtklar24.de` als eigene, leere
   Umgebung neben dem Test ein und aktualisiert sie später (nur der Commit, der auf dem Test läuft und aus einem

@@ -32,7 +32,7 @@ export const PROMO_TERMS_NOTE = "Rabatt bis auf Weiteres; der Anbieter kann ihn 
  * /rechtliches/agb (AGB + Anlage A + Anlage B) and /rechtliches/avv (AVV + Anlage 1 TOM), texts in
  * platform/public/rechtliches-texte (drafts, not approved). Change together with the texts.
  */
-export const TERMS_VERSION = "AGB 0.9.5, Anlage A 0.9.5, Anlage B 0.9.1";
+export const TERMS_VERSION = "AGB 0.9.6, Anlage A 0.9.6, Anlage B 0.9.1";
 export const DPA_VERSION = "AVV 0.9.2, Anlage 1 (TOM) 0.9.1";
 
 export const INTERVAL_LABEL: Record<SubscriptionInterval, string> = {
