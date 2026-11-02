@@ -87,7 +87,7 @@ function EmploymentCard({ rows, month }: { rows: EmploymentRow[]; month: string 
 }
 
 export function DashboardPage() {
-  const { repo, tenant, version } = useChef();
+  const { repo, tenant, pro, version } = useChef();
   const month = currentMonth();
   const prev = shiftMonth(month, -1);
   const policy = tenant.settings.workAccount;
@@ -96,14 +96,14 @@ export function DashboardPage() {
   const q = useAsync(async () => {
     const [data, stCur, stPrev, corrections, billing] = await Promise.all([
       loadTenantMonth(repo, tenant, month), repo.listStatements(tenant.id, month), repo.listStatements(tenant.id, prev),
-      repo.listCorrectionRequests(tenant.id, { status: "open" }),
+      pro ? repo.listCorrectionRequests(tenant.id, { status: "open" }) : Promise.resolve([]),
       // Costs are informative only: a failure must not hide the dashboard.
       repo.getTenantBilling(tenant.id, month).catch(() => null),
     ]);
     // Contract data are additional information as well.
-    const employment = await loadEmploymentOverview(repo, tenant, month, data.employees).catch(() => null);
+    const employment = pro ? await loadEmploymentOverview(repo, tenant, month, data.employees).catch(() => null) : null;
     return { data, statements: [...stPrev, ...stCur], corrections, billing, employment };
-  }, [version, tenant.id]);
+  }, [version, tenant.id, pro]);
 
   if (q.error) return <Alert tone="danger" live>{q.error}</Alert>;
   if (!q.data) {
@@ -154,16 +154,16 @@ export function DashboardPage() {
           <p class="muted page-sub">{tenant.name} · {monthLabelDE(month)}</p>
         </div>
         <div class="btn-row">
-          <LinkButton href="#/stunden" icon="calendar">Stundenübersicht</LinkButton>
+          <LinkButton href={pro ? "#/stunden" : "#/zeiten"} icon="calendar">{pro ? "Stundenübersicht" : "Arbeitszeiten"}</LinkButton>
           <LinkButton href="#/mitarbeiter" icon="plus" variant="primary">Mitarbeiter einladen</LinkButton>
         </div>
       </div>
       {IS_DEMO && tenant.isDemo && <DemoBanner />}
       <div class="kpi-grid" data-testid="dashboard-kpis">
-        <StatTile icon="clock" href="#/stunden" label={`Geleistete Stunden ${monthLabelDE(month)}`} value={hoursLabel(worked)} tone="brand"
+        <StatTile icon="clock" href={pro ? "#/stunden" : "#/zeiten"} label={`Geleistete Stunden ${monthLabelDE(month)}`} value={hoursLabel(worked)} tone="brand"
           hint={`Für Abrechnung vorgesehen: ${hoursLabel(billing)}`} />
         <StatTile icon="fileCheck" href={openStatements.length ? `#/nachweise?m=${openStatements[0]!.month}` : "#/nachweise"} label="Offene Monatsnachweise" value={openStatements.length} tone={openStatements.length ? "warning" : "default"} hint="eingereicht, warten auf Prüfung" />
-        <StatTile icon="message" href="#/korrekturen" label="Offene Korrekturanfragen" value={openCorrections.length} tone={openCorrections.length ? "warning" : "default"} hint="warten auf Entscheidung" />
+        {pro && <StatTile icon="message" href="#/korrekturen" label="Offene Korrekturanfragen" value={openCorrections.length} tone={openCorrections.length ? "warning" : "default"} hint="warten auf Entscheidung" />}
         <StatTile icon="users" href="#/mitarbeiter" label="Mitarbeitende" value={staff.length} hint={`${active.length} aktiv, ${staff.length - active.length} eingeladen`} />
         <StatTile icon="creditCard" href="#/abrechnung" label={`Kosten ${monthLabelDE(month)}`} value={billingInfo ? formatEuro(billingInfo.amountCents) : "—"}
           hint={billingInfo ? `inkl. USt. · ${billingInfo.billableCount} abrechenbar · ${BILLING_CONDITION_LABEL[billingInfo.condition]}` : "nicht verfügbar"} />
@@ -177,7 +177,7 @@ export function DashboardPage() {
               ? <><span>Werktag</span><span class="legend-muted">Wochenende</span><span class="legend-today">Heute</span></>
               : <><span>Kalenderwoche</span><span class="legend-today">Aktuelle Woche</span></>} />
         </Card>
-        <Card title="Stunden je Person" actions={<LinkButton href="#/stunden" size="sm">Details</LinkButton>}>
+        <Card title="Stunden je Person" actions={<LinkButton href={pro ? "#/stunden" : "#/zeiten"} size="sm">Details</LinkButton>}>
           {perPerson.length === 0 ? <p class="muted mb-0">In diesem Monat wurden noch keine Zeiten erfasst.</p> : (
             <ul class="list-plain person-bars">
               {perPerson.slice(0, 6).map((p) => (
@@ -205,7 +205,7 @@ export function DashboardPage() {
       )}
 
       <div class="dash-cards">
-        <Card title="Offene Korrekturanfragen" actions={<LinkButton href="#/korrekturen" size="sm">Alle Anfragen</LinkButton>}>
+        {pro && <Card title="Offene Korrekturanfragen" actions={<LinkButton href="#/korrekturen" size="sm">Alle Anfragen</LinkButton>}>
           <Table
             caption="Offene Korrekturanfragen"
             rows={openCorrections.slice(0, 8)}
@@ -217,7 +217,7 @@ export function DashboardPage() {
               { key: "d", header: "Einsatz", render: (r) => formatDateDE(requestDate(r)) },
             ]}
           />
-        </Card>
+        </Card>}
         <Card title="Monatsnachweise zur Prüfung" actions={<LinkButton href="#/nachweise" size="sm">Alle Nachweise</LinkButton>}>
           <Table
             caption="Offene Monatsnachweise"
@@ -232,7 +232,7 @@ export function DashboardPage() {
             ]}
           />
         </Card>
-        <Card title="Arbeitszeitkonto: offene Freigaben" actions={policy.enabled ? <LinkButton href="#/konten" size="sm">Zu den Konten</LinkButton> : undefined}>
+        {pro && <Card title="Arbeitszeitkonto: offene Freigaben" actions={policy.enabled ? <LinkButton href="#/konten" size="sm">Zu den Konten</LinkButton> : undefined}>
           {!policy.enabled ? <p class="muted">Das Arbeitszeitkonto ist nicht aktiviert.</p> : (<div class="stack">
             <div class="grid-2 dash-mini">
               <StatTile label="Summe Arbeitszeitkonten" value={signedHours(accountTotal)} hint="aktueller Zeitraum, alle Mitarbeitenden" />
@@ -251,7 +251,7 @@ export function DashboardPage() {
               ]}
             />
           </div>)}
-        </Card>
+        </Card>}
       </div>
     </div>
   );

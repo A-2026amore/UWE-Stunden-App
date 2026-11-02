@@ -16,8 +16,9 @@
  */
 import type {
   BillableReason, BillingCondition, EmployeeStatus, ISODate, ISOMonth, License, PlatformRevenue, PlatformRevenueRow, TenantBlock, TenantRole,
-  SubscriptionInterval, TenantStatus,
+  SubscriptionInterval, TenantStatus, Edition,
 } from "./types";
+import { DEFAULT_BASIC_MONTHLY_PRICE_CENTS, DEFAULT_BASIC_PRICE_CENTS } from "./edition";
 
 /** Platform default: 5,00 € gross (incl. VAT) per billable employee and month. */
 export const DEFAULT_EMPLOYEE_PRICE_CENTS = 500;
@@ -210,10 +211,14 @@ export interface SubscriptionForMonth {
    * keep the previous rule (platform default price, no term needed). Null for new tenants.
    */
   termsFrom?: ISODate | null;
+  /** Edition of the month (migration 0027); missing = "pro". Basic uses the Basic prices. */
+  edition?: Edition;
+  basicPriceCents?: number;
+  basicMonthlyPriceCents?: number;
 }
 
 /**
- * Price of a tenant for a month: blocked tenants and pilot_free are free; a "free" special
+ * Price of a tenant for a month (Basic months use the Basic prices, migration 0027): blocked tenants and pilot_free are free; a "free" special
  * condition overlapping the month is free. With subscription data (0023): a trial month is free,
  * a month without term is not billed ("ended"); otherwise the special price, else the price of
  * the interval (annual = platform default "standard", monthly = monthly price). Without
@@ -236,8 +241,8 @@ export function billingConditionFor(license: LicenseCondition | null, defaultPri
   const base: { condition: BillingCondition; unitPriceCents: number } = applies && active.employeePriceCents !== null
     ? { condition: "special", unitPriceCents: active.employeePriceCents }
     : subscription?.interval === "monthly"
-      ? { condition: "monthly", unitPriceCents: subscription.monthlyPriceCents }
-      : { condition: "standard", unitPriceCents: defaultPriceCents };
+      ? { condition: "monthly", unitPriceCents: subscription.edition === "basic" ? subscription.basicMonthlyPriceCents ?? DEFAULT_BASIC_MONTHLY_PRICE_CENTS : subscription.monthlyPriceCents }
+      : { condition: "standard", unitPriceCents: subscription?.edition === "basic" ? subscription.basicPriceCents ?? DEFAULT_BASIC_PRICE_CENTS : defaultPriceCents };
   if (promo && base.unitPriceCents > 0) return { condition: "promo", unitPriceCents: discountedPrice(base.unitPriceCents, promo.discountPercent) };
   return base;
 }

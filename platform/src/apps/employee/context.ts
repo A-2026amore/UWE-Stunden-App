@@ -12,6 +12,8 @@ export interface EmployeeCtx {
   session: Session;
   tenant: Tenant;
   me: Employee;
+  /** Pro functions available (Pro or free trial, migration 0027). In Basic the work account counts as off. */
+  pro: boolean;
   /** Month shown on Monat / Konto ("YYYY-MM"). */
   month: string;
   setMonth: (m: string) => void;

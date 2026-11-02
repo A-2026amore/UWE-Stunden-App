@@ -14,9 +14,10 @@ import { getRepository } from "../shared/repo";
 import { useEmployee } from "./context";
 
 export function useEmploymentAccount(): EmploymentAccount | null {
-  const { repo, me, tenant, version } = useEmployee();
+  const { repo, me, tenant, pro, version } = useEmployee();
   const month = currentMonth();
   const q = useAsync(async () => {
+    if (!pro) return null; // Basic (0027): no contract data
     const versions: EmploymentContract[] = await getRepository("app").listEmployeeContracts(me.id).catch(() => []);
     const start = versions.map((v) => v.validFrom).sort()[0];
     if (!start || start > month) return null;
@@ -27,7 +28,7 @@ export function useEmploymentAccount(): EmploymentAccount | null {
       versions, currentMonth: month,
       payableMinutes: (m) => summarizeMonth({ entries: activeShifts(byMonth.get(m) ?? []), allocations, month: m, policy: tenant.settings.workAccount }).billingMinutes,
     });
-  }, [version, me.id]);
+  }, [version, me.id, pro]);
   return q.data ?? null;
 }
 

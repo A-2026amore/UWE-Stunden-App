@@ -72,7 +72,7 @@ describe("platform revenue (numbers only)", () => {
   it("default price (12-month subscription): super-admin only, reason required, audited", async () => {
     expect((await t.call("GET", "/api/platform/billing/settings", { cookie: cookies.support })).body).toEqual({
       defaultPriceCents: 500, monthlyPriceCents: 650, trialWindowFrom: null, trialWindowUntil: null, trialMonths: 3, cancelNoticeDays: 0,
-      welcomePromoCodeId: null, welcomePromoCode: null, currency: "EUR",
+      welcomePromoCodeId: null, welcomePromoCode: null, basicPriceCents: 199, basicMonthlyPriceCents: 199, currency: "EUR",
     });
     expect((await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.support, body: { defaultPriceCents: 600, reason: "Test" } })).status).toBe(403);
     expect((await t.call("PUT", "/api/platform/billing/settings", { cookie: cookies.superAdmin, body: { defaultPriceCents: 600 } })).status).toBe(400);

@@ -176,6 +176,9 @@ export interface BillingSettings {
   /** Promo code sent automatically in the invitation mail of every newly created tenant (null = none). */
   welcomePromoCodeId: UUID | null;
   welcomePromoCode: string | null;
+  /** Basic gross prices per billable employee and month (migration 0027, default 199 = 1,99 €). */
+  basicPriceCents: number;
+  basicMonthlyPriceCents: number;
   currency: "EUR";
 }
 
@@ -183,12 +186,28 @@ export interface BillingSettings {
 export interface BillingSettingsPatch {
   defaultPriceCents?: number;
   monthlyPriceCents?: number;
+  basicPriceCents?: number;
+  basicMonthlyPriceCents?: number;
   trialWindowFrom?: ISODate | null;
   trialWindowUntil?: ISODate | null;
   trialMonths?: number;
   cancelNoticeDays?: number;
   welcomePromoCodeId?: UUID | null;
   reason: string;
+}
+
+// ---------------------------------------------------------------- editions (migration 0027)
+
+/** "basic" = record times and submit statements (1,99 €); "pro" = every function (decision 02.11.2026). */
+export type Edition = "basic" | "pro";
+
+/** Which edition applies to a tenant today (every member of the tenant may read it). */
+export interface TenantFeatures {
+  edition: Edition;
+  /** Pro functions available today (Pro, or any edition during the free trial). */
+  pro: boolean;
+  /** Planned change after the current month, else null. */
+  nextEdition: { edition: Edition; startsOn: ISODate } | null;
 }
 
 // ---------------------------------------------------------------- subscription (migration 0023)
@@ -223,6 +242,8 @@ export interface ContractAcceptance {
   termsVersion: string;
   dpaVersion: string;
   interval: SubscriptionInterval;
+  /** Edition chosen at contract conclusion (0027; contracts before: "pro"). */
+  edition?: Edition;
 }
 
 /** Subscription state of a tenant (leadership of the tenant and platform staff). */
@@ -250,6 +271,16 @@ export interface TenantSubscription {
   termMonths: number;
   renewalMonths: number;
   cancelNoticeDays: number;
+  /** Edition of the current month (migration 0027). */
+  edition: Edition;
+  /** Edition of the first paid month (differs during the trial when Basic was chosen). */
+  firstPaidEdition: Edition;
+  /** Planned change after the current month, else null. */
+  nextEdition: { edition: Edition; startsOn: ISODate } | null;
+  /** Pro functions available today (Pro, or during the free trial). */
+  proFeatures: boolean;
+  basicAnnualPriceCents: number;
+  basicMonthlyPriceCents: number;
 }
 
 /** One billable person (only visible to owner/manager of the tenant). */
@@ -291,6 +322,8 @@ export interface TenantBillingMonth extends BillingMonthSummary {
   interval?: SubscriptionInterval | null;
   /** Last day of the free trial of the tenant, null = no trial. */
   trialEndsOn?: ISODate | null;
+  /** Edition of the month (migration 0027). */
+  edition?: Edition;
 }
 
 /** One row of the platform revenue overview – numbers only, never names. */
@@ -312,6 +345,8 @@ export interface PlatformRevenueRow extends BillingMonthSummary {
   /** Subscription term covering the month and the trial end (migration 0023). */
   interval?: SubscriptionInterval | null;
   trialEndsOn?: ISODate | null;
+  /** Edition of the month (migration 0027). */
+  edition?: Edition;
 }
 
 // ---------------------------------------------------------------- promo codes (migration 0022)

@@ -4,14 +4,16 @@
  * screen. Managers see a short notice.
  */
 import { useState } from "preact/hooks";
-import type { Employee, SubscriptionInterval, Tenant, TenantSubscription } from "../../core/types";
+import type { Edition, Employee, SubscriptionInterval, Tenant, TenantSubscription } from "../../core/types";
+import { EDITIONS, EDITION_LABEL } from "../../core/edition";
+import { EditionFeatures } from "./EditionCard";
 import { VAT_NOTE } from "../../core/billing";
 import { addDays, addMonthsToDate, firstDayOf } from "../../core/subscription";
 import { Alert, Button, Checkbox } from "../../design";
 import { errorText } from "../shared/hooks";
 import { formatDateDE, monthLabelDE } from "../shared/format";
 import { ProductMark, TenantLogo } from "../shared/ui";
-import { berlinToday, choiceStart, priceLine } from "../shared/subscription";
+import { berlinToday, choiceStart, priceLine, priceOf } from "../shared/subscription";
 import type { AreaRepository } from "../shared/repo";
 
 /** Legal pages (built by platform/rechtliches); relative to /chef/. */
@@ -24,6 +26,7 @@ export function ContractGate({ repo, tenant, me, sub, onAccepted, onSignOut }: {
   const [entrepreneur, setEntrepreneur] = useState(false);
   const [terms, setTerms] = useState(false);
   const [interval, setPlan] = useState<SubscriptionInterval>("monthly");
+  const [edition, setEdition] = useState<Edition>("pro");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = berlinToday();
@@ -35,7 +38,7 @@ export function ContractGate({ repo, tenant, me, sub, onAccepted, onSignOut }: {
     e.preventDefault();
     if (!entrepreneur || !terms) return;
     setBusy(true); setError(null);
-    try { onAccepted(await repo.acceptContract(tenant.id, { entrepreneur: true, termsAccepted: true, interval })); }
+    try { onAccepted(await repo.acceptContract(tenant.id, { entrepreneur: true, termsAccepted: true, interval, edition })); }
     catch (err) { setError(errorText(err)); } finally { setBusy(false); }
   };
 
@@ -59,16 +62,28 @@ export function ContractGate({ repo, tenant, me, sub, onAccepted, onSignOut }: {
                 <p data-testid="contract-trial">Kostenlos bis {formatDateDE(trial)}. Der erste bezahlte Monat ist {monthLabelDE(sub.firstPaidMonth)}.</p>
               </Alert>
             )}
+            <fieldset class="stack-sm" style={{ border: 0, padding: 0, margin: 0 }} data-testid="contract-edition">
+              <legend><strong>Version</strong></legend>
+              {EDITIONS.map((e) => (
+                <label class="checkbox" key={e}>
+                  <input type="radio" name="edition" value={e} checked={edition === e} onChange={() => setEdition(e)} />
+                  <span><span>{EDITION_LABEL[e]}: {priceLine(sub, "monthly", e)}{priceOf(sub, "annual", e) !== priceOf(sub, "monthly", e) ? ` (im 12-Monats-Abo ${priceLine(sub, "annual", e)})` : ""}</span>
+                    <span class="field-hint" style={{ display: "block" }}><EditionFeatures edition={e} /></span></span>
+                </label>
+              ))}
+              {trial && <p class="xsmall muted mb-0">In der Testphase sind alle Funktionen frei. Die gewählte Version gilt ab {monthLabelDE(sub.firstPaidMonth)}.</p>}
+              <p class="xsmall muted mb-0">Sie können später wechseln: Pro gilt sofort, Basic ab dem nächsten Monat (im 12-Monats-Abo nach Ende der Laufzeit).</p>
+            </fieldset>
             <fieldset class="stack-sm" style={{ border: 0, padding: 0, margin: 0 }}>
               <legend><strong>Tarif</strong></legend>
               <label class="checkbox">
                 <input type="radio" name="interval" value="monthly" checked={interval === "monthly"} onChange={() => setPlan("monthly")} />
-                <span><span>Monatstarif: {priceLine(sub, "monthly")}</span>
+                <span><span>Monatstarif: {priceLine(sub, "monthly", edition)}</span>
                   <span class="field-hint" style={{ display: "block" }}>Zum Monatsende kündbar. Ohne Wahl gilt der Monatstarif.</span></span>
               </label>
               <label class="checkbox">
                 <input type="radio" name="interval" value="annual" checked={interval === "annual"} onChange={() => setPlan("annual")} />
-                <span><span>12-Monats-Abo: {priceLine(sub, "annual")}</span>
+                <span><span>12-Monats-Abo: {priceLine(sub, "annual", edition)}</span>
                   <span class="field-hint" style={{ display: "block" }}>
                     {sub.termMonths} Monate fest ab {formatDateDE(annualStart)} (bis {formatDateDE(annualEnd)}). Verlängert sich jeweils um {sub.renewalMonths} Monate,
                     wenn Sie nicht bis zum Ende der Laufzeit kündigen.{sub.current?.interval === "monthly" && sub.current.startsOn < annualStart ? " Bis zum Beginn gilt der Monatstarif." : ""}

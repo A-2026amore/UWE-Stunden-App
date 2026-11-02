@@ -265,6 +265,13 @@ Anonymisierte Personen sind endgültig: `PATCH /api/employees/:id` und `POST …
 | `chooseSubscription` | `POST /api/tenants/:tenantId/subscription/choose` `{interval}` → `TenantSubscription` · 409 läuft bereits / Wechsel zum Monatstarif nur zum Laufzeitende / Firma nicht freigeschaltet | Inhaber |
 | `cancelSubscription` | `POST /api/tenants/:tenantId/subscription/cancel` `{thenMonthly?, reason?}` → `TenantSubscription`; Kündigungsbestätigung per E-Mail an alle aktiven Inhaber. Ein geplanter, noch nicht begonnener Wechsel wird stattdessen zurückgenommen (Mail „Tarifwechsel zurückgenommen, Monatstarif läuft weiter“) · 409 kein laufender Vertrag · 400 „danach monatlich“ nur beim 12-Monats-Abo | Inhaber |
 | `withdrawCancellation` | `POST /api/tenants/:tenantId/subscription/withdraw` `{}` → `TenantSubscription` · 409 keine Kündigung mehr zurücknehmbar | Inhaber |
+| `chooseEdition` | `POST /api/tenants/:tenantId/subscription/edition` `{edition: "basic" \| "pro"}` → `TenantSubscription` (`edition`, `nextEdition`, `proFeatures`, Basic-Preise) · 409 bereits gewählt / bereits geplant / Firma nicht freigeschaltet (Migration 0027) | Inhaber |
+| `getTenantFeatures` | `GET /api/tenants/:tenantId/features` → `TenantFeatures` `{edition, pro, nextEdition}` | alle Personen der Firma, Plattform |
+
+`acceptContract` nimmt zusätzlich `edition` (`basic`/`pro`, Standard `pro`); Basic gilt ab dem ersten bezahlten Monat.
+In Basic lehnt die Datenbank Pro-Funktionen für Personen der Firma mit 409 ab („Diese Funktion gibt es nur in der
+Pro-Version …“): Korrekturanfrage stellen, Vertragsdaten speichern, Arbeitszeitkonto einschalten, Übertrag aufs Konto.
+`PUT /api/platform/billing/settings` kennt zusätzlich `basicPriceCents` und `basicMonthlyPriceCents`.
 
 Bis zum Vertragsschluss lehnt die Datenbank Schreibzugriffe von Personen der Firma ab (Zeiteinträge, neue
 Mitarbeitende, Einladungen, Tarifwechsel/Kündigung): 409 „Die Firma ist noch nicht freigeschaltet: Der Inhaber muss

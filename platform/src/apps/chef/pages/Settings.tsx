@@ -15,7 +15,7 @@ const STATES = [
 ];
 
 export function SettingsPage() {
-  const { repo, tenant, me, setTenant, session } = useChef();
+  const { repo, tenant, me, pro, setTenant, session } = useChef();
   const toast = useToast();
   const dialogs = useDialogs();
   const bp = tenant.settings.breakPolicy;
@@ -150,7 +150,12 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      <Card title="Arbeitszeitkonto">
+      {!pro && (
+        <Card title="Arbeitszeitkonto">
+          <p class="muted mb-0" data-testid="work-account-pro-only">Das Arbeitszeitkonto gehört zur Pro-Version. Wechsel unter <a href="#/abrechnung">Abrechnung</a>.</p>
+        </Card>
+      )}
+      {pro && <Card title="Arbeitszeitkonto">
         <form class="stack" onSubmit={save} noValidate>
           <Checkbox label="Arbeitszeitkonto aktivieren" hint="Mitarbeitende können einen Teil ihrer Monatsstunden auf das Konto übertragen." checked={wa.enabled} onChange={(v) => setWa({ ...wa, enabled: v })} />
           <div class="grid-2">
@@ -170,7 +175,7 @@ export function SettingsPage() {
           {error && <Alert tone="danger" live>{error}</Alert>}
           <div><Button type="submit" busy={busy} icon="check">Einstellungen speichern</Button></div>
         </form>
-      </Card>
+      </Card>}
 
       <TwoFactorCard repo={repo} account={session.email} />
 

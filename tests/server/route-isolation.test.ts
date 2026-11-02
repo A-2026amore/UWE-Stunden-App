@@ -174,6 +174,8 @@ const ROUTE_RULES: Record<string, Rule> = {
   "POST /api/tenants/:tenantId/subscription/choose": { scope: "tenant", body: { interval: "annual" } },
   "POST /api/tenants/:tenantId/subscription/cancel": { scope: "tenant", body: { thenMonthly: false, reason: "Fremdzugriff" } },
   "POST /api/tenants/:tenantId/subscription/withdraw": { scope: "tenant", body: {} },
+  "POST /api/tenants/:tenantId/subscription/edition": { scope: "tenant", body: { edition: "basic" } },
+  "GET /api/tenants/:tenantId/features": { scope: "tenant", allowed: ["emp2A", "managerA", "support"] },
 
   // ---------------------------------------------------------------- privacy (0016): only the person or the owner
   "GET /api/employees/:employeeId/data-export": { scope: "tenant" },

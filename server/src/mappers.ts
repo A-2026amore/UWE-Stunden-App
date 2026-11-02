@@ -118,6 +118,7 @@ export function toRevenueRow(r: Row, month: string): PlatformRevenueRow {
     promoDiscountPercent: r.promo_discount_percent == null ? null : Number(r.promo_discount_percent),
     interval: (r.billing_interval as PlatformRevenueRow["interval"]) ?? null,
     trialEndsOn: (r.trial_ends_on as string | null) ?? null,
+    edition: (r.edition as PlatformRevenueRow["edition"]) ?? "pro",
   };
 }
 

@@ -25,7 +25,7 @@ import type {
   BreakPolicy,
   AuditEvent, BillableReason, BillingCondition, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, Branding, CompanyContact, CorrectionRequest,
   Employee, EmploymentContract, EntryValues, ISODate, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenueRow, PromoCode, PromoRedemption, Tenant,
-  ContractAcceptance, StatementEvent, SubscriptionInterval, SubscriptionTerm, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
+  ContractAcceptance, Edition, StatementEvent, SubscriptionInterval, SubscriptionTerm, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID, WorkAccountPolicy,
 } from "../core/types";
 import {
   DEFAULT_EMPLOYEE_PRICE_CENTS, addMonths as addMonthsBilling, billableReason, billingAmount, billingConditionFor, berlinDateOf, berlinMonthOf, monthBounds, monthsBack, revenueTotals,
@@ -36,6 +36,7 @@ import {
   DEFAULT_MONTHLY_PRICE_CENTS, DEFAULT_TRIAL_MONTHS, DPA_VERSION, RENEWAL_MONTHS, TERMS_VERSION, TERM_MONTHS, currentAnnualEnd, firstDayOf, firstPaidMonthFor,
   monthOfDate, planCancel, planChoice, planWithdraw, subscriptionView, termForMonth, trialEndsOnFor, type TermChange, type TermRow,
 } from "../core/subscription";
+import { DEFAULT_BASIC_MONTHLY_PRICE_CENTS, DEFAULT_BASIC_PRICE_CENTS, PRO_ONLY_MESSAGE, editionFor, hasPro, nextEdition, planEdition, applyEdition, type EditionRow } from "../core/edition";
 import { activeShifts, addDays, findOverlapAcrossDays, grossMinutes, isRealDate, isValidEntry, isValidMonth, parseClock } from "../core/time";
 import {
   DEFAULT_INVOICE_PREFIX, DEFAULT_PAYMENT_TERMS_DAYS, DEFAULT_VAT_RATE_PERCENT, addDaysISO, formatInvoiceNumber, invoiceTotals, missingIssuerData,
@@ -171,13 +172,15 @@ interface DemoSubscription {
   termsFrom?: ISODate | null;
   /** Contract conclusion by the owner; null = not yet (new tenants). Missing in older stored demo databases = accepted. */
   contract?: ContractAcceptance | null;
+  /** Edition changes (like public.tenant_editions, migration 0027); missing/empty = Pro. */
+  editions?: EditionRow[];
 }
 
 /** Billing settings added with migration 0023 (the default price stays in DemoDb.defaultPriceCents). */
 type DemoBillingSettings = Omit<BillingSettings, "defaultPriceCents" | "welcomePromoCode" | "currency">;
 
 const DEFAULT_BILLING_SETTINGS: DemoBillingSettings = {
-  monthlyPriceCents: DEFAULT_MONTHLY_PRICE_CENTS, trialWindowFrom: null, trialWindowUntil: null, trialMonths: DEFAULT_TRIAL_MONTHS,
+  monthlyPriceCents: DEFAULT_MONTHLY_PRICE_CENTS, basicPriceCents: DEFAULT_BASIC_PRICE_CENTS, basicMonthlyPriceCents: DEFAULT_BASIC_MONTHLY_PRICE_CENTS, trialWindowFrom: null, trialWindowUntil: null, trialMonths: DEFAULT_TRIAL_MONTHS,
   cancelNoticeDays: 0, welcomePromoCodeId: null,
 };
 
@@ -1000,8 +1003,10 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
   function subscriptionForMonth(db: DemoDb, tenantId: UUID, month: ISOMonth) {
     const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
     if (!sub) return null;
-    return { trialEndsOn: sub.trialEndsOn, interval: termForMonth(sub.terms, month)?.interval ?? null, monthlyPriceCents: billingSettingsOf(db).monthlyPriceCents,
-      termsFrom: sub.termsFrom ?? null };
+    const st = billingSettingsOf(db);
+    return { trialEndsOn: sub.trialEndsOn, interval: termForMonth(sub.terms, month)?.interval ?? null, monthlyPriceCents: st.monthlyPriceCents,
+      termsFrom: sub.termsFrom ?? null, edition: editionFor(sub.editions ?? [], month),
+      basicPriceCents: st.basicPriceCents, basicMonthlyPriceCents: st.basicMonthlyPriceCents };
   }
   function termOut(t: TermRow | null, today: ISODate): SubscriptionTerm | null {
     if (!t) return null;
@@ -1019,7 +1024,24 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       withdrawable: termOut(view.withdrawable, today), contract: sub.contract ?? null,
       annualPriceCents: st.defaultPriceCents, monthlyPriceCents: st.monthlyPriceCents, termMonths: TERM_MONTHS, renewalMonths: RENEWAL_MONTHS,
       cancelNoticeDays: st.cancelNoticeDays,
+      edition: editionFor(sub.editions ?? [], monthOfDate(today)),
+      firstPaidEdition: editionFor(sub.editions ?? [], firstPaidMonthFor(sub.createdOn, sub.trialEndsOn)),
+      nextEdition: nextEdition(sub.editions ?? [], today),
+      proFeatures: hasPro(sub.editions ?? [], today, sub.trialEndsOn),
+      basicAnnualPriceCents: st.basicPriceCents, basicMonthlyPriceCents: st.basicMonthlyPriceCents,
     };
+  }
+  function editionOf(db: DemoDb, tenantId: UUID, month: ISOMonth): Edition {
+    return editionFor((db.subscriptions ?? []).find((x) => x.tenantId === tenantId)?.editions ?? [], month);
+  }
+  /** Like private.has_pro (0027): Pro functions today (Pro or trial). Tenants without subscription data: Pro. */
+  function proFeatures(db: DemoDb, tenantId: UUID): boolean {
+    const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
+    return !sub || hasPro(sub.editions ?? [], berlinToday(), sub.trialEndsOn);
+  }
+  /** Like private.assert_pro (0027): members of a Basic tenant cannot use Pro functions. */
+  function assertPro(db: DemoDb, s: { tenantId?: UUID | null }, tenantId: UUID) {
+    if (s.tenantId === tenantId && !proFeatures(db, tenantId)) throw new Error(PRO_ONLY_MESSAGE);
   }
   function applyTermChange(sub: DemoSubscription, change: TermChange, reason: string | null) {
     const now = new Date().toISOString();
@@ -1038,6 +1060,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
   /** Audit value of a subscription (no personal data). */
   const subscriptionAudit = (sub: DemoSubscription) => ({
     trialEndsOn: sub.trialEndsOn,
+    editions: (sub.editions ?? []).map((e) => ({ ...e })),
     terms: sub.terms.map((t) => ({ interval: t.interval, startsOn: t.startsOn, endsOn: t.endsOn, cancelled: !!t.cancelledAt, thenMonthly: t.thenMonthly })),
   });
   function invoiceSettingsOf(db: DemoDb): InvoiceSettings {
@@ -1055,7 +1078,8 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     if (!t.contact.street.trim() || !t.contact.postalCode.trim() || !t.contact.city.trim()) missing.push("Anschrift des Kunden (Firmenprofil)");
     const promo = m.condition === "promo" ? promoOf(db, tenantId, month) : null;
     const label = m.condition === "special" ? " (Sonderpreis)" : promo ? ` (Aktionscode ${promo.code}, −${promo.discountPercent} %)` : "";
-    const lines = [{ description: `Zeiterfassung – abrechenbare Mitarbeitende ${month.slice(5, 7)}/${month.slice(0, 4)}${label}`,
+    const editionLabel = editionFor(subscriptionOf(db, tenantId).editions ?? [], month) === "basic" ? "Basic" : "Pro";
+    const lines = [{ description: `Zeiterfassung ${editionLabel} – abrechenbare Mitarbeitende ${month.slice(5, 7)}/${month.slice(0, 4)}${label}`,
       quantity: m.billableCount, unitPriceCents: m.unitPriceCents, amountCents: m.amountCents }];
     const totals = invoiceTotals(lines, st.vatRatePercent);
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -1342,6 +1366,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           if (problems.length) throw new Error(problems[0]);
           t.settings.breakPolicy = clone(bp);
         }
+        if (settings.workAccount?.enabled && !t.settings.workAccount.enabled) assertPro(db, s, tenantId);
         if (settings.workAccount) {
           const w = { ...t.settings.workAccount, ...settings.workAccount };
           if (!Number.isSafeInteger(w.openingMinutes) || Math.abs(w.openingMinutes) > 60000) throw new Error("Ungültiger Startsaldo.");
@@ -1572,6 +1597,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
     async setEmploymentContract(employeeId, input) {
       return tx((db, s) => {
         const emp = assertEmploymentWrite(db, s, employeeId);
+        assertPro(db, s, emp.tenantId);
         const v = validateEmploymentInput(input);
         const list = (db.employmentContracts ??= []);
         const existing = list.find((c) => c.employeeId === employeeId && c.validFrom === v.validFrom);
@@ -1610,6 +1636,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       return tx((db, s) => {
         const emp = assertEmployeeWrite(db, s, employeeId);
         if (s.employeeId !== employeeId) throw new AccessDeniedError("Die Aufteilung trifft der Mitarbeitende selbst.");
+        assertPro(db, s, emp.tenantId);
         if (!isValidMonth(month)) throw new Error("Bitte gültigen Monat wählen.");
         const st = statementOf(db, employeeId, month);
         if (st && st.status === "approved") throw new Error("Der Monat ist bereits freigegeben. Die Aufteilung kann nicht mehr geändert werden.");
@@ -1774,6 +1801,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       return tx((db, s) => {
         const emp = assertEmployeeWrite(db, s, employeeId);
         if (s.employeeId !== employeeId) throw new AccessDeniedError("Korrekturanfragen können nur für eigene Einträge gestellt werden.");
+        assertPro(db, s, emp.tenantId);
         const reason = (input.reason ?? "").trim();
         if (reason.length < 5) throw new Error("Bitte begründe die Korrekturanfrage (mind. 5 Zeichen).");
         if (reason.length > 1000) throw new Error("Die Begründung ist zu lang (max. 1000 Zeichen).");
@@ -2219,6 +2247,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         result.promo = promo ? { code: promo.code, discountPercent: promo.discountPercent } : null;
         result.interval = m.interval;
         result.trialEndsOn = m.trialEndsOn;
+        result.edition = editionOf(db, tenantId, month);
         return result;
       });
     },
@@ -2243,7 +2272,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
             const promo = m.condition === "promo" ? promoOf(db, t.id, month) : null;
             return { ...summaryOf(m), tenantId: t.id, tenantName: t.name, slug: t.slug, isDemo: t.isDemo, tenantStatus: t.status, plan: m.plan, note: m.note, closedAt: m.closedAt,
               blockSince: block?.since ?? null, blockReason: block?.reason ?? null, promoCode: promo?.code ?? null, promoDiscountPercent: promo?.discountPercent ?? null,
-              interval: m.interval, trialEndsOn: m.trialEndsOn };
+              interval: m.interval, trialEndsOn: m.trialEndsOn, edition: editionOf(db, t.id, month) };
           });
         return { month, defaultPriceCents: db.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS, rows, totals: revenueTotals(rows), paymentProvider: "none" as const };
       });
@@ -2273,12 +2302,14 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const pick = <K extends keyof BillingSettingsPatch>(k: K, cur: NonNullable<BillingSettingsPatch[K]> | null) => (k in patch && patch[k] !== undefined ? patch[k] : cur);
         const price = pick("defaultPriceCents", before.defaultPriceCents) as number;
         const monthly = pick("monthlyPriceCents", before.monthlyPriceCents) as number;
+        const basic = pick("basicPriceCents", before.basicPriceCents) as number;
+        const basicMonthly = pick("basicMonthlyPriceCents", before.basicMonthlyPriceCents) as number;
         const from = (pick("trialWindowFrom", before.trialWindowFrom) as ISODate | null) || null;
         const until = (pick("trialWindowUntil", before.trialWindowUntil) as ISODate | null) || null;
         const months = pick("trialMonths", before.trialMonths) as number;
         const notice = pick("cancelNoticeDays", before.cancelNoticeDays) as number;
         const welcome = (pick("welcomePromoCodeId", before.welcomePromoCodeId) as UUID | null) || null;
-        for (const [v, what] of [[price, "Der Preis für das 12-Monats-Abo"], [monthly, "Der Preis für den Monatstarif"]] as const) {
+        for (const [v, what] of [[price, "Der Preis für das 12-Monats-Abo"], [monthly, "Der Preis für den Monatstarif"], [basic, "Der Basic-Preis im 12-Monats-Abo"], [basicMonthly, "Der Basic-Preis im Monatstarif"]] as const) {
           if (!Number.isInteger(v) || v < 0 || v > 100000) throw new Error(`${what} muss zwischen 0 und 1.000,00 € liegen.`);
         }
         if ((from === null) !== (until === null)) throw new Error("Einführungsangebot: bitte Beginn und Ende angeben (oder beide leer lassen).");
@@ -2292,7 +2323,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           if (c.endedAt && welcome !== before.welcomePromoCodeId) throw new Error("Ein beendeter Aktionscode kann nicht als Willkommenscode gewählt werden.");
         }
         db.defaultPriceCents = price;
-        db.billingSettings = { monthlyPriceCents: monthly, trialWindowFrom: from, trialWindowUntil: until, trialMonths: months, cancelNoticeDays: notice, welcomePromoCodeId: welcome };
+        db.billingSettings = { monthlyPriceCents: monthly, basicPriceCents: basic, basicMonthlyPriceCents: basicMonthly, trialWindowFrom: from, trialWindowUntil: until, trialMonths: months, cancelNoticeDays: notice, welcomePromoCodeId: welcome };
         const after = billingSettingsOf(db);
         addAudit(db, s, { tenantId: null, action: "billing_settings.update", entity: "billing_settings", entityId: "default", before, after, reason: r });
         return after;
@@ -2340,13 +2371,37 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         if (input?.entrepreneur !== true) throw new Error("Bitte bestätigen Sie, dass Ihre Firma als Unternehmer handelt.");
         if (input.termsAccepted !== true) throw new Error("Bitte stimmen Sie den AGB und dem Auftragsverarbeitungsvertrag zu.");
         if (input.interval !== "annual" && input.interval !== "monthly") throw new Error("Bitte einen Tarif wählen.");
+        const edition: Edition = input.edition ?? "pro";
+        if (edition !== "basic" && edition !== "pro") throw new Error("Bitte Basic oder Pro wählen.");
         const before = subscriptionAudit(sub);
+        if (edition === "basic") sub.editions = applyEdition(sub.editions ?? [], "basic", `${firstPaidMonthFor(sub.createdOn, sub.trialEndsOn)}-01`);
         if (input.interval === "annual") applyTermChange(sub, planChoice(sub.terms, "annual", berlinToday(), firstPaidMonthFor(sub.createdOn, sub.trialEndsOn)), null);
         const me = db.employees.find((e) => e.id === s.employeeId);
-        sub.contract = { acceptedAt: new Date().toISOString(), acceptedByName: me?.displayName ?? null, termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: input.interval };
+        sub.contract = { acceptedAt: new Date().toISOString(), acceptedByName: me?.displayName ?? null, termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: input.interval, edition };
         addAudit(db, s, { tenantId, action: "subscription.accept", entity: "subscription", entityId: tenantId, before,
           after: { ...subscriptionAudit(sub), termsVersion: TERMS_VERSION, dpaVersion: DPA_VERSION, interval: input.interval, entrepreneur: true }, reason: null });
         return subscriptionOut(db, tenantId);
+      });
+    },
+    async chooseEdition(tenantId, edition) {
+      return tx((db, s) => {
+        assertOwner(s, tenantId, "Den Tarif kann nur der Inhaber ändern.");
+        assertContract(db, tenantId);
+        if (edition !== "basic" && edition !== "pro") throw new Error("Bitte Basic oder Pro wählen.");
+        const sub = subscriptionOf(db, tenantId);
+        const before = subscriptionAudit(sub);
+        sub.editions = planEdition(sub.editions ?? [], edition, sub.terms, berlinToday(), firstPaidMonthFor(sub.createdOn, sub.trialEndsOn));
+        addAudit(db, s, { tenantId, action: "subscription.edition", entity: "subscription", entityId: tenantId, before, after: { ...subscriptionAudit(sub), edition }, reason: null });
+        return subscriptionOut(db, tenantId);
+      });
+    },
+    async getTenantFeatures(tenantId) {
+      return read((db, s) => {
+        if (s.platformRole && !s.tenantId) assertPlatform(s);
+        else if (s.tenantId !== tenantId) throw new AccessDeniedError();
+        const sub = (db.subscriptions ?? []).find((x) => x.tenantId === tenantId);
+        const today = berlinToday();
+        return { edition: editionFor(sub?.editions ?? [], monthOfDate(today)), pro: proFeatures(db, tenantId), nextEdition: nextEdition(sub?.editions ?? [], today) };
       });
     },
     async withdrawCancellation(tenantId) {

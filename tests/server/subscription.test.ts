@@ -169,6 +169,21 @@ describe("new tenant: welcome code, contract conclusion", () => {
   });
 });
 
+describe("edition Basic / Pro (0027)", () => {
+  it("features for every member; choose edition owner only, validated; Basic next month, Pro withdraws", async () => {
+    expect((await t.call("GET", `/api/tenants/${A}/features`, { cookie: cookies.emp1A })).body).toEqual({ edition: "pro", pro: true, nextEdition: null });
+    expect((await t.call("GET", `/api/tenants/${A}/features`, { cookie: cookies.empB })).status).toBe(403);
+    const path = `/api/tenants/${A}/subscription/edition`;
+    expect((await t.call("POST", path, { cookie: cookies.managerA, body: { edition: "basic" } })).status).toBe(403);
+    expect((await t.call("POST", path, { cookie: cookies.ownerA, body: { edition: "gold" } })).status).toBe(400);
+    const r = await t.call("POST", path, { cookie: cookies.ownerA, body: { edition: "basic" } });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ edition: "pro", proFeatures: true, nextEdition: { edition: "basic" }, basicAnnualPriceCents: 199 });
+    expect((await t.call("POST", path, { cookie: cookies.ownerA, body: { edition: "basic" } })).status).toBe(409);
+    expect((await t.call("POST", path, { cookie: cookies.ownerA, body: { edition: "pro" } })).body).toMatchObject({ nextEdition: null });
+  });
+});
+
 describe("billing job (run once)", () => {
   it("sends the trial reminder once and issues/mails the monthly invoice once", async () => {
     const today = (await t.db.admin.query("select private.berlin_today()::text as d")).rows[0].d as string;

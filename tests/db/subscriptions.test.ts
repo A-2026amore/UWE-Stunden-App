@@ -254,12 +254,12 @@ describe("frozen months and issued invoices stay unchanged", () => {
 
   it("invoice line names the plan: Monatstarif / 12-Monats-Abo / with promo code", async () => {
     const d = await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-08') as d", [A])).rows[0].d);
-    expect(d.lines[0].description).toBe("Zeiterfassung – abrechenbare Mitarbeitende 08/2026 (Monatstarif)");
+    expect(d.lines[0].description).toBe("Zeiterfassung Pro – abrechenbare Mitarbeitende 08/2026 (Monatstarif)");
     const frozen = await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-07') as d", [A])).rows[0].d);
-    expect(frozen.lines[0].description).toBe("Zeiterfassung – abrechenbare Mitarbeitende 07/2026 (Monatstarif)");
+    expect(frozen.lines[0].description).toBe("Zeiterfassung Pro – abrechenbare Mitarbeitende 07/2026 (Monatstarif)");
     await db.admin.query("update public.subscription_terms set billing_interval = 'annual' where tenant_id = $1", [A]);
     const annual = await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-08') as d", [A])).rows[0].d);
-    expect(annual.lines[0].description).toBe("Zeiterfassung – abrechenbare Mitarbeitende 08/2026 (12-Monats-Abo)");
+    expect(annual.lines[0].description).toBe("Zeiterfassung Pro – abrechenbare Mitarbeitende 08/2026 (12-Monats-Abo)");
     expect(annual.condition).toBe("standard");
     // the frozen July keeps its snapshot (monthly, 6,50 €)
     expect((await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-07') as d", [A])).rows[0].d)).lines[0].unitPriceCents).toBe(650);
@@ -267,7 +267,7 @@ describe("frozen months and issued invoices stay unchanged", () => {
     await db.as(U.ownerA, (q) => q.query("select public.tenant_redeem_promo_code($1, 'HALB-TEST')", [A]), { commit: true });
     await db.admin.query("update public.promo_redemptions set redeemed_at = '2026-08-01 00:00 Europe/Berlin' where tenant_id = $1", [A]);
     const promo = await sa(async (q) => (await q.query("select public.platform_invoice_draft($1, '2026-08') as d", [A])).rows[0].d);
-    expect(promo.lines[0]).toMatchObject({ unitPriceCents: 250, description: "Zeiterfassung – abrechenbare Mitarbeitende 08/2026 (12-Monats-Abo, Aktionscode HALB-TEST, −50 %)" });
+    expect(promo.lines[0]).toMatchObject({ unitPriceCents: 250, description: "Zeiterfassung Pro – abrechenbare Mitarbeitende 08/2026 (12-Monats-Abo, Aktionscode HALB-TEST, −50 %)" });
     await db.admin.query("delete from public.promo_redemptions where tenant_id = $1", [A]);
     await db.admin.query("update public.subscription_terms set billing_interval = 'monthly' where tenant_id = $1", [A]);
   });

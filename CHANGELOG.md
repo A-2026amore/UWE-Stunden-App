@@ -25,6 +25,19 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   - CLAUDE.md, Architektur- und Fachdoku: Pausenregel und Arbeitszeitkonto als Einstellungen je Firma.
 
 ### Hinzugefügt
+- Zwei Versionen je Firma: **Basic** und **Pro** (Entscheidung 02.11.2026, Migration `0027_editions.sql`,
+  Regeln `platform/src/core/edition.ts`):
+  - Basic 1,99 € brutto je Mitarbeiter und Monat (12-Monats-Abo und Monatstarif, im Super-Admin unter
+    „Preismodell“ änderbar): Zeiten erfassen, Monatsnachweis senden, Chef sieht Zeiten und gibt Nachweise frei.
+    Pro wie bisher 5,00 € / 6,50 € mit allen Funktionen.
+  - Wahl bei der Freischaltung („Version“), Wechsel im Chef-Portal unter „Abrechnung“ (Karte „Version“, nur Inhaber):
+    Pro ab sofort, Basic ab dem nächsten Monat, im 12-Monats-Abo nach Laufzeitende, in der Testphase ab dem ersten
+    bezahlten Monat; ein geplanter Wechsel lässt sich zurücknehmen. Bestehende Firmen bleiben Pro.
+  - In Basic sind Stundenübersicht, Korrekturanfragen, Arbeitszeitkonten, Vertragsdaten und die Übernahme aus der
+    alten App ausgeblendet (Mitarbeiter-App ohne „Konto“); die Datenbank lehnt diese Funktionen für Personen der
+    Firma ab. Daten bleiben gespeichert. In der Testphase ist alles frei.
+  - Rechnungszeile „Zeiterfassung Basic/Pro – …“, Version in Abrechnung, Umsatzübersicht und Tarif-Anzeige.
+  - Rechtstexte: AGB § 3 und § 7, Anlage A § 1 und neuer § 1c (Entwurf 0.9.4); `TERMS_VERSION` angepasst.
 - Arbeitsvertrag je Mitarbeiter mit Soll/Ist und Arbeitszeitkonto (31.10.2026, Migration
   `0025_employment_contracts.sql`, Logik `platform/src/core/employment.ts`):
   - Chef-Portal → Mitarbeiter → Einladen/Bearbeiten: Art (Minijob, Teilzeit, Vollzeit, Sonstiges), Stundenlohn,

@@ -10,6 +10,8 @@ import { ROLE_LABEL, currentMonth, dateTimeDE, formatDateDE, monthLabelDE } from
 import { SubscriptionFacts, berlinToday, cancelDeadline, cancelPlan, choiceStart, openTerm, priceLine } from "../../shared/subscription";
 import { useChef } from "../context";
 import { TenantInvoices } from "../TenantInvoices";
+import { EditionCard, editionPrices } from "../EditionCard";
+import { EDITION_LABEL } from "../../../core/edition";
 
 /** Chef-Portal: own billing per month (price model 2026-10-28). Owner and managers only. */
 export function BillingPage() {
@@ -25,11 +27,12 @@ export function BillingPage() {
     <div class="stack">
       <h1 class="page-title">Abrechnung</h1>
       <p class="muted">
-        Preis je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE}{sub.data ? <>: {formatEuro(sub.data.annualPriceCents)} im 12-Monats-Abo, {formatEuro(sub.data.monthlyPriceCents)} im Monatstarif</> : null}.
+        Preis je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE}{sub.data ? <>: Basic {editionPrices(sub.data, "basic")}; Pro {editionPrices(sub.data, "pro")}</> : null}.
         Keine Grundgebühr, keine Mindestanzahl. Vertragskonditionen und Aktionsrabatte sind in den Zahlen unten berücksichtigt.
       </p>
       {sub.error && <Alert tone="danger" live>{sub.error}</Alert>}
       {sub.data && <TariffCard sub={sub.data} pilot={b?.plan === "pilot_free"} />}
+      {sub.data && <EditionCard sub={sub.data} />}
       <PromoCard />
       <Card>
         <div class="toolbar">
@@ -47,7 +50,7 @@ export function BillingPage() {
               : <Alert tone="warning" title="Noch nicht abgerechnet"><p>Vorläufige Werte. Sie werden mit der Rechnungsstellung festgeschrieben.</p></Alert>}
           <div class="grid-4" data-testid="billing-summary">
             <StatTile label="Abrechenbare Personen" value={b.billableCount} />
-            <StatTile label="Preis je Person" value={formatEuro(b.unitPriceCents)} hint={b.promo ? `Aktionscode ${b.promo.code} (−${b.promo.discountPercent} %)` : BILLING_CONDITION_LABEL[b.condition]} />
+            <StatTile label="Preis je Person" value={formatEuro(b.unitPriceCents)} hint={`${b.edition ? `${EDITION_LABEL[b.edition]} · ` : ""}${b.promo ? `Aktionscode ${b.promo.code} (−${b.promo.discountPercent} %)` : BILLING_CONDITION_LABEL[b.condition]}`} />
             <StatTile label="Summe brutto" value={formatEuro(b.amountCents)} hint={VAT_NOTE} tone="brand" />
             <StatTile label="Status" value={<StatusPill status={b.status} />} />
           </div>

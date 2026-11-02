@@ -15,7 +15,7 @@ interface FormState { displayName: string; personnelNumber: string; email: strin
 const EMPTY: FormState = { displayName: "", personnelNumber: "", email: "", role: "employee", channel: "email" };
 
 export function EmployeesPage() {
-  const { repo, tenant, me, version, changed } = useChef();
+  const { repo, tenant, me, pro, version, changed } = useChef();
   const toast = useToast();
   const dialogs = useDialogs();
   const month = currentMonth();
@@ -23,7 +23,8 @@ export function EmployeesPage() {
     const [employees, contracts] = await Promise.all([
       repo.listEmployees(tenant.id),
       // Contract data are additional information: a failure must not hide the list.
-      repo.listEmploymentContracts(tenant.id).catch(() => [] as EmploymentContract[]),
+      // Basic (0027): no contract data.
+      pro ? repo.listEmploymentContracts(tenant.id).catch(() => [] as EmploymentContract[]) : Promise.resolve([] as EmploymentContract[]),
     ]);
     return { employees, contracts };
   }, [version]);
@@ -31,8 +32,8 @@ export function EmployeesPage() {
   const [empInitial, setEmpInitial] = useState<EmploymentForm>(EMPTY_EMPLOYMENT_FORM(month));
   const versionsOf = (id: string) => (q.data?.contracts ?? []).filter((c) => c.employeeId === id);
   /** Like the database (0025): leadership persons and oneself only the owner. */
-  const canEditContract = (e: Employee | "new" | null, role: TenantRole) =>
-    me.role === "owner" || (e === "new" ? role === "employee" : !!e && e.role === "employee" && e.id !== me.id);
+  const canEditContract = (e: Employee | "new" | null, role: TenantRole) => pro && (
+    me.role === "owner" || (e === "new" ? role === "employee" : !!e && e.role === "employee" && e.id !== me.id));
   const [editing, setEditing] = useState<Employee | "new" | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [error, setError] = useState<string | null>(null);
@@ -194,11 +195,11 @@ export function EmployeesPage() {
             { key: "p", header: "Personalnr.", render: (e) => e.personnelNumber },
             { key: "e", header: "E-Mail", render: (e) => e.email ?? "—" },
             { key: "r", header: "Rolle", render: (e) => ROLE_LABEL[e.role] },
-            { key: "v", header: "Arbeitsvertrag", render: (e) => {
+            ...(pro ? [{ key: "v", header: "Arbeitsvertrag", render: (e: Employee) => {
               const vs = versionsOf(e.id);
               const c = contractForMonth(vs, month) ?? vs.at(-1) ?? null;
               return <span class="small">{contractText(c)}{c && c.validFrom > month ? ` (ab ${monthLabelDE(c.validFrom)})` : ""}</span>;
-            } },
+            } }] : []),
             { key: "s", header: "Status", render: (e) => <StatusPill status={e.status} /> },
             { key: "c", header: "Angelegt", render: (e) => <span class="small muted">{dateTimeDE(e.createdAt).split(",")[0]}</span> },
             {
@@ -241,8 +242,8 @@ export function EmployeesPage() {
             disabled={me.role !== "owner" || (editing !== "new" && editing?.id === me.id)}
             hint={me.role !== "owner" ? "Rollen kann nur der Inhaber ändern." : undefined}
             options={[{ value: "employee", label: ROLE_LABEL.employee! }, { value: "manager", label: ROLE_LABEL.manager! }, { value: "owner", label: ROLE_LABEL.owner! }]} />
-          <EmploymentFields form={emp} onChange={setEmp} currentMonth={month} disabled={!contractEditable}
-            disabledHint={contractEditable ? undefined : "Die Vertragsdaten von Leitungspersonen und die eigenen trägt nur der Inhaber ein."} />
+          {pro && <EmploymentFields form={emp} onChange={setEmp} currentMonth={month} disabled={!contractEditable}
+            disabledHint={contractEditable ? undefined : "Die Vertragsdaten von Leitungspersonen und die eigenen trägt nur der Inhaber ein."} />}
           {editingVersions.length > 0 && editing && editing !== "new" && (
             <div class="stack-sm" data-testid="employment-versions">
               <p class="small mb-0"><strong>Gespeicherte Angaben</strong></p>

@@ -2,7 +2,8 @@
  * Subscription facts (migration 0023, core/subscription.ts) shown in the Chef-Portal ("Tarif")
  * and read-only in the Super-Admin tenant detail.
  */
-import type { ISODate, SubscriptionInterval, SubscriptionTerm, TenantSubscription } from "../../core/types";
+import type { Edition, ISODate, SubscriptionInterval, SubscriptionTerm, TenantSubscription } from "../../core/types";
+import { EDITION_LABEL, editionChangeStart } from "../../core/edition";
 import { VAT_NOTE, berlinDateOf, formatEuro } from "../../core/billing";
 import { INTERVAL_LABEL, addDays, cancellationEnd, planCancel, planChoice, type TermChange, type TermRow } from "../../core/subscription";
 import { formatDateDE, monthLabelDE } from "./format";
@@ -10,13 +11,24 @@ import { formatDateDE, monthLabelDE } from "./format";
 /** Today as Berlin calendar day (same "today" as the subscription rules). */
 export const berlinToday = (): ISODate => berlinDateOf(Date.now());
 
-export function priceOf(sub: TenantSubscription, interval: SubscriptionTerm["interval"]): number {
+/** Edition on a day: the planned change once it applies, else the current edition (migration 0027). */
+export function editionAt(sub: TenantSubscription, date: ISODate): Edition {
+  return sub.nextEdition && date >= sub.nextEdition.startsOn ? sub.nextEdition.edition : sub.edition ?? "pro";
+}
+
+export function priceOf(sub: TenantSubscription, interval: SubscriptionTerm["interval"], edition: Edition = sub.edition ?? "pro"): number {
+  if (edition === "basic") return interval === "annual" ? sub.basicAnnualPriceCents : sub.basicMonthlyPriceCents;
   return interval === "annual" ? sub.annualPriceCents : sub.monthlyPriceCents;
 }
 
 /** "5,00 € je Mitarbeiter und Monat" */
-export function priceLine(sub: TenantSubscription, interval: SubscriptionTerm["interval"]): string {
-  return `${formatEuro(priceOf(sub, interval))} je abrechenbarem Mitarbeiter und Monat`;
+export function priceLine(sub: TenantSubscription, interval: SubscriptionTerm["interval"], edition?: Edition): string {
+  return `${formatEuro(priceOf(sub, interval, edition))} je abrechenbarem Mitarbeiter und Monat`;
+}
+
+/** First day from which a change to `edition` would apply today (core editionChangeStart). */
+export function editionStart(sub: TenantSubscription, edition: Edition, today: ISODate): ISODate {
+  return editionChangeStart(edition, termsOf(sub), today, sub.firstPaidMonth);
 }
 
 /** Terms known to the UI (current, next, withdrawable) as rows for the core rules. */
@@ -70,7 +82,7 @@ export function SubscriptionFacts({ sub, today = berlinToday() }: { sub: TenantS
       </>}
       <dt>{started || !cur ? "Aktueller Tarif" : "Tarif"}</dt>
       <dd data-testid="subscription-plan">{cur
-        ? <>{INTERVAL_LABEL[cur.interval]}: {formatEuro(priceOf(sub, cur.interval))} je Mitarbeiter/Monat{!started && ` ab ${formatDateDE(cur.startsOn)}`} <span class="xsmall muted">{VAT_NOTE}</span></>
+        ? <>{EDITION_LABEL[editionAt(sub, started ? today : cur.startsOn)]}, {INTERVAL_LABEL[cur.interval]}: {formatEuro(priceOf(sub, cur.interval, editionAt(sub, started ? today : cur.startsOn)))} je Mitarbeiter/Monat{!started && ` ab ${formatDateDE(cur.startsOn)}`} <span class="xsmall muted">{VAT_NOTE}</span></>
         : "kein laufender Vertrag, es wird nichts berechnet"}</dd>
       {cur?.currentTermEndsOn && <>
         <dt>Laufzeit bis</dt>
@@ -85,8 +97,12 @@ export function SubscriptionFacts({ sub, today = berlinToday() }: { sub: TenantS
       </>}
       {sub.next && <>
         <dt>Danach</dt>
-        <dd data-testid="subscription-next">{INTERVAL_LABEL[sub.next.interval]} ab {formatDateDE(sub.next.startsOn)} ({formatEuro(priceOf(sub, sub.next.interval))} je Mitarbeiter/Monat)
+        <dd data-testid="subscription-next">{INTERVAL_LABEL[sub.next.interval]} ab {formatDateDE(sub.next.startsOn)} ({EDITION_LABEL[editionAt(sub, sub.next.startsOn)]}, {formatEuro(priceOf(sub, sub.next.interval, editionAt(sub, sub.next.startsOn)))} je Mitarbeiter/Monat)
           {sub.next.cancelledAt && sub.next.endsOn && <div class="xsmall muted">Gekündigt zum {formatDateDE(sub.next.endsOn)}</div>}</dd>
+      </>}
+      {sub.nextEdition && <>
+        <dt>Versionswechsel</dt>
+        <dd data-testid="subscription-next-edition">{EDITION_LABEL[sub.nextEdition.edition]} ab {formatDateDE(sub.nextEdition.startsOn)}</dd>
       </>}
       {sub.contractEndsOn && sub.contractEndsOn !== cur?.endsOn && <>
         <dt>Vertragsende</dt>

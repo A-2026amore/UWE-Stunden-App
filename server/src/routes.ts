@@ -1017,11 +1017,13 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
 
   // BillingSettingsPatch (0023): only the fields sent change; {defaultPriceCents, reason} still works.
   router.add("PUT", "/api/platform/billing/settings", async (ctx) => {
-    const b = v.object(ctx.body, ["defaultPriceCents", "monthlyPriceCents", "trialWindowFrom", "trialWindowUntil", "trialMonths",
+    const b = v.object(ctx.body, ["defaultPriceCents", "monthlyPriceCents", "basicPriceCents", "basicMonthlyPriceCents", "trialWindowFrom", "trialWindowUntil", "trialMonths",
       "cancelNoticeDays", "welcomePromoCodeId", "reason"]);
     const patch: Record<string, unknown> = {};
     if (b.defaultPriceCents !== undefined) patch.defaultPriceCents = v.int(b.defaultPriceCents, "Preis im 12-Monats-Abo (Cent)", 0, 100000);
     if (b.monthlyPriceCents !== undefined) patch.monthlyPriceCents = v.int(b.monthlyPriceCents, "Monatspreis (Cent)", 0, 100000);
+    if (b.basicPriceCents !== undefined) patch.basicPriceCents = v.int(b.basicPriceCents, "Basic-Preis im 12-Monats-Abo (Cent)", 0, 100000);
+    if (b.basicMonthlyPriceCents !== undefined) patch.basicMonthlyPriceCents = v.int(b.basicMonthlyPriceCents, "Basic-Monatspreis (Cent)", 0, 100000);
     if (b.trialMonths !== undefined) patch.trialMonths = v.int(b.trialMonths, "Testphase (Monate)", 1, 24);
     if (b.cancelNoticeDays !== undefined) patch.cancelNoticeDays = v.int(b.cancelNoticeDays, "Kündigungsfrist (Tage)", 0, 365);
     for (const k of ["trialWindowFrom", "trialWindowUntil"] as const) {

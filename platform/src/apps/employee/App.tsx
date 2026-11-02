@@ -20,6 +20,7 @@ import { getEmployeeRepository } from "./syncRepo";
 import { ConflictDialog, SyncIndicator } from "./SyncStatus";
 import { UpdateBanner } from "./UpdateBanner";
 import { LoginInstallHint } from "./InstallHint";
+import { ProOnly, basicTenant } from "../shared/edition";
 
 const NAV: NavItem[] = [
   { href: "#/", label: "Start", icon: "home", match: "/" },
@@ -37,7 +38,7 @@ const checkArea = (s: Session): string | null =>
 
 export function EmployeeApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [data, setData] = useState<{ tenant: Tenant; me: Employee } | null>(null);
+  const [data, setData] = useState<{ tenant: Tenant; me: Employee; pro: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [month, setMonth] = useState(currentMonth());
   const [version, setVersion] = useState(0);
@@ -74,14 +75,16 @@ export function EmployeeApp() {
 
   useEffect(() => {
     if (!session?.tenantId || !session.employeeId || session.twoFactorSetupRequired) { setData(null); applyBranding(null); return; }
-    Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId)])
-      .then(([tenant, list]) => {
+    // Edition (0027): if it cannot be read (offline), the app stays fully usable; the server still decides.
+    Promise.all([repo.getTenant(session.tenantId), repo.listEmployees(session.tenantId),
+      getRepository("app").getTenantFeatures(session.tenantId).catch(() => null)])
+      .then(([tenant, list, features]) => {
         const me = list.find((e) => e.id === session.employeeId);
         if (!me) throw new Error("Mitarbeiterdaten nicht gefunden.");
         applyBranding(tenant.branding);
         rememberTenant("app", tenant.name, tenant.branding);
         document.title = `${tenant.name} · Zeiterfassung`;
-        setData({ tenant, me });
+        setData({ tenant, me, pro: features?.pro ?? true });
       })
       .catch((e) => setError(errorText(e)));
   }, [session, version]);
@@ -134,7 +137,7 @@ export function EmployeeApp() {
   if (!data) return <p class="sr-only" role="status">Wird geladen …</p>;
 
   const ctx: EmployeeCtx = {
-    repo, session, tenant: data.tenant, me: data.me, month, setMonth, version, syncStatus,
+    repo, session, tenant: data.pro ? data.tenant : basicTenant(data.tenant), me: data.me, pro: data.pro, month, setMonth, version, syncStatus,
     openConflicts: () => setConflictsOpen(true),
     changed: () => setVersion((v) => v + 1),
     signOut: async () => { await repo.signOut(); setSession(null); setData(null); },
@@ -144,9 +147,9 @@ export function EmployeeApp() {
   switch (route.path) {
     case "/erfassen": page = <EntryPage editId={route.parts[0] ?? null} presetDate={route.query.get("datum")} />; break;
     case "/monat": page = <MonthPage initialMonth={route.query.get("m")} />; break;
-    case "/konto": page = <AccountPage />; break;
-    // The import from the old Stunden-App exists only for tenants the platform enabled it for (0024).
-    case "/einstellungen": page = route.parts[0] === "import" && data.tenant.legacyImportEnabled ? <LegacyImportPage /> : <SettingsPage />; break;
+    case "/konto": page = data.pro ? <AccountPage /> : <ProOnly owner={false} area="employee" />; break;
+    // The import from the old Stunden-App exists only for tenants the platform enabled it for (0024), and only in Pro (0027).
+    case "/einstellungen": page = route.parts[0] === "import" && data.tenant.legacyImportEnabled && data.pro ? <LegacyImportPage /> : <SettingsPage />; break;
     default: page = <StartPage />;
   }
 
@@ -167,7 +170,7 @@ export function EmployeeApp() {
             <UpdateBanner />
             <Watermark branding={data.tenant.branding} />
             <main class="m-main" id="main">{page}</main>
-            <BottomNav items={NAV} current={route.path} />
+            <BottomNav items={data.pro ? NAV : NAV.filter((n) => n.match !== "/konto")} current={route.path} />
             <ConflictDialog open={conflictsOpen} onClose={() => setConflictsOpen(false)} />
           </div>
         </DialogProvider>

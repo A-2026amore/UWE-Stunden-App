@@ -5,7 +5,7 @@
 > Platzhalter stehen in `[OFFEN: …]`, offene Rechtsfragen sind mit **⚠ Rechtsfrage** markiert.
 > Der Produktname „Schichtklar24“ ist vorläufig (Markenrecherche beim DPMA/EUIPO steht aus).
 
-Stand: Entwurf 0.9.3 vom 30.10.2026 (Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif
+Stand: Entwurf 0.9.4 vom 02.11.2026 (Versionen Basic und Pro, Anlage A § 1c; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif
 6,50 EUR, Verlängerung um 6 Monate, nur Unternehmer; davor 0.9.2 vom 30.10.2026 und 0.9.1 vom 29.10.2026)
 
 ## § 1 Geltungsbereich, Vertragspartner
@@ -75,6 +75,9 @@ Stand: Entwurf 0.9.3 vom 30.10.2026 (Einführungsaktion 3 Monate kostenlos, 12-M
      Begründung, Arbeitszeitkonto, Exporten (PDF, CSV, JSON) und Firmenprofil mit eigenem Logo,
    - eine Abrechnungsübersicht für den Kunden,
    - Funktionen zur Datenauskunft, zum Export und zur Anonymisierung ausgeschiedener Mitarbeitender.
+
+   Welche dieser Funktionen zur Verfügung stehen, richtet sich nach der gewählten Version (Basic oder Pro,
+   Anlage A § 1c). Arbeitszeitkonto, Vertragsdaten mit Soll/Ist, Stundenübersicht und Korrekturanfragen gehören zu Pro.
 2. **Monatsfreigabe:** Freigegebene Monatsnachweise sind gegen Änderungen gesperrt. Eine Korrektur ist nur möglich,
    indem eine berechtigte Person des Kunden den Monat unter Angabe eines Grundes wieder öffnet und anschließend
    erneut freigibt; Wiederöffnung, Änderung und erneute Freigabe werden protokolliert.
@@ -164,6 +167,9 @@ Umsatzsteuer, je abrechenbarem Mitarbeitenden und Kalendermonat, kein Grundpreis
 |---|---|---|
 | 12-Monats-Abo | **5,00 EUR** | 12 Monate fest; Kündigung spätestens am letzten Tag der Laufzeit, sonst Verlängerung um jeweils 6 Monate |
 | Monatstarif | **6,50 EUR** | unbestimmte Zeit, kündbar zum Ende jedes Kalendermonats |
+
+Die Preise gelten für die Version Pro. Die Version Basic (nur Zeiterfassung und Monatsnachweise, Anlage A § 1c) kostet
+in beiden Tarifen **1,99 EUR**.
 
 Leitungskonten ohne eigene Zeiterfassung im Monat werden nicht berechnet. Kunden aus der Einführungsaktion zahlen
 erst nach der Testphase (Anlage A § 1a). Nachlässe gibt es nur über Aktionscodes (Anlage A § 4a) oder vereinbarte

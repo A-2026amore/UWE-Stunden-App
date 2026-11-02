@@ -75,7 +75,7 @@ describe("issuing invoices", () => {
     expect(inv).toMatchObject({ kind: "invoice", number: `SW-${year}-000001`, seq: 1, month: "2026-06", net_cents: 420, vat_cents: 80, gross_cents: 500, vat_rate_confirmed: false });
     expect(inv.recipient).toMatchObject({ name: "Muster Pflegedienst GmbH (Testdaten)", street: "Musterallee 99", postalCode: "54321" });
     expect(inv.issuer).toMatchObject({ issuerName: COMPLETE.issuerName, taxNumber: COMPLETE.taxNumber, vatId: COMPLETE.vatId });
-    expect(inv.lines).toEqual([{ description: "Zeiterfassung – abrechenbare Mitarbeitende 06/2026", quantity: 1, unitPriceCents: 500, amountCents: 500 }]);
+    expect(inv.lines).toEqual([{ description: "Zeiterfassung Pro – abrechenbare Mitarbeitende 06/2026", quantity: 1, unitPriceCents: 500, amountCents: 500 }]);
     const p = (await db.admin.query("select status, billable_count, amount_cents, note from public.billing_periods where tenant_id = $1 and month = '2026-06'", [B])).rows[0];
     expect(p).toEqual({ status: "invoiced", billable_count: 1, amount_cents: 500, note: `Rechnung SW-${year}-000001` });
     const audit = (await db.admin.query("select action, tenant_id from public.audit_log where entity = 'invoice'")).rows;

@@ -17,7 +17,7 @@
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, BillingSettingsPatch, BillingStatus, CompanyContact, Branding, CorrectionRequest, CorrectionStatus,
   Employee, EmploymentContract, EntryValues, ISOMonth, License, LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, Tenant,
-  NewPromoCode, PromoCode, PromoRedemption, SubscriptionInterval, TenantBillingMonth, TenantSubscription, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
+  NewPromoCode, PromoCode, PromoRedemption, SubscriptionInterval, TenantBillingMonth, TenantSubscription, Edition, TenantFeatures, TenantRole, TenantSettings, TimeEntry, TimeEntryRevision, UUID,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings, InvoiceSettingsPatch } from "../core/invoice";
@@ -376,7 +376,15 @@ export interface SubscriptionApi {
    * Owner, once: conclude the contract (entrepreneur, AGB + AVV accepted, plan chosen). Stores time and
    * versions (TERMS_VERSION, DPA_VERSION); "annual" applies the plan choice like chooseSubscription.
    */
-  acceptContract(tenantId: UUID, input: { entrepreneur: true; termsAccepted: true; interval: SubscriptionInterval }): Promise<TenantSubscription>;
+  acceptContract(tenantId: UUID, input: { entrepreneur: true; termsAccepted: true; interval: SubscriptionInterval; edition?: Edition }): Promise<TenantSubscription>;
+  /**
+   * Owner: choose Basic or Pro (migration 0027, core/edition.ts). Pro from the current month; Basic from
+   * the next month (12-month subscription: after the current term; trial: from the first paid month).
+   * Choosing the current edition again withdraws a planned change.
+   */
+  chooseEdition(tenantId: UUID, edition: Edition): Promise<TenantSubscription>;
+  /** Members of the tenant and platform staff: edition today and whether Pro functions are available. */
+  getTenantFeatures(tenantId: UUID): Promise<TenantFeatures>;
 }
 
 /**

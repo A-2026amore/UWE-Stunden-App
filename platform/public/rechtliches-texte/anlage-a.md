@@ -4,7 +4,7 @@
 > oder Steuerberatung. Platzhalter `[OFFEN: …]`, offene Rechtsfragen **⚠ Rechtsfrage**, Entscheidungen des
 > Anbieters **▶ Entscheidung**.
 
-Stand: Entwurf 0.9.3 vom 30.10.2026 (Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif 6,50 EUR,
+Stand: Entwurf 0.9.4 vom 02.11.2026 (Versionen Basic 1,99 EUR und Pro; davor 0.9.3 vom 30.10.2026: Einführungsaktion 3 Monate kostenlos, 12-Monats-Abo 5,00 EUR / Monatstarif 6,50 EUR,
 Verlängerung um 6 Monate, Brevo – Entscheidungen des Anbieters vom 30.10.2026; davor 0.9.2 vom 30.10.2026 und 0.9.1
 vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0`, wird im App-Thread angepasst).
 
@@ -24,6 +24,11 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
    |---|---|---|---|
    | **12-Monats-Abo** | **5,00 EUR** (darin rund 0,80 EUR USt., rund 4,20 EUR netto) | 12 Monate fest, danach Verlängerung um jeweils 6 Monate (§ 5) | spätestens am letzten Tag der Laufzeit (§ 5 Abs. 3) |
    | **Monatstarif** | **6,50 EUR** (darin rund 1,04 EUR USt., rund 5,46 EUR netto) | unbestimmte Zeit | zum Ende jedes Kalendermonats (§ 5 Abs. 5) |
+
+   Die Preise in der Tabelle gelten für die Version **Pro**. Für die Version **Basic** (§ 1c) beträgt das Entgelt
+   in beiden Tarifen **1,99 EUR** je abrechenbarem Mitarbeitenden und Monat (darin rund 0,32 EUR USt., rund 1,67 EUR
+   netto); Laufzeit und Kündigung wie in der Tabelle.
+   **▶ Entscheidung (02.11.2026):** zwei Versionen, Basic 1,99 EUR je Mitarbeiter und Monat.
 
    Die Rechnung weist den Gesamtbetrag, den Nettobetrag, den Steuersatz und den Steuerbetrag aus; die Umsatzsteuer
    wird aus dem Monatsgesamtbetrag herausgerechnet (kaufmännisch auf ganze Cent gerundet).
@@ -92,6 +97,25 @@ vom 29.10.2026). Fachliche Grundlage: `docs/preismodell.md` (Branch `release/1.0
    rechtzeitig (§ 5 Abs. 3) in Textform oder im Chef-Portal kündigt und dabei „danach im Monatstarif weiter“ wählt;
    der Vertrag läuft dann im Monatstarif weiter.
 5. Der Anbieter bestätigt jede Tarifwahl und jeden Wechsel per E-Mail mit Tarif, Preis, Beginn und Laufzeitende.
+
+## § 1c Versionen Basic und Pro
+
+1. Der Dienst wird in zwei Versionen angeboten:
+   - **Basic:** Erfassung von Arbeitszeiten und Pausen durch die Mitarbeitenden (mit der Pausenregel der Firma),
+     Einreichen des Monatsnachweises, Verwaltung der Mitarbeitenden, Ansicht der Arbeitszeiten, Prüfung und
+     Freigabe der Monatsnachweise, Exporte (PDF, CSV) und die Funktionen zu Datenschutz und Abrechnung.
+   - **Pro:** alle Funktionen von Basic und zusätzlich Vertragsdaten je Mitarbeitendem mit Soll/Ist,
+     Arbeitszeitkonto, Stundenübersicht, Korrekturanfragen und die Übernahme aus der bisherigen Stunden-App.
+2. Der Kunde wählt die Version bei Vertragsschluss (AGB § 2 Abs. 1); ohne Wahl gilt Pro. Während der Testphase
+   (§ 1a) stehen alle Funktionen zur Verfügung; die gewählte Version gilt ab dem ersten entgeltpflichtigen Monat.
+3. **Wechsel zu Pro:** jederzeit im Chef-Portal unter „Abrechnung“ (nur Inhaber/in), mit Wirkung **ab dem laufenden
+   Kalendermonat**. Die Pro-Funktionen stehen sofort zur Verfügung; der laufende Monat wird zum Pro-Preis berechnet.
+4. **Wechsel zu Basic:** mit Wirkung ab dem folgenden Kalendermonat. Im 12-Monats-Abo wirkt der Wechsel erst ab dem
+   Tag nach dem Ende der laufenden Laufzeit (§ 5), weil die Laufzeit zum Pro-Preis vereinbart ist. Ein geplanter
+   Wechsel kann bis zu seinem Beginn zurückgenommen werden.
+5. Nach einem Wechsel zu Basic bleiben die mit Pro-Funktionen erfassten Daten gespeichert, sie sind aber nicht mehr
+   sichtbar und können nicht mehr geändert werden. Nach einem Wechsel zurück zu Pro sind sie wieder verfügbar. Für
+   Aufbewahrung und Löschung gelten die vertraglichen Regeln unverändert.
 
 ## § 2 Wer ist „abrechenbar“?
 

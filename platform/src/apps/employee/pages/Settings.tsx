@@ -11,7 +11,7 @@ import { isOfflineSimulated, setOfflineSimulated } from "../syncRepo";
 import { conflictText, pendingText } from "../SyncStatus";
 
 export function SettingsPage() {
-  const { me, tenant, signOut, repo, syncStatus, openConflicts, session } = useEmployee();
+  const { me, tenant, pro, signOut, repo, syncStatus, openConflicts, session } = useEmployee();
   const dialogs = useDialogs();
   const toast = useToast();
   const [offlineSim, setOfflineSim] = useState(isOfflineSimulated());
@@ -113,7 +113,7 @@ export function SettingsPage() {
         </div>
       </Card>
 
-      {tenant.legacyImportEnabled && (
+      {tenant.legacyImportEnabled && pro && (
         <Card title="Daten aus der bisherigen Stunden-App übernehmen">
           <p class="small">Übernimm deine Arbeitszeiten und dein Arbeitszeitkonto aus der bisherigen Stunden-App – aus einer Sicherungsdatei oder direkt aus diesem Browser. Du siehst vorher einen Bericht und bestätigst die Übernahme.</p>
           <LinkButton href="#/einstellungen/import" icon="upload">Daten aus der bisherigen Stunden-App übernehmen</LinkButton>

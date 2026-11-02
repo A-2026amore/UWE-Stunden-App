@@ -2,7 +2,9 @@
  * Subscription (decision 30.10.2026, migration 0023, docs/api.md):
  *
  *   GET  /api/tenants/:tenantId/subscription            leadership of the tenant, platform staff → TenantSubscription
- *   POST /api/tenants/:tenantId/subscription/accept     owner, once: contract conclusion {entrepreneur, termsAccepted, interval}
+ *   POST /api/tenants/:tenantId/subscription/accept     owner, once: contract conclusion {entrepreneur, termsAccepted, interval, edition?}
+ *   POST /api/tenants/:tenantId/subscription/edition    owner: {edition} Basic or Pro (migration 0027)
+ *   GET  /api/tenants/:tenantId/features                members of the tenant, platform staff → TenantFeatures
  *   POST /api/tenants/:tenantId/subscription/choose     owner: {interval}
  *   POST /api/tenants/:tenantId/subscription/cancel     owner: {thenMonthly, reason} → confirmation mail to all owners
  *   POST /api/tenants/:tenantId/subscription/withdraw   owner: withdraw a cancellation
@@ -15,7 +17,7 @@
  *    (auth.issue_monthly_invoices) and mails the owners.
  */
 import type pg from "pg";
-import type { SubscriptionInterval, TenantSubscription } from "../../platform/src/core/types.ts";
+import type { Edition, SubscriptionInterval, TenantFeatures, TenantSubscription } from "../../platform/src/core/types.ts";
 import { formatEuro, VAT_NOTE } from "../../platform/src/core/billing.ts";
 import { DPA_VERSION, INTERVAL_LABEL, PROMO_TERMS_NOTE, TERMS_VERSION } from "../../platform/src/core/subscription.ts";
 import type { AppContext } from "./app.ts";
@@ -26,6 +28,7 @@ import type { Mail } from "./mailer.ts";
 import * as v from "./validate.ts";
 
 const INTERVALS = ["monthly", "annual"] as const;
+const EDITIONS = ["basic", "pro"] as const;
 
 /** "2026-11-30" → "30.11.2026" */
 export function germanDate(iso: string): string {
@@ -80,13 +83,28 @@ export function registerSubscriptionRoutes(router: Router, app: AppContext): voi
 
   router.add("POST", "/api/tenants/:tenantId/subscription/accept", async (ctx) => {
     const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
-    const b = v.object(ctx.body, ["entrepreneur", "termsAccepted", "interval"]);
+    const b = v.object(ctx.body, ["entrepreneur", "termsAccepted", "interval", "edition"]);
     if (b.entrepreneur !== true || b.termsAccepted !== true) {
       throw badRequest("Bitte bestätigen Sie, dass Ihre Firma als Unternehmer handelt, und stimmen Sie den Nutzungsbedingungen und dem Auftragsverarbeitungsvertrag zu.");
     }
     const interval = v.oneOf(b.interval, INTERVALS, "Tarif");
+    const edition: Edition = b.edition === undefined || b.edition === null ? "pro" : v.oneOf(b.edition, EDITIONS, "Version");
     return app.asUser(ctx, async (q) =>
-      json(200, await read(q, "select public.tenant_accept_contract($1, true, true, $2, $3, $4) as s", [id, interval, TERMS_VERSION, DPA_VERSION])));
+      json(200, await read(q, "select public.tenant_accept_contract($1, true, true, $2, $3, $4, $5) as s",
+        [id, interval, TERMS_VERSION, DPA_VERSION, edition])));
+  });
+
+  router.add("POST", "/api/tenants/:tenantId/subscription/edition", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const b = v.object(ctx.body, ["edition"]);
+    const edition: Edition = v.oneOf(b.edition, EDITIONS, "Version");
+    return app.asUser(ctx, async (q) => json(200, await read(q, "select public.tenant_choose_edition($1, $2) as s", [id, edition])));
+  });
+
+  router.add("GET", "/api/tenants/:tenantId/features", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    return app.asUser(ctx, async (q) =>
+      json(200, (await q.query("select public.tenant_features($1) as f", [id])).rows[0].f as TenantFeatures));
   });
 
   router.add("POST", "/api/tenants/:tenantId/subscription/choose", async (ctx) => {

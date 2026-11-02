@@ -18,7 +18,7 @@ import { requestInMonth } from "../../shared/corrections";
 import { CorrectionRequestDialog, CorrectionRequestList, type CorrectionTarget } from "../CorrectionRequests";
 
 export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
-  const { repo, me, tenant, month, setMonth, version, changed } = useEmployee();
+  const { repo, me, tenant, pro, month, setMonth, version, changed } = useEmployee();
   const toast = useToast();
   const dialogs = useDialogs();
   const [busy, setBusy] = useState<string | null>(null);
@@ -37,7 +37,8 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   }, [month, version]);
 
   // Correction requests need the server (not cached offline): a failure only hides this part.
-  const cq = useAsync(() => repo.listCorrectionRequests(tenant.id, { employeeId: me.id }), [version]);
+  // Basic (0027): no correction requests.
+  const cq = useAsync(() => pro ? repo.listCorrectionRequests(tenant.id, { employeeId: me.id }) : Promise.resolve([]), [version, pro]);
   const monthRequests = (cq.data ?? []).filter((r) => requestInMonth(r, month));
   const requestFor = (entryId: string): CorrectionRequest | undefined => (cq.data ?? []).find((r) => r.entryId === entryId);
 
@@ -161,10 +162,10 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
       <section aria-labelledby="days-title" class="stack-sm">
         <div class="row-between">
           <h2 id="days-title" class="mb-0">Einsätze</h2>
-          {locked && <Button size="sm" variant="secondary" icon="plus" onClick={() => setCorrection({ kind: "add", date: `${month}-01` })}>Fehlenden Einsatz melden</Button>}
+          {locked && pro && <Button size="sm" variant="secondary" icon="plus" onClick={() => setCorrection({ kind: "add", date: `${month}-01` })}>Fehlenden Einsatz melden</Button>}
         </div>
         {locked && (
-          <p class="muted small mb-0">{status === "approved" ? "Dieser Monat ist freigegeben." : status === "reopened" ? "Dieser Monat ist wieder geöffnet." : "Dieser Monat ist eingereicht."} Änderungen beantragst du über „Korrektur beantragen“ – deine Vorgesetzten entscheiden.</p>
+          <p class="muted small mb-0">{status === "approved" ? "Dieser Monat ist freigegeben." : status === "reopened" ? "Dieser Monat ist wieder geöffnet." : "Dieser Monat ist eingereicht."} {pro ? "Änderungen beantragst du über „Korrektur beantragen“ – deine Vorgesetzten entscheiden." : "Änderungen nimmt deine Vorgesetzte oder dein Vorgesetzter vor."}</p>
         )}
         {data && data.entries.length === 0 && (
           <EmptyState icon="calendar" title="Keine Arbeitszeiten in diesem Monat" action={<LinkButton href="#/erfassen" variant="primary" icon="plus">Arbeitszeit erfassen</LinkButton>} />
@@ -181,7 +182,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
                     <div class="shift-time">{x.start}–{x.end} Uhr</div>
                     <div class="shift-meta">Pause {x.pauseMinutes} Min. · {hoursLabel(netMinutes({ ...x, pause: x.pauseMinutes }))}{x.note ? ` · ${x.note}` : ""}{x.source === "correction" ? " · korrigiert durch Vorgesetzte" : ""}{syncStateOf(x) === "pending" ? " · wartet auf Übertragung" : syncStateOf(x) === "conflict" ? " · Konflikt" : ""}{correctionHint(requestFor(x.id))}</div>
                   </div>
-                  {locked && requestFor(x.id)?.status !== "open" && (
+                  {locked && pro && requestFor(x.id)?.status !== "open" && (
                     <Button size="sm" variant="ghost" icon="message" aria-label={`Korrektur für Einsatz am ${formatDateDE(date)} ${x.start}–${x.end} beantragen`} onClick={() => setCorrection({ kind: "change", entry: x })} />
                   )}
                   {!locked && <>

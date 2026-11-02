@@ -25,7 +25,7 @@
 import type {
   AuditEvent, BillingMonthSummary, BillingSettings, Branding, CompanyContact, CorrectionRequest, Employee, EmploymentContract, ISOMonth, License,
   LicensePlan, MonthAllocation, MonthlyStatement, PlatformRevenue, PromoCode, PromoRedemption, Tenant, TenantBillingMonth, TenantSettings, TimeEntry,
-  TenantSubscription, TimeEntryRevision, UUID,
+  TenantSubscription, TimeEntryRevision, UUID, TenantFeatures,
 } from "../core/types";
 import type { PersonalDataExport, TenantDataExport } from "../core/privacy";
 import type { Invoice, InvoiceDraft, InvoiceSettings } from "../core/invoice";
@@ -504,7 +504,13 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     },
     acceptContract(tenantId, input) {
       return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/accept`,
-        { entrepreneur: input.entrepreneur, termsAccepted: input.termsAccepted, interval: input.interval });
+        { entrepreneur: input.entrepreneur, termsAccepted: input.termsAccepted, interval: input.interval, edition: input.edition ?? "pro" });
+    },
+    chooseEdition(tenantId, edition) {
+      return request<TenantSubscription>("POST", `/api/tenants/${enc(tenantId)}/subscription/edition`, { edition });
+    },
+    getTenantFeatures(tenantId) {
+      return request<TenantFeatures>("GET", `/api/tenants/${enc(tenantId)}/features`);
     },
   };
 }

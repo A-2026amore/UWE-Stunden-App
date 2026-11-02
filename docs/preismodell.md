@@ -11,11 +11,30 @@ Fachlogik `platform/src/core/billing.ts` und `platform/src/core/subscription.ts`
 - **12-Monats-Abo: 5,00 € brutto** je abrechenbarem Mitarbeiter und Monat, inkl. gesetzlicher USt.
   (bei 19 %: 4,20 € netto + 0,80 € USt.).
 - **Monatstarif: 6,50 € brutto** je abrechenbarem Mitarbeiter und Monat. **Ohne Wahl gilt der Monatstarif.**
+- Diese Preise gelten für **Pro**. **Basic** (nur Zeiten erfassen und Monatsnachweise) kostet **1,99 € brutto** in
+  beiden Tarifen (seit 02.11.2026, siehe unten).
 - Keine Grundgebühr, keine Mindestanzahl, keine Staffeln.
 - Beispiel 20 Mitarbeitende: 100,00 € im 12-Monats-Abo, 130,00 € im Monatstarif (jeweils brutto).
 - **Keine kostenlosen Konten** für neue Kunden. Rabatte bis 100 % gibt es nur über **Aktionscodes**
   (siehe unten); der Rabatt läuft, bis der Super-Admin ihn beendet. Sonderpreise je Kunde bleiben möglich.
 - Es ist **kein Zahlungsdienstleister** angebunden: Abrechnung manuell, keine Abbuchungen, keine Kontodaten.
+
+## Versionen Basic und Pro (seit 02.11.2026, Migration 0027)
+
+- **Basic** – 1,99 € brutto je abrechenbarem Mitarbeiter und Monat (12-Monats-Abo und Monatstarif, Einstellung des
+  Super-Admins): Zeiten erfassen (mit Pausenregel), Monatsnachweis senden; Chef-Portal mit Mitarbeitern, Arbeitszeiten,
+  Monatsnachweisen, PDF/CSV, Firmenprofil, Abrechnung, Datenschutz, Protokoll.
+- **Pro** – Preise wie bisher (5,00 € / 6,50 €): zusätzlich Vertragsdaten mit Soll/Ist, Arbeitszeitkonto,
+  Stundenübersicht, Korrekturanfragen, Übernahme aus der alten Stunden-App.
+- Die Firma wählt bei der Freischaltung; ohne Wahl und für alle bestehenden Firmen gilt Pro. Wechsel im Chef-Portal
+  unter „Abrechnung“ (nur Inhaber): **Pro ab sofort** (der laufende Monat kostet den Pro-Preis), **Basic ab dem
+  nächsten Monat**, im laufenden 12-Monats-Abo erst nach Ende der Laufzeit, in der Testphase ab dem ersten bezahlten
+  Monat. Ein geplanter Wechsel kann zurückgenommen werden.
+- In der Testphase sind alle Funktionen frei. In Basic lehnt die Datenbank Pro-Funktionen für Mitglieder der Firma ab
+  (`private.assert_pro`): Korrekturanfrage stellen, Vertragsdaten speichern, Arbeitszeitkonto einschalten,
+  Übertrag aufs Konto. Gespeicherte Daten bleiben erhalten und sind nach dem Wechsel zu Pro wieder sichtbar.
+- Sonderpreis (Lizenz) ersetzt auch den Basic-Preis; Aktionscodes gelten auf den Preis der Version.
+- Regeln: `platform/src/core/edition.ts`, SQL in `db/migrations/0027_editions.sql`.
 
 ## Tarife, Testphase und Kündigung (seit 30.10.2026)
 

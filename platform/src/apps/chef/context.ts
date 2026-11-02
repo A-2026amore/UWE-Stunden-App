@@ -11,6 +11,8 @@ export interface ChefCtx {
   session: Session;
   tenant: Tenant;
   me: Employee;
+  /** Pro functions available (Pro or free trial, migration 0027). In Basic the tenant's work account counts as off. */
+  pro: boolean;
   version: number;
   changed: () => void;
   setTenant: (t: Tenant) => void;

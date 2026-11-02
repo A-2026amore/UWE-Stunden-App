@@ -18,6 +18,7 @@ import { auditLabel } from "../shared/audit";
 import { InvoicesPage } from "./pages/Invoices";
 import { PromoCodesPage, TenantPromoCard } from "./pages/PromoCodes";
 import { DEFAULT_MONTHLY_PRICE_CENTS, INTERVAL_LABEL, PROMO_TERMS_NOTE } from "../../core/subscription";
+import { DEFAULT_BASIC_MONTHLY_PRICE_CENTS, DEFAULT_BASIC_PRICE_CENTS, EDITION_FEATURES, EDITION_LABEL } from "../../core/edition";
 import { SubscriptionFacts, berlinToday } from "../shared/subscription";
 
 const repo = getRepository("admin");
@@ -74,15 +75,16 @@ function rowPriceText(r: PlatformRevenueRow | undefined, l: License | null, defa
   if (r.condition === "ended") return "0,00 € – kein laufender Vertrag";
   if (r.condition === "pilot_free" || r.condition === "free" || r.condition.startsWith("tenant_")) return priceText(l, defaultPriceCents);
   const label = r.condition === "standard" && r.interval ? INTERVAL_LABEL[r.interval] : BILLING_CONDITION_LABEL[r.condition];
-  return `${formatEuro(r.unitPriceCents)} je Mitarbeiter/Monat (${label})`;
+  return `${formatEuro(r.unitPriceCents)} je Mitarbeiter/Monat (${label}${r.edition === "basic" ? `, ${EDITION_LABEL.basic}` : ""})`;
 }
 
 /** Condition of a revenue row incl. interval / trial end. */
 function conditionText(x: PlatformRevenueRow): string {
   if (x.condition === "trial") return `${BILLING_CONDITION_LABEL.trial}${x.trialEndsOn ? ` bis ${formatDateDE(x.trialEndsOn)}` : ""}`;
-  if (x.condition === "standard" && x.interval) return INTERVAL_LABEL[x.interval];
+  const ed = x.edition === "basic" ? " · Basic" : "";
+  if (x.condition === "standard" && x.interval) return INTERVAL_LABEL[x.interval] + ed;
   const base = BILLING_CONDITION_LABEL[x.condition];
-  return x.interval && (x.condition === "special" || x.condition === "promo") ? `${base} · ${INTERVAL_LABEL[x.interval]}` : base;
+  return (x.interval && (x.condition === "special" || x.condition === "promo") ? `${base} · ${INTERVAL_LABEL[x.interval]}` : base) + ed;
 }
 
 /** Revenue filter "Tarif": interval of the month, trial or no contract. */
@@ -539,11 +541,12 @@ function PlatformAudit() {
 
 // ------------------------------------------------------------------ static pages
 
-interface SettingsForm { annual: string; monthly: string; from: string; until: string; months: string; notice: string; welcome: string; reason: string }
+interface SettingsForm { annual: string; monthly: string; basic: string; basicMonthly: string; from: string; until: string; months: string; notice: string; welcome: string; reason: string }
 
 const euroInput = (cents: number) => formatEuro(cents).replace(" €", "").replace(/\./g, "");
 function settingsForm(st: BillingSettings): SettingsForm {
-  return { annual: euroInput(st.defaultPriceCents), monthly: euroInput(st.monthlyPriceCents), from: st.trialWindowFrom ?? "", until: st.trialWindowUntil ?? "",
+  return { annual: euroInput(st.defaultPriceCents), monthly: euroInput(st.monthlyPriceCents),
+    basic: euroInput(st.basicPriceCents ?? DEFAULT_BASIC_PRICE_CENTS), basicMonthly: euroInput(st.basicMonthlyPriceCents ?? DEFAULT_BASIC_MONTHLY_PRICE_CENTS), from: st.trialWindowFrom ?? "", until: st.trialWindowUntil ?? "",
     months: String(st.trialMonths), notice: String(st.cancelNoticeDays), welcome: st.welcomePromoCodeId ?? "", reason: "" };
 }
 const wholeNumber = (raw: string, what: string): number => {
@@ -566,6 +569,8 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
   const st = q.data?.settings;
   const current = st?.defaultPriceCents ?? DEFAULT_EMPLOYEE_PRICE_CENTS;
   const monthly = st?.monthlyPriceCents ?? DEFAULT_MONTHLY_PRICE_CENTS;
+  const basic = st?.basicPriceCents ?? DEFAULT_BASIC_PRICE_CENTS;
+  const basicMonthly = st?.basicMonthlyPriceCents ?? DEFAULT_BASIC_MONTHLY_PRICE_CENTS;
   const today = berlinToday();
   // Codes that can still be redeemed (plus the current choice, so it stays visible).
   const codes = (q.data?.codes ?? []).filter((c) => (!c.endedAt && (!c.redeemableUntil || c.redeemableUntil >= today)
@@ -578,6 +583,7 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
     try {
       const patch = {
         defaultPriceCents: parseEuro(f.annual), monthlyPriceCents: parseEuro(f.monthly),
+        basicPriceCents: parseEuro(f.basic), basicMonthlyPriceCents: parseEuro(f.basicMonthly),
         trialWindowFrom: f.from || null, trialWindowUntil: f.until || null,
         trialMonths: wholeNumber(f.months, "Testphase"), cancelNoticeDays: wholeNumber(f.notice, "Kündigungsfrist"),
         welcomePromoCodeId: f.welcome || null, reason: f.reason,
@@ -593,13 +599,18 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
     <div class="stack">
       <h1 class="page-title">Preismodell</h1>
       <div class="grid-2">
-        <StatTile label="12-Monats-Abo" value={<span data-testid="default-price">{formatEuro(current)}</span>} tone="brand"
+        <StatTile label="Pro · 12-Monats-Abo" value={<span data-testid="default-price">{formatEuro(current)}</span>} tone="brand"
           hint={`je Mitarbeiter/Monat, ${VAT_NOTE} · 12 Monate fest, verlängert sich um 6 Monate`} />
-        <StatTile label="Monatstarif" value={<span data-testid="monthly-price">{formatEuro(monthly)}</span>}
+        <StatTile label="Pro · Monatstarif" value={<span data-testid="monthly-price">{formatEuro(monthly)}</span>}
           hint={`je Mitarbeiter/Monat, ${VAT_NOTE} · zum Monatsende kündbar · gilt ohne Wahl`} />
+        <StatTile label="Basic · 12-Monats-Abo" value={<span data-testid="basic-price">{formatEuro(basic)}</span>}
+          hint={`je Mitarbeiter/Monat, ${VAT_NOTE} · nur Zeiten erfassen und Nachweise`} />
+        <StatTile label="Basic · Monatstarif" value={<span data-testid="basic-monthly-price">{formatEuro(basicMonthly)}</span>}
+          hint={`je Mitarbeiter/Monat, ${VAT_NOTE}`} />
       </div>
       <Card title="Preise und Tarife" accent>
         <ul class="stack-sm small" style={{ margin: 0, paddingLeft: "1.3em" }}>
+          <li>Zwei Versionen: Basic ({EDITION_FEATURES.basic.join(", ")}) und Pro (alle Funktionen). Pro gilt sofort, Basic ab dem nächsten Monat, im 12-Monats-Abo nach Ende der Laufzeit. Ohne Wahl gilt Pro.</li>
           <li>Keine Grundgebühr, keine Mindestanzahl, keine Staffeln. Beispiel 20 Mitarbeitende: {formatEuro(20 * current)} im 12-Monats-Abo, {formatEuro(20 * monthly)} im Monatstarif.</li>
           <li>Abrechenbar: Mitarbeiter/innen, die im Monat mindestens zeitweise aktiv waren. Inhaber und Vorgesetzte nur mit eigenen Arbeitszeiten im Monat.</li>
           <li>Einführungsangebot: Mandanten, die im Zeitraum angelegt werden, sind bis zum Ende des Kalendermonats kostenlos, in dem die Testphase endet.</li>
@@ -619,6 +630,8 @@ function PlansPage({ readOnly }: { readOnly: boolean }) {
             <div class="grid-2">
               <InputField label="12-Monats-Abo (€ brutto)" inputMode="decimal" value={f.annual} onValue={(v) => setF({ ...f, annual: v })} hint="Je Mitarbeiter und Monat, inkl. USt." />
               <InputField label="Monatstarif (€ brutto)" inputMode="decimal" value={f.monthly} onValue={(v) => setF({ ...f, monthly: v })} hint="Je Mitarbeiter und Monat, inkl. USt." />
+              <InputField label="Basic-Preis bei 12 Monaten (€ brutto)" inputMode="decimal" value={f.basic} onValue={(v) => setF({ ...f, basic: v })} hint="Je Mitarbeiter und Monat, inkl. USt." />
+              <InputField label="Basic-Preis monatlich kündbar (€ brutto)" inputMode="decimal" value={f.basicMonthly} onValue={(v) => setF({ ...f, basicMonthly: v })} hint="Je Mitarbeiter und Monat, inkl. USt." />
               <InputField label="Einführungsangebot von" optional type="date" value={f.from} onValue={(v) => setF({ ...f, from: v })} hint="Anlagedatum des Mandanten. Beide leer = kein Angebot." />
               <InputField label="Einführungsangebot bis" optional type="date" value={f.until} onValue={(v) => setF({ ...f, until: v })} />
               <InputField label="Testphase (Monate)" inputMode="numeric" value={f.months} onValue={(v) => setF({ ...f, months: v })} hint="Kostenlos bis zum Ende des Kalendermonats, in dem diese Monate enden." />

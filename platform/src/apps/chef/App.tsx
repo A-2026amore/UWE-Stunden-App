@@ -24,6 +24,7 @@ import { BillingPage } from "./pages/Billing";
 import { PrivacyPage } from "./pages/Privacy";
 import { ContractGate } from "./ContractGate";
 import { AppGuidePage } from "./pages/AppGuide";
+import { ProOnly, basicTenant } from "../shared/edition";
 
 const repo = getRepository("chef");
 
@@ -31,8 +32,8 @@ const checkArea = (s: Session): string | null =>
   (s.role === "owner" || s.role === "manager" ? null : "Dieses Konto hat keinen Zugang zum Chef-Portal. Mitarbeitende nutzen bitte die Mitarbeiter-App.");
 
 /** Navigation in groups; counts (open items) are filled in at runtime. */
-function navGroups(counts: { corrections: number; statements: number }): NavGroup[] {
-  return [
+function navGroups(counts: { corrections: number; statements: number }, pro: boolean): NavGroup[] {
+  const groups: NavGroup[] = [
     { label: "Übersicht", items: [
       { href: "#/", label: "Dashboard", icon: "chart", match: "/" },
     ] },
@@ -54,7 +55,13 @@ function navGroups(counts: { corrections: number; statements: number }): NavGrou
       { href: "#/protokoll", label: "Änderungsprotokoll", icon: "log", match: "/protokoll" },
     ] },
   ];
+  // Basic (0027): no hours overview, correction requests or work accounts.
+  if (!pro) for (const g of groups) g.items = g.items.filter((i) => !PRO_PATHS.includes(i.match ?? ""));
+  return groups;
 }
+
+/** Pages that only exist in Pro (or during the trial). */
+const PRO_PATHS = ["/stunden", "/korrekturen", "/konten"];
 
 export function ChefApp() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -97,15 +104,16 @@ export function ChefApp() {
 
   // Open items for the navigation badges (best effort – errors only hide the badges).
   const tenantId = data?.tenant.id;
+  const pro = data?.sub?.proFeatures ?? true;
   useEffect(() => {
     if (!tenantId) return;
     const month = currentMonth();
     Promise.all([
-      repo.listCorrectionRequests(tenantId, { status: "open" }),
+      pro ? repo.listCorrectionRequests(tenantId, { status: "open" }) : Promise.resolve([]),
       repo.listStatements(tenantId, month), repo.listStatements(tenantId, shiftMonth(month, -1)),
     ]).then(([c, a, b]) => setCounts({ corrections: c.length, statements: [...a, ...b].filter((x) => x.status === "submitted").length }),
       () => setCounts({ corrections: 0, statements: 0 }));
-  }, [tenantId, version, route.path]);
+  }, [tenantId, version, route.path, pro]);
 
   if (session === undefined) return <p class="sr-only" role="status">Wird geladen …</p>;
   if (!session) {
@@ -131,14 +139,15 @@ export function ChefApp() {
   }
 
   const ctx: ChefCtx = {
-    repo, session, tenant: data.tenant, me: data.me, version,
+    repo, session, tenant: pro ? data.tenant : basicTenant(data.tenant), me: data.me, pro, version,
     changed: () => setVersion((v) => v + 1),
     setTenant: (t) => { applyBranding(t.branding); setData({ ...data, tenant: t }); },
     signOut: async () => { await repo.signOut(); setSession(null); setData(null); },
   };
 
   let page;
-  switch (route.path) {
+  if (!pro && PRO_PATHS.includes(route.path)) page = <ProOnly owner={data.me.role === "owner"} />;
+  else switch (route.path) {
     case "/mitarbeiter": page = <EmployeesPage />; break;
     case "/app-anleitung": page = <AppGuidePage />; break;
     case "/stunden": page = <HoursPage initialMonth={route.query.get("m")} initialEmployee={route.query.get("ma")} />; break;
@@ -166,7 +175,7 @@ export function ChefApp() {
               <div class="topbar-end"><Avatar name={data.me.displayName} small /></div>
             </div>
             <Sidebar
-              groups={navGroups(counts)}
+              groups={navGroups(counts, pro)}
               current={route.path}
               open={menuOpen}
               onNavigate={() => setMenuOpen(false)}
