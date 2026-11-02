@@ -274,15 +274,26 @@ describe("invitations", () => {
     expect(r.status).toBe(201);
     await new Promise((res) => setTimeout(res, 50));
     const token = tokenFromMail(t.mails[before]!);
-    const accept = await t.call("POST", "/api/auth/invitation/accept", { body: { token, password: "Wird-nicht-verwendet-1" } });
+    // a typed password is never used for an existing account and proves nothing (0026)
+    const typed = await t.call("POST", "/api/auth/invitation/accept", { body: { token, password: "Wird-nicht-verwendet-1" } });
+    expect(typed.status).toBe(401);
+    expect(typed.body.error.message).toMatch(/zuerst mit genau diesem Konto an/);
+    // 0026: without a session of that account nothing is linked
+    const anon = await t.call("POST", "/api/auth/invitation/accept", { body: { token } });
+    expect(anon.status).toBe(401);
+    expect(anon.body.error.code).toBe("existing_account_login_required");
+    const stranger = await t.call("POST", "/api/auth/invitation/accept", { cookie: await t.login("managerA"), body: { token } });
+    expect(stranger.status).toBe(401);
+    expect((await t.call("POST", "/api/auth/login", { body: { email: EMAILS.emp1A, password: "Wird-nicht-verwendet-1" } })).status).toBe(401);
+    const own = await t.login("emp1A");
+    const accept = await t.call("POST", "/api/auth/invitation/accept", { cookie: own, body: { token } });
     expect(accept.status).toBe(200);
     expect(accept.body.existingAccount).toBe(true);
-    expect(accept.body.message).toMatch(/bisherigen Passwort an/);
-    expect((await t.call("POST", "/api/auth/login", { body: { email: EMAILS.emp1A, password: "Wird-nicht-verwendet-1" } })).status).toBe(401);
+    expect(accept.body.message).toMatch(/verknüpft/);
     const login = await t.call("POST", "/api/auth/login", { body: { email: EMAILS.emp1A, password: PASSWORD } });
     expect(login.status).toBe(200);
     expect(login.body.memberships.map((m: { tenantId: string }) => m.tenantId).sort()).toEqual([IDS.tenantA, IDS.tenantB].sort());
-    expect((await t.call("POST", "/api/auth/invitation/accept", { body: { token } })).status).toBe(400);
+    expect((await t.call("POST", "/api/auth/invitation/accept", { cookie: own, body: { token } })).status).toBe(400);
   });
 
   it("a new account needs a password", async () => {

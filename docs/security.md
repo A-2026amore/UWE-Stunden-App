@@ -85,8 +85,14 @@ API-Endpunkte bzw. `pgaudit` auf dem Server.
   mit Fehler `PT409` ab („Für diese E-Mail-Adresse gibt es bereits ein Benutzerkonto. Bitte melde dich
   mit deinem bisherigen Passwort an …“) – das bestehende Passwort wird nie still überschrieben oder
   ignoriert. Mit `passwort_hash = NULL` wird die Mitgliedschaft ohne Passwortänderung mit dem
-  bestehenden Konto verknüpft (der Besitz des Einladungslinks an diese Adresse genügt wie beim
-  Passwort-Reset). `auth.invitation_needs_existing_login(token)` sagt der API vorab, welcher Fall vorliegt.
+  bestehenden Konto verknüpft – **seit 0026 nur in einer angemeldeten Sitzung genau dieses Kontos**
+  (`auth.accept_invitation(token, passwort_hash, sitzungs_benutzer)`, sonst `PT401` → 401
+  `existing_account_login_required`). Vorher genügte der Besitz des Einladungslinks. Das ließ eine
+  Konto-Vorbelegung zu: Eine Leitung legte über den Link-Weg ein Konto für eine fremde Adresse mit eigenem
+  Passwort an und bekam später jede Rolle, zu der diese Adresse eingeladen wurde (z. B. Inhaberin einer neuen
+  Firma). Die echte Besitzerin der Adresse holt sich ein vorbelegtes Konto über „Passwort vergessen“ zurück
+  und nimmt die Einladung danach angemeldet an. `auth.invitation_needs_existing_login(token)` sagt der API
+  vorab, welcher Fall vorliegt.
 - Einladungslink zum Teilen (Chef-Portal „Zugang senden“ → „Link erstellen“, seit 1.0): Die API gibt den
   Einmal-Link nur bei `channel: "link"` an die Leitung zurück (`POST /api/employees/:id/invitation`,
   `POST /api/tenants/:id/employees` mit `invitation: "link"`), damit sie ihn per WhatsApp teilen oder

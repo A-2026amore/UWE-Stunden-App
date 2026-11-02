@@ -148,7 +148,7 @@ Client: `platform/src/data/api.ts` (`createApiRepository(baseUrl)`).
 | `GET /api/auth/session` | – | 200 `Session` oder `null` (Session enthält zusätzlich `memberships`) |
 | `POST /api/auth/password-reset` | `{email}` | immer 204 (keine Kontenaufzählung); Link `PUBLIC_ORIGIN + RESET_LINK_PATH#token=…` |
 | `POST /api/auth/password-reset/confirm` | `{token, password}` | 204 · 400 Link ungültig/Passwort zu kurz (min. 10 Zeichen) |
-| `POST /api/auth/invitation/accept` | `{token, password?}` | 200 `{existingAccount, message}`, keine automatische Anmeldung. Erst `invitation_needs_existing_login`: bestehendes Konto → Verknüpfung **ohne** Passwort (ein mitgesendetes Passwort wird nicht verwendet), `message` bittet um Anmeldung mit dem bisherigen Passwort; neues Konto → `password` Pflicht (min. 10 Zeichen). `PT409` → 409 `existing_account` |
+| `POST /api/auth/invitation/accept` | `{token, password?}` | 200 `{existingAccount, message}`, keine automatische Anmeldung. Erst `invitation_needs_existing_login`: bestehendes Konto → Verknüpfung **ohne** Passwort (ein mitgesendetes Passwort wird nicht verwendet) und nur mit Sitzungs-Cookie genau dieses Kontos (seit 0026), sonst 401 `existing_account_login_required` mit der Bitte, sich zuerst anzumelden und den Link erneut zu öffnen; neues Konto → `password` Pflicht (min. 10 Zeichen). `PT409` → 409 `existing_account` |
 | `GET /api/public/tenants/:slug/branding` | – | Login-Seite (`app_anon`) |
 
 **Zwei-Faktor-Anmeldung (TOTP)**

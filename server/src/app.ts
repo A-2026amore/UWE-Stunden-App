@@ -445,23 +445,28 @@ export function createApp(deps: AppDeps) {
   });
 
   // Activates the membership. New account → the password is set. Existing
-  // account with that e-mail → linked WITHOUT changing its password (a typed
-  // password is not used) and the user is told to sign in with the existing
-  // password. No automatic sign-in in either case.
+  // account with that e-mail → linked WITHOUT changing its password, but only
+  // in a signed-in session of exactly that account (migration 0026): otherwise
+  // anyone who pre-registered the address could collect its later invitations.
+  // No automatic sign-in for new accounts.
   router.add("POST", "/api/auth/invitation/accept", async (ctx): Promise<Reply> => {
     const b = tokenBody(ctx);
     if (await invitationNeedsExistingLogin(pool, b.token)) {
+      const cookie = ctx.cookies[cookieName];
+      const rec = cookie ? await resolveSession(pool, cookie, config.sessionIdleMinutes) : null;
       try {
-        await acceptInvitation(pool, b.token, null);
+        await acceptInvitation(pool, b.token, null, rec?.userId ?? null);
       } catch (e) {
-        if ((e as { code?: string }).code === "PT409") throw new HttpError(409, "existing_account", (e as Error).message);
+        const code = (e as { code?: string }).code;
+        if (code === "PT401") throw new HttpError(401, "existing_account_login_required", (e as Error).message);
+        if (code === "PT409") throw new HttpError(409, "existing_account", (e as Error).message);
         throw e;
       }
       return {
         status: 200,
         body: {
           existingAccount: true,
-          message: "Für diese E-Mail-Adresse gibt es bereits ein Benutzerkonto. Die Einladung wurde damit verknüpft – bitte melde dich mit deinem bisherigen Passwort an.",
+          message: "Die Einladung wurde mit deinem Konto verknüpft. Die neue Firma erscheint nach dem nächsten Anmelden bzw. Neuladen der App.",
         },
       };
     }

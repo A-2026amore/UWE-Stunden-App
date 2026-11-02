@@ -100,16 +100,22 @@ test("invitation for an e-mail with an existing account: linked without changing
   const ctx = await browser.newContext({ baseURL: stack.url, locale: "de-DE", timezoneId: "Europe/Berlin" });
   const invitee = await ctx.newPage();
   await invitee.goto(mail.link);
+  // Without a session of that account nothing is linked (migration 0026): sign in first.
   await invitee.getByRole("button", { name: "Ich habe bereits ein Konto" }).click();
-  await expect(invitee.getByTestId("invitation-result")).toHaveText(
-    "Für diese E-Mail-Adresse gibt es bereits ein Benutzerkonto. Die Einladung wurde damit verknüpft – bitte melde dich mit deinem bisherigen Passwort an.");
-
+  await expect(invitee.getByText(/zuerst mit genau diesem Konto an/)).toBeVisible();
+  await expect(invitee.getByTestId("invitation-result")).toHaveCount(0);
+  await invitee.getByRole("link", { name: "Anmelden in der Mitarbeiter-App" }).click();
   // The old password still works.
-  await invitee.getByRole("link", { name: "Weiter zur Mitarbeiter-App" }).click();
   await invitee.getByLabel("E-Mail-Adresse").fill(USERS.emp2A);
   await invitee.getByLabel("Passwort", { exact: true }).fill(PASSWORD);
   await invitee.getByRole("button", { name: "Anmelden", exact: true }).click();
-  await expect(invitee.getByRole("heading", { level: 1, name: "Hallo Jo" })).toBeVisible();
+  await expect(invitee.getByRole("heading", { level: 1, name: /^Hallo / })).toBeVisible();
+
+  // Signed in: the mailed link now links the invitation to this account.
+  await invitee.goto(mail.link);
+  await invitee.getByRole("button", { name: "Ich habe bereits ein Konto" }).click();
+  await expect(invitee.getByTestId("invitation-result")).toHaveText(
+    "Die Einladung wurde mit deinem Konto verknüpft. Die neue Firma erscheint nach dem nächsten Anmelden bzw. Neuladen der App.");
   await ctx.close();
 
   const memberships = await rows<{ tenant_id: string; status: string }>(stack.db,

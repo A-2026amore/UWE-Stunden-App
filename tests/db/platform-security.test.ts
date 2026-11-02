@@ -215,13 +215,13 @@ describe("authentication tables (role app_auth only)", () => {
 
   it("accepting an invitation creates the account and activates the employee", async () => {
     const uid = await db.as(null, async (q) =>
-      (await q.query("select auth.accept_invitation($1, 'scrypt$N=16384$c2FsdA$aW52aXRlZEhhc2g') as u", [IDS.invitationTokenB])).rows[0].u,
+      (await q.query("select auth.accept_invitation($1, 'scrypt$N=16384$c2FsdA$aW52aXRlZEhhc2g', null) as u", [IDS.invitationTokenB])).rows[0].u,
       { role: "app_auth", commit: true });
     const emp = await db.admin.query("select user_id, status from public.employees where id = $1", [E.invitedB]);
     expect(emp.rows[0]).toEqual({ user_id: uid, status: "active" });
     const ctx = await db.as(uid, async (q) => (await q.query("select public.current_session_context() as c")).rows[0].c);
     expect(ctx.memberships).toEqual([{ tenantId: B, employeeId: E.invitedB, role: "employee", tenantName: "Muster Pflegedienst GmbH", tenantStatus: "active" }]);
-    const e = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, 'scrypt$N=16384$c2FsdA$aW52aXRlZEhhc2g')", [IDS.invitationTokenB]), { role: "app_auth" }));
+    const e = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, 'scrypt$N=16384$c2FsdA$aW52aXRlZEhhc2g', null)", [IDS.invitationTokenB]), { role: "app_auth" }));
     expect(e.code).toBe("22023");
   });
 });

@@ -349,3 +349,11 @@ Europe/Berlin (`private.berlin_today()`).
 - Behoben: `invoice_build` meldete eine fehlende Kundenanschrift mit `text[] || 'Text'` (Fehler „malformed array
   literal“); seit 0023 `array_append`.
 - Tests: `tests/db/subscriptions.test.ts` (Vergleich mit den Core-Regeln), `tests/server/subscription.test.ts`.
+
+## Einladung für ein bestehendes Konto nur angemeldet (0026)
+
+`auth.accept_invitation(token, passwort_hash, sitzungs_benutzer)` ersetzt die Fassung mit zwei Argumenten
+(gelöscht, damit kein Aufrufer die Prüfung umgehen kann). Gehört die eingeladene Adresse schon zu einem Konto,
+wird die Einladung nur verknüpft, wenn `sitzungs_benutzer` genau dieses Konto ist. Die API übergibt dafür die
+Benutzer-ID der Sitzung. Andernfalls gibt es `PT401` und nichts ändert sich. Für neue Konten bleibt alles wie
+bisher (Passwort Pflicht). Hintergrund und Angriffsweg: `docs/security.md`.

@@ -4,6 +4,13 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
+### Sicherheit
+- Einladungen für eine Adresse mit bestehendem Konto werden nur noch in einer angemeldeten Sitzung genau dieses
+  Kontos verknüpft (Migration 0026). Vorher genügte der Einladungslink. Eine Leitung konnte so über den Link-Weg
+  ein Konto für eine fremde Adresse vorbelegen und später z. B. Inhaberin einer neuen Firma werden (Fund aus der
+  Sicherheitsprüfung vom 01.11.2026). Die Einladungsseite bittet dann um Anmeldung und verlinkt Mitarbeiter-App
+  und Chef-Portal. Regressionstest: `tests/server/invitation-preregistration.test.ts`.
+
 ### Geändert
 - Keine UWE-Sonderlogik mehr in der Plattform (Entscheidung 01.11.2026: UWE wird ein normaler Kunde):
   - Pausenfunktionen haben keine eingebaute Vorgabe mehr; es gilt immer die Regel der Firma, ohne geladene

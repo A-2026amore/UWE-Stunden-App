@@ -163,12 +163,13 @@ export async function invitationNeedsExistingLogin(pool: pg.Pool, token: string)
 
 /**
  * Accepts an invitation. password = null links an existing account (its
- * password stays unchanged); for a new account a password is required.
+ * password stays unchanged) – only with a signed-in session of exactly that
+ * account (sessionUserId, migration 0026); for a new account a password is required.
  */
-export async function acceptInvitation(pool: pg.Pool, token: string, password: string | null): Promise<string> {
+export async function acceptInvitation(pool: pg.Pool, token: string, password: string | null, sessionUserId: string | null = null): Promise<string> {
   const hash = password === null ? null : await hashPassword(password);
   return withTx(pool, "app_auth", null, async (q) => {
-    const r = await q.query<{ user_id: string }>("select auth.accept_invitation($1, $2) as user_id", [token, hash]);
+    const r = await q.query<{ user_id: string }>("select auth.accept_invitation($1, $2, $3) as user_id", [token, hash, sessionUserId]);
     return r.rows[0]!.user_id;
   });
 }

@@ -133,10 +133,15 @@ describe("(3) invitation for an e-mail that already has an account", () => {
       expect((await q.query("select auth.invitation_needs_existing_login($1) x", [IDS.invitationTokenB])).rows[0].x).toBe(false);
     }, { role: "app_auth" });
 
-    const e = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, 'scrypt$32768$8$1$bmV1$bmV1ZXNQYXNzd29ydEhhc2g=')", [token]), { role: "app_auth" }));
+    const e = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, 'scrypt$32768$8$1$bmV1$bmV1ZXNQYXNzd29ydEhhc2g=', null)", [token]), { role: "app_auth" }));
     expect(e.code).toBe("PT409");
     expect(e.message).toContain("bereits ein Benutzerkonto");
-    const uid = await db.as(null, async (q) => (await q.query("select auth.accept_invitation($1, null) u", [token])).rows[0].u, { role: "app_auth", commit: true });
+    // 0026: linking an existing account needs a session of exactly that account
+    const anon = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, null, null)", [token]), { role: "app_auth" }));
+    expect(anon.code).toBe("PT401");
+    const other = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, null, $2)", [token, U.ownerB]), { role: "app_auth" }));
+    expect(other.code).toBe("PT401");
+    const uid = await db.as(null, async (q) => (await q.query("select auth.accept_invitation($1, null, $2) u", [token, U.ownerA])).rows[0].u, { role: "app_auth", commit: true });
     expect(uid).toBe(U.ownerA);
     const user = await db.admin.query("select password_hash from auth.users where id = $1", [U.ownerA]);
     expect(user.rows[0].password_hash).toBe("scrypt$32768$8$1$c2FsdHNhbHQ=$YWx0ZXNQYXNzd29ydEhhc2g=");
@@ -145,7 +150,7 @@ describe("(3) invitation for an e-mail that already has an account", () => {
   });
 
   it("a new account still requires a password", async () => {
-    const e = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, null)", [IDS.invitationTokenB]), { role: "app_auth" }));
+    const e = await pgError(db.as(null, (q) => q.query("select auth.accept_invitation($1, null, null)", [IDS.invitationTokenB]), { role: "app_auth" }));
     expect(e.code).toBe("22023");
   });
 });

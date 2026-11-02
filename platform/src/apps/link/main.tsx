@@ -12,6 +12,7 @@ import "../../design/styles";
 import { Alert, Button, Card, InputField, LinkButton, initTheme, setAssetBase } from "../../design";
 import { errorText } from "../shared/hooks";
 import { IS_DEMO, getApiRepository } from "../shared/repo";
+import { SessionExpiredError } from "../../data/api";
 import { AuthLayout } from "../shared/ui";
 
 setAssetBase("../");
@@ -145,6 +146,8 @@ function InvitePage({ token }: { token: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"new" | "existing" | null>(null);
   const [result, setResult] = useState<{ message: string; existingAccount: boolean } | null>(null);
+  // Existing account without a signed-in session of that account (migration 0026): sign in first.
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   if (IS_DEMO) return <DemoNotice />;
   if (!token) return <MissingToken />;
@@ -167,10 +170,12 @@ function InvitePage({ token }: { token: string | null }) {
       if (problem) { setError(problem); return; }
     }
     setBusy(withPassword ? "new" : "existing");
+    setNeedsLogin(false);
     try {
       setResult(await getApiRepository().acceptInvitation(token, withPassword ? password : undefined));
     } catch (err) {
       setError(errorText(err));
+      setNeedsLogin(err instanceof SessionExpiredError);
     } finally {
       setBusy(null);
     }
@@ -186,8 +191,14 @@ function InvitePage({ token }: { token: string | null }) {
         <Button type="submit" block busy={busy === "new"}>Einladung annehmen</Button>
       </form>
       <div class="stack-sm">
-        <p class="muted small mb-0">Du hast mit dieser E-Mail-Adresse schon ein Konto (z. B. bei einem anderen Arbeitgeber)? Dann wird die Einladung mit deinem Konto verknüpft – dein bisheriges Passwort bleibt gültig.</p>
+        <p class="muted small mb-0">Du hast mit dieser E-Mail-Adresse schon ein Konto (z. B. bei einem anderen Arbeitgeber)? Melde dich zuerst in diesem Browser mit deinem Konto an und öffne den Link danach noch einmal. Dann wird die Einladung mit deinem Konto verknüpft – dein bisheriges Passwort bleibt gültig.</p>
         <Button variant="secondary" block busy={busy === "existing"} onClick={() => void accept(false)}>Ich habe bereits ein Konto</Button>
+        {needsLogin && (
+          <div class="stack-sm" data-testid="invitation-login-first">
+            <LinkButton href="../app/" icon="clock">Anmelden in der Mitarbeiter-App</LinkButton>
+            <LinkButton href="../chef/" icon="building">Anmelden im Chef-Portal</LinkButton>
+          </div>
+        )}
       </div>
     </div>
   );
