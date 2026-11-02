@@ -33,6 +33,11 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   und Chef-Portal. Regressionstest: `tests/server/invitation-preregistration.test.ts`.
 
 ### Geändert
+- Pausenregel „Streng“: ab genau 9 Stunden jetzt 60 statt 45 Minuten Pause (ab genau 6 Stunden weiter 30 Minuten;
+  Entscheidung 02.11.2026, Migration 0030). Firmen mit der bisherigen strengen Regel werden umgestellt, gespeicherte
+  Einträge bleiben unverändert. „Gesetzlich“ bleibt 30 / 45 Minuten. Die Regel der Alt-App (30 / 45 ab genau 6 / 9 h)
+  ist nur noch `LEGACY_BREAK_POLICY`. Folge für Altdaten: Tage ab 9 Stunden mit 45 Minuten Pause werden bei einer
+  Firma mit „Streng“ nicht automatisch übernommen, sondern mit Grund aufgelistet.
 - Pro-Preise 4,99 € (12-Monats-Abo) und 6,99 € (Monatstarif) brutto statt 5,00 € / 6,50 € (Entscheidung
   02.11.2026, Migration 0028); Basic bleibt 1,99 €. AGB und Anlage A Entwurf 0.9.5.
 - Keine UWE-Sonderlogik mehr in der Plattform (Entscheidung 01.11.2026: UWE wird ein normaler Kunde):

@@ -362,14 +362,14 @@ function defaultSettings(): TenantSettings {
 }
 
 type Pattern = Array<[string, string, number]>;
-// All patterns satisfy the strict break rule (≥ 6 h → 30 min, ≥ 9 h → 45 min, gaps ≥ 15 min count),
+// All patterns satisfy the strict break rule (≥ 6 h → 30 min, ≥ 9 h → 60 min, gaps ≥ 15 min count),
 // hence also the statutory rule of the generic tenant.
 const KT_PATTERNS: Pattern[] = [
   [["06:30", "14:45", 30]],
   [["07:00", "12:30", 0]],
   [["06:45", "08:45", 0], ["12:30", "16:00", 0]],
   [["06:30", "09:00", 0], ["12:00", "16:30", 0]],
-  [["07:00", "16:30", 45]],
+  [["07:00", "16:30", 60]],
   [["06:15", "08:30", 0], ["11:45", "13:15", 0], ["14:00", "16:45", 0]],
 ];
 const PFLEGE_PATTERNS: Pattern[] = [

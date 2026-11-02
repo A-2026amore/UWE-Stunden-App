@@ -131,21 +131,27 @@ describe("breaks – statutory vs. strict rule (§4 ArbZG, client 2026-10-28)", 
       expect(valid("08:00", "14:01", 30, p)).toBe(true);
     }
   });
-  it("9:00 exactly with 30 minutes: valid statutory, strict needs 45; 9:01 needs 45 under both", () => {
+  it("9:00 exactly with 30 minutes: valid statutory, strict needs 60; 9:01 needs 45 statutory, 60 strict", () => {
     expect(valid("08:00", "17:00", 30, STATUTORY)).toBe(true);
     expect(valid("08:00", "17:00", 30, STRICT)).toBe(false);
-    expect(valid("08:00", "17:00", 45, STRICT)).toBe(true);
-    for (const p of [STATUTORY, STRICT]) {
-      expect(valid("08:00", "17:01", 30, p)).toBe(false);
-      expect(valid("08:00", "17:01", 45, p)).toBe(true);
-    }
+    expect(valid("08:00", "17:00", 45, STRICT)).toBe(false);
+    expect(valid("08:00", "17:00", 59, STRICT)).toBe(false);
+    expect(valid("08:00", "17:00", 60, STRICT)).toBe(true);
+    expect(valid("08:00", "17:01", 30, STATUTORY)).toBe(false);
+    expect(valid("08:00", "17:01", 45, STATUTORY)).toBe(true);
+    expect(valid("08:00", "17:01", 45, STRICT)).toBe(false);
+    expect(valid("08:00", "17:01", 60, STRICT)).toBe(true);
+  });
+  it("the legacy rule (30/45 from exactly 6 h / 9 h) is no longer the strict rule", () => {
+    expect(breakRuleKind(LEGACY_BREAK_POLICY)).toBe("custom");
+    expect(LEGACY_BREAK_POLICY.thresholds).toEqual([{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }]);
+    expect(thresholdsFor("strict")).toEqual([{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 60 }]);
   });
   it("pause pieces under 15 minutes do not count under the statutory rule either", () => {
     const day = evaluateDay([{ id: "a", date: "2026-11-02", start: "08:00", end: "12:00", pause: 14 }, { id: "b", date: "2026-11-02", start: "12:00", end: "15:00", pause: 14 }], "2026-11-02", STATUTORY);
     expect(day.missing).toBe(30);
   });
-  it("UWE keeps the strict rule; new tenants get the configured default", () => {
-    expect(breakRuleKind(LEGACY_BREAK_POLICY)).toBe("strict");
+  it("new tenants get the configured default", () => {
     expect(NEW_TENANT_BREAK_RULE).toBe("statutory");
     expect(breakRuleKind(defaultBreakPolicy())).toBe(NEW_TENANT_BREAK_RULE);
     expect(defaultBreakPolicy()).toEqual({ thresholds: [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }], maxShiftMinutes: 600, minPauseSegmentMinutes: 15 });
@@ -158,7 +164,7 @@ describe("breaks – statutory vs. strict rule (§4 ArbZG, client 2026-10-28)", 
     expect(thresholdLabel(541)).toBe("mehr als 9 Stunden");
     expect(thresholdLabel(390)).toBe("ab 6,5 Stunden");
     expect(thresholdLabel(60)).toBe("ab 1 Stunde");
-    expect(breakRuleSummary(STRICT)).toBe("ab 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, ab 9 Stunden mindestens 45 Minuten");
+    expect(breakRuleSummary(STRICT)).toBe("ab 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, ab 9 Stunden mindestens 60 Minuten");
     expect(breakRuleSummary(STATUTORY)).toBe("bei mehr als 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, bei mehr als 9 Stunden mindestens 45 Minuten");
   });
   it("required pause text names minimum and rule of the day", () => {

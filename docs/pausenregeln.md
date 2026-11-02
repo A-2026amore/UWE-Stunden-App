@@ -35,11 +35,11 @@ Schwellen in `settings.breakPolicy.thresholds` sind inklusiv (`Einsatzzeit ≥ m
 | Regel | Schwellen | Text in App, Chef-Portal | Wer |
 |---|---|---|---|
 | Gesetzlich (`statutory`) | 361 → 30, 541 → 45 | „mehr als 6 Stunden“ / „mehr als 9 Stunden“ | Standard für neue Mandanten (Entscheidung des Auftraggebers vom 28.10.2026) |
-| Streng (`strict`) | 360 → 30, 540 → 45 | „ab 6 Stunden“ / „ab 9 Stunden“ | wahlweise je Firma (Demo-Mandant `demo-krankentransporte` in Seed und Demo; Regel der Alt-App) |
+| Streng (`strict`) | 360 → 30, 540 → 60 | „ab 6 Stunden“ / „ab 9 Stunden“ | wahlweise je Firma (Demo-Mandant `demo-krankentransporte` in Seed und Demo); seit 02.11.2026 60 statt 45 Minuten ab 9 Stunden (Migration 0030). Die Alt-App hatte 360 → 30, 540 → 45 (`LEGACY_BREAK_POLICY`, nur Vergleichstests) |
 
 Beispiele: genau 6:00 h ohne Pause ist bei der gesetzlichen Regel gültig, bei der strengen nicht;
-6:01 h braucht bei beiden 30 Minuten; genau 9:00 h braucht gesetzlich 30, streng 45 Minuten; 9:01 h
-braucht bei beiden 45 Minuten.
+6:01 h braucht bei beiden 30 Minuten; genau 9:00 h braucht gesetzlich 30, streng 60 Minuten; 9:01 h
+braucht gesetzlich 45, streng 60 Minuten.
 
 Alle Texte werden aus der Konfiguration gebildet (`thresholdLabel`, `breakRuleSummary`,
 `requiredPauseText`): Schwelle auf voller Viertelstunde → „ab …“, eine Minute darüber → „mehr als …“.

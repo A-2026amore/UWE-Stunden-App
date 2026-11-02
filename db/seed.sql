@@ -41,7 +41,7 @@ insert into public.tenants (id, slug, name, status, is_demo, branding, contact, 
     "email": "kontakt@demo-krankentransporte.example", "website": "https://demo-krankentransporte.example",
     "contactPerson": "Alex Beispiel"}',
   '{"breakPolicy": {"thresholds": [{"minGrossMinutes": 360, "minPauseMinutes": 30},
-                                    {"minGrossMinutes": 540, "minPauseMinutes": 45}],
+                                    {"minGrossMinutes": 540, "minPauseMinutes": 60}],
                     "maxShiftMinutes": 720, "minPauseSegmentMinutes": 15},
     "workAccount": {"enabled": true, "model": "school-year", "openingMinutes": -6000,
                     "federalState": "NW", "startMonth": "2026-09", "approvalRequired": true}}'

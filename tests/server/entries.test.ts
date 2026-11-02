@@ -133,10 +133,12 @@ describe("break rules (tenant breakPolicy, checked by the API with platform/src/
     expect(r.status).toBe(201);
   });
 
-  it("from 9 h, 45 minutes are required", async () => {
-    const r = await t.call("POST", `/api/employees/${E.emp2A}/time-entries`, { cookie: c.emp2A, body: entry("pause-0003", "2026-10-16", "06:00", "15:00", 30) });
+  it("tenant A (strict): from exactly 9 h, 60 minutes are required", async () => {
+    const r = await t.call("POST", `/api/employees/${E.emp2A}/time-entries`, { cookie: c.emp2A, body: entry("pause-0003", "2026-10-16", "06:00", "15:00", 45) });
     expect(r.status).toBe(400);
-    expect(r.body.error.message).toMatch(/mindestens 45 Minuten Pause/);
+    expect(r.body.error.message).toMatch(/mindestens 60 Minuten Pause/);
+    const ok = await t.call("POST", `/api/employees/${E.emp2A}/time-entries`, { cookie: c.emp2A, body: entry("pause-0004", "2026-10-16", "06:00", "15:00", 60) });
+    expect(ok.status).toBe(201);
   });
 
   it("checks the whole day (two shifts) and the daily 12 h sum", async () => {
@@ -289,7 +291,7 @@ describe("tenant profile validation", () => {
     const toStatutory = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: statutory } } });
     expect(toStatutory.status).toBe(200);
     expect(toStatutory.body.settings.breakPolicy).toMatchObject({ thresholds: statutory, maxShiftMinutes: 720 });
-    const strict = [{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }];
+    const strict = [{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 60 }];
     const back = await t.call("PATCH", `/api/tenants/${IDS.tenantA}/settings`, { cookie: c.ownerA, body: { breakPolicy: { thresholds: strict } } });
     expect(back.body.settings.breakPolicy.thresholds).toEqual(strict);
   });

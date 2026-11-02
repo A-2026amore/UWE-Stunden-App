@@ -39,9 +39,13 @@ test("backup v4 import: report before writing, confirmation, idempotent re-impor
   const report = page.getByTestId("import-report");
   await expect(report).toBeVisible();
   await expect(page.getByTestId("report-read")).toHaveText("6");
-  await expect(page.getByTestId("report-write")).toHaveText("6");
+  // The tenant uses the strict rule (from 9 h: 60 min since 02.11.2026). The legacy day 05.11. (10 h, 45 min pause)
+  // was valid in the old app but is not taken over automatically – it is listed with the reason.
+  await expect(page.getByTestId("report-write")).toHaveText("5");
   await expect(page.getByTestId("report-present")).toHaveText("0");
   await expect(page.getByTestId("report-invalid")).toHaveText("0");
+  await expect(page.getByTestId("report-rejected")).toHaveText("1");
+  await expect(page.getByTestId("report-rejected-list")).toContainText("mindestens 60 Minuten Pause");
   const months = page.getByRole("table", { name: "Monatssummen alt und neu" });
   await expect(months.getByRole("row", { name: /Oktober 2026/ })).toContainText("7,50 Std.");
   await expect(months.getByRole("row", { name: /November 2026/ })).toContainText("30,75 Std.");
@@ -51,23 +55,23 @@ test("backup v4 import: report before writing, confirmation, idempotent re-impor
 
   await page.getByRole("button", { name: "Übernahme bestätigen" }).click();
   await confirmDialog(page, "Übernehmen");
-  await expect(page.getByTestId("import-outcome")).toHaveText("6 Einsätze übernommen, 2 Arbeitszeitkonto-Aufteilung(en) gespeichert.");
+  await expect(page.getByTestId("import-outcome")).toHaveText("5 Einsätze übernommen, 2 Arbeitszeitkonto-Aufteilung(en) gespeichert.");
   const imported = (await dbEntries(page, { employeeId: ANNA_ID })).filter((e) => E1001_IDS.includes(e.id));
-  expect(imported).toHaveLength(6);
+  expect(imported).toHaveLength(5);
   expect(imported.every((e) => e.source === "migration")).toBe(true);
 
-  // Month view shows the imported hours (legacy total November 2026: 30,75 h).
+  // Month view shows the imported hours (legacy total November 2026: 30,75 h minus the rejected 9,25 h day).
   await go(page, "#/monat?m=2026-11");
-  await expect(page.locator("dt", { hasText: "Tatsächlich geleistete Stunden" }).locator("xpath=following-sibling::dd[1]")).toHaveText("30,75 Std.");
+  await expect(page.locator("dt", { hasText: "Tatsächlich geleistete Stunden" }).locator("xpath=following-sibling::dd[1]")).toHaveText("21,50 Std.");
 
   // Re-import of the same file adds nothing.
   await openImport(page);
   await chooseBackup(page, "uwe-stunden-backup-E1001.json", legacyBackups.v4);
   await expect(page.getByTestId("report-write")).toHaveText("0");
-  await expect(page.getByTestId("report-present")).toHaveText("6");
+  await expect(page.getByTestId("report-present")).toHaveText("5");
   await expect(page.getByText("Nichts zu übernehmen")).toBeVisible();
   await expect(page.getByRole("button", { name: "Übernahme bestätigen" })).toBeDisabled();
-  expect((await dbEntries(page, { employeeId: ANNA_ID })).filter((e) => E1001_IDS.includes(e.id))).toHaveLength(6);
+  expect((await dbEntries(page, { employeeId: ANNA_ID })).filter((e) => E1001_IDS.includes(e.id))).toHaveLength(5);
 
   // An older backup (v3, subset) is recognised as already imported, too.
   await chooseBackup(page, "uwe-backup-v3.json", legacyBackups.v3);

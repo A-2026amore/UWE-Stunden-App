@@ -82,7 +82,7 @@ describe("demo repository – tenant isolation", () => {
   it("break rule: UWE replica strict, generic tenant statutory; owner switches, laxer than §4 ArbZG is rejected", async () => {
     const owner = await as("chef@demo-kt.example");
     const kt = await owner.repo.getTenant(DEMO_TENANT_IDS.kt);
-    expect(kt.settings.breakPolicy.thresholds).toEqual([{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }]);
+    expect(kt.settings.breakPolicy.thresholds).toEqual([{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 60 }]);
     const statutory = [{ minGrossMinutes: 361, minPauseMinutes: 30 }, { minGrossMinutes: 541, minPauseMinutes: 45 }];
     const t = await owner.repo.updateSettings(DEMO_TENANT_IDS.kt, { breakPolicy: { ...kt.settings.breakPolicy, thresholds: statutory } });
     expect(t.settings.breakPolicy).toMatchObject({ thresholds: statutory, maxShiftMinutes: 720 });

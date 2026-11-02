@@ -11,8 +11,8 @@
  * evaluate and suggest.
  *
  * Legal notes:
- *  - Rule "strict" applies the 30/45 minute thresholds from EXACTLY 6:00 / 9:00
- *    hours of gross shift time ("ab genau 6 Stunden", like the old app). §4 ArbZG
+ *  - Rule "strict" requires 30 minutes from EXACTLY 6:00 and 60 minutes from EXACTLY 9:00
+ *    hours of gross shift time (decision 02.11.2026; the old app used 30/45). §4 ArbZG
  *    requires breaks for working time of MORE THAN 6 / 9 hours (rule
  *    "statutory", 361 / 541). Tenants choose one of both; nothing laxer than
  *    the statute is accepted (validateBreakPolicy, DB migration 0014).
@@ -30,7 +30,8 @@ import { grossMinutes, parseClock } from "./time";
 /**
  * The two selectable break rules. Thresholds are inclusive (`gross >= minGrossMinutes`):
  *  - "statutory": wording of §4 ArbZG – MORE THAN 6 h → 30 min, MORE THAN 9 h → 45 min (361 / 541).
- *  - "strict":    optional company rule – FROM EXACTLY 6 h / 9 h (360 / 540), stricter than the statute.
+ *  - "strict":    optional company rule – FROM EXACTLY 6 h → 30 min, FROM EXACTLY 9 h → 60 min
+ *                 (360 / 540; 60 min decided 02.11.2026), stricter than the statute.
  */
 export type BreakRuleKind = "statutory" | "strict";
 
@@ -39,7 +40,7 @@ const freezeThresholds = (list: [number, number][]): BreakPolicy["thresholds"] =
 
 export const BREAK_RULE_THRESHOLDS: Readonly<Record<BreakRuleKind, BreakPolicy["thresholds"]>> = Object.freeze({
   statutory: freezeThresholds([[361, 30], [541, 45]]),
-  strict: freezeThresholds([[360, 30], [540, 45]]),
+  strict: freezeThresholds([[360, 30], [540, 60]]),
 });
 
 /**
@@ -59,11 +60,12 @@ export const STATUTORY_MINIMUM = Object.freeze({
 });
 
 /**
- * Rules of the old Stunden-App (legacy code in the repository root): strict 6 h / 9 h, 12 h limit.
+ * Rules of the old Stunden-App (legacy code in the repository root): from exactly 6 h / 9 h → 30 / 45 min,
+ * 12 h limit (NOT the current "strict" rule, which requires 60 min from 9 h).
  * Only for the equivalence tests and for checking imported legacy data – never a tenant default.
  */
 export const LEGACY_BREAK_POLICY: BreakPolicy = Object.freeze({
-  thresholds: BREAK_RULE_THRESHOLDS.strict,
+  thresholds: freezeThresholds([[360, 30], [540, 45]]),
   maxShiftMinutes: 720,
   minPauseSegmentMinutes: 15,
 }) as BreakPolicy;

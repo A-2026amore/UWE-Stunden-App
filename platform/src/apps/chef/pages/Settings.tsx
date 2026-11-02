@@ -40,7 +40,7 @@ export function SettingsPage() {
     const ok = await dialogs.confirm({
       title: "Pausenregel ändern?",
       message: (rule === "strict"
-        ? "Danach gilt die Pausenpflicht bereits ab genau 6 bzw. 9 Stunden Arbeitszeit (strenger als das Gesetz)."
+        ? "Danach gilt die Pausenpflicht bereits ab genau 6 Stunden (30 Minuten) und ab genau 9 Stunden (60 Minuten) – strenger als das Gesetz."
         : "Danach gilt die gesetzliche Regel: Pausenpflicht erst bei mehr als 6 bzw. 9 Stunden Arbeitszeit.") +
         " Die Regel gilt für alle neuen und geänderten Einträge. Gespeicherte Einträge werden nicht verändert, können aber in der Monatsprüfung als Pausenproblem erscheinen. Die Änderung wird im Änderungsprotokoll gespeichert.",
       confirmLabel: "Pausenregel ändern",
@@ -140,7 +140,7 @@ export function SettingsPage() {
                 hint="Laxere Regeln als das Gesetz sind nicht möglich."
                 options={[
                   { value: "statutory", label: "Gesetzlich (mehr als 6 / 9 Stunden)" },
-                  { value: "strict", label: "Streng (ab genau 6 / 9 Stunden)" },
+                  { value: "strict", label: "Streng (ab genau 6 Std. 30 Min. / ab 9 Std. 60 Min.)" },
                   ...(currentRule === "custom" ? [{ value: "custom", label: "Individuell (unverändert lassen)" }] : []),
                 ]} />
               {ruleError && <Alert tone="danger" live>{ruleError}</Alert>}

@@ -82,4 +82,19 @@ describe("break policy vs. §4 ArbZG", () => {
       await db.admin.query("rollback");
     }
   });
+
+  it("migration 0030 moves tenants on the old strict rule (45 min from 9 h) to 60 min, nothing else", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const sql = readFileSync(resolve(__dirname, "../../db/migrations/0030_strict_break_60.sql"), "utf8");
+    const oldStrict = [{ minGrossMinutes: 360, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }];
+    const custom = [{ minGrossMinutes: 300, minPauseMinutes: 30 }, { minGrossMinutes: 540, minPauseMinutes: 45 }];
+    await db.admin.query(setThresholds(oldStrict), [A]);
+    await db.admin.query(setThresholds(custom), [IDS.tenantB]);
+    await db.admin.query(sql);
+    const t = async (id: string) => (await db.admin.query("select settings #> '{breakPolicy,thresholds}' as t from public.tenants where id = $1", [id])).rows[0].t;
+    expect(await t(A)).toEqual(BREAK_RULE_THRESHOLDS.strict);
+    expect(await t(IDS.tenantB)).toEqual(custom);
+    await db.admin.query(setThresholds(BREAK_RULE_THRESHOLDS.statutory), [IDS.tenantB]);
+  });
 });

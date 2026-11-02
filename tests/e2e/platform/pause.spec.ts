@@ -63,7 +63,7 @@ test("chef: owner switches the break rule; texts and the employee app follow the
   await expect(page.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible();
   await go(page, "#/einstellungen");
   const summary = page.getByTestId("break-rule-summary");
-  await expect(summary).toContainText("Strenge Regel (strenger als § 4 Arbeitszeitgesetz): ab 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, ab 9 Stunden mindestens 45 Minuten.");
+  await expect(summary).toContainText("Strenge Regel (strenger als § 4 Arbeitszeitgesetz): ab 6 Stunden Arbeitszeit mindestens 30 Minuten Pause, ab 9 Stunden mindestens 60 Minuten.");
   const table = page.getByRole("table", { name: "Pausenschwellen" });
   await expect(table).toContainText("ab 6 Stunden");
 
@@ -102,7 +102,7 @@ test("chef correction: pause hint names the minimum, too short pause is refused"
   await dialog.getByLabel("Beginn", { exact: true }).fill("06:00");
   await dialog.getByLabel("Ende", { exact: true }).fill("16:00");
   await dialog.getByLabel("Pause (Min.)").fill("30");
-  await expect(dialog.getByTestId("correction-pause-hint")).toContainText("mindestens 45 Minuten Pause vorgeschrieben (Regel: ab 9 Stunden). Nur die tatsächlich genommene Pause eintragen.");
+  await expect(dialog.getByTestId("correction-pause-hint")).toContainText("mindestens 60 Minuten Pause vorgeschrieben (Regel: ab 9 Stunden). Nur die tatsächlich genommene Pause eintragen.");
   await dialog.getByLabel("Begründung der Korrektur").fill("E2E Pausenprüfung");
   await dialog.getByRole("button", { name: "Korrektur speichern" }).click();
   await expect(dialog.getByRole("alert").filter({ hasText: "Die Korrektur wird so nicht gespeichert." })).toBeVisible();

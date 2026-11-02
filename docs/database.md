@@ -113,7 +113,7 @@ als § 4 ArbZG ist (Migration 0014, Details in [pausenregeln.md](pausenregeln.md
 ```json
 {
   "breakPolicy": { "thresholds": [{"minGrossMinutes": 360, "minPauseMinutes": 30},
-                                  {"minGrossMinutes": 540, "minPauseMinutes": 45}],
+                                  {"minGrossMinutes": 540, "minPauseMinutes": 60}],
                    "maxShiftMinutes": 720, "minPauseSegmentMinutes": 15 },
   "workAccount": { "enabled": true, "model": "school-year", "openingMinutes": -6000,
                    "federalState": "NW", "startMonth": "2026-09", "approvalRequired": true }
