@@ -185,6 +185,15 @@ Anmeldeseiten in Chromium und WebKit.
 
 Abschalten: `systemctl disable --now stunden-test-deploy.timer` (die Container laufen weiter).
 
+### Ohne GitHub (signierte Release-Pakete)
+
+Nach `deploy/umstellen-ohne-github.sh` holt der Server nichts mehr von GitHub: Er liest nur noch das eigene Repository
+`/srv/git/UWE-Stunden-App.git`, das ausschließlich aus signierten Paketen (`deploy/release-paket.sh`) gefüllt wird.
+Neue Version: Paket + `.sig` nach `/var/lib/stunden-test/eingang/` kopieren, dann
+`stunden-test-paket /var/lib/stunden-test/eingang/stundenwerk-<commit12>.bundle --freigeben`. Tests ohne GitHub
+Actions: `deploy/pruefen.sh <commit>`; Prüfung der Testumgebung: `deploy/test-env-check.sh <commit>`. Ablauf,
+Einrichtung und Rückweg: [`docs/betrieb-ohne-github.md`](../docs/betrieb-ohne-github.md).
+
 ## Testumgebung `stunden-test.appzentrale24.de` aktualisieren (Server-Sitzung)
 
 **Kurzform (ein Befehl):** `deploy/update-test.sh release/1.0 [--seed-test-env]` führt die Schritte unten aus

@@ -3,8 +3,8 @@ import type { BillingLine, BillingMonthSummary } from "../../../core/types";
 import {
   BILLABLE_REASON_LABEL, BILLING_CONDITION_LABEL, DEFAULT_EMPLOYEE_PRICE_CENTS, VAT_NOTE, formatEuro,
 } from "../../../core/billing";
-import { Alert, Card, SelectField, StatTile, StatusPill, Table } from "../../../design";
-import { useAsync } from "../../shared/hooks";
+import { Alert, Button, Card, InputField, SelectField, StatTile, StatusPill, Table, useToast } from "../../../design";
+import { errorText, useAsync } from "../../shared/hooks";
 import { ROLE_LABEL, currentMonth, dateTimeDE, monthLabelDE } from "../../shared/format";
 import { useChef } from "../context";
 import { TenantInvoices } from "../TenantInvoices";
@@ -22,9 +22,10 @@ export function BillingPage() {
     <div class="stack">
       <h1 class="page-title">Abrechnung</h1>
       <p class="muted">
-        Preis: {formatEuro(DEFAULT_EMPLOYEE_PRICE_CENTS)} netto je abrechenbarem Mitarbeiter und Monat – keine Grundgebühr,
-        keine Mindestanzahl. Abweichende Vertragskonditionen sind in den Zahlen unten berücksichtigt.
+        Preis: {formatEuro(DEFAULT_EMPLOYEE_PRICE_CENTS)} je abrechenbarem Mitarbeiter und Monat, {VAT_NOTE} – keine Grundgebühr,
+        keine Mindestanzahl. Abweichende Vertragskonditionen und Aktionsrabatte sind in den Zahlen unten berücksichtigt.
       </p>
+      <PromoCard />
       <Card>
         <div class="toolbar">
           <SelectField label="Monat" value={month} onValue={setMonth}
@@ -41,8 +42,8 @@ export function BillingPage() {
               : <Alert tone="warning" title="Noch nicht abgerechnet"><p>Vorläufige Werte. Sie werden mit der Rechnungsstellung festgeschrieben.</p></Alert>}
           <div class="grid-4" data-testid="billing-summary">
             <StatTile label="Abrechenbare Personen" value={b.billableCount} />
-            <StatTile label="Preis je Person" value={formatEuro(b.unitPriceCents)} hint={BILLING_CONDITION_LABEL[b.condition]} />
-            <StatTile label="Summe netto" value={formatEuro(b.amountCents)} hint={VAT_NOTE} tone="brand" />
+            <StatTile label="Preis je Person" value={formatEuro(b.unitPriceCents)} hint={b.promo ? `Aktionscode ${b.promo.code} (−${b.promo.discountPercent} %)` : BILLING_CONDITION_LABEL[b.condition]} />
+            <StatTile label="Summe brutto" value={formatEuro(b.amountCents)} hint={VAT_NOTE} tone="brand" />
             <StatTile label="Status" value={<StatusPill status={b.status} />} />
           </div>
           {b.tenantBlock && (
@@ -69,7 +70,7 @@ export function BillingPage() {
               ]}
             />
             <p class="small muted" style={{ marginTop: "var(--space-3)" }}>
-              {b.billableCount} × {formatEuro(b.unitPriceCents)} = <strong>{formatEuro(b.amountCents)}</strong> netto, {VAT_NOTE}
+              {b.billableCount} × {formatEuro(b.unitPriceCents)} = <strong>{formatEuro(b.amountCents)}</strong> {VAT_NOTE}
             </p>
           </Card>
         </>
@@ -84,11 +85,11 @@ export function BillingPage() {
             { key: "m", header: "Monat", render: (h) => monthLabelDE(h.month) },
             { key: "c", header: "Personen", align: "right", render: (h) => <span class="num">{h.billableCount}</span> },
             { key: "p", header: "Preis je Person", align: "right", render: (h) => <span class="num">{formatEuro(h.unitPriceCents)}</span> },
-            { key: "a", header: "Summe netto", align: "right", render: (h) => <span class="num">{formatEuro(h.amountCents)}</span> },
+            { key: "a", header: "Summe brutto", align: "right", render: (h) => <span class="num">{formatEuro(h.amountCents)}</span> },
             { key: "s", header: "Status", render: (h) => <StatusPill status={h.status} label={h.status === "open" && !h.final ? (h.month === currentMonth() ? "Vorschau" : "Offen") : undefined} /> },
           ]}
         />
-        <p class="small muted" style={{ marginTop: "var(--space-3)" }}>Alle Beträge netto, {VAT_NOTE}</p>
+        <p class="small muted" style={{ marginTop: "var(--space-3)" }}>Alle Beträge {VAT_NOTE}</p>
       </Card>
       <TenantInvoices />
       <Card title="So wird gezählt" muted>
@@ -101,5 +102,52 @@ export function BillingPage() {
         </ul>
       </Card>
     </div>
+  );
+}
+
+/** Owner redeems a promo code (migration 0022); leadership sees the running discount. */
+function PromoCard() {
+  const { repo, tenant, me, version, changed } = useChef();
+  const toast = useToast();
+  const q = useAsync(() => repo.listTenantPromo(tenant.id), [version]);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const running = q.data?.find((r) => !r.endedAt) ?? null;
+  const owner = me.role === "owner";
+
+  const redeem = async (e: Event) => {
+    e.preventDefault();
+    setError(null);
+    if (!code.trim()) { setError("Bitte den Aktionscode eingeben."); return; }
+    setBusy(true);
+    try {
+      const r = await repo.redeemPromoCode(tenant.id, code);
+      toast(`Aktionscode ${r.code} eingelöst: −${r.discountPercent} % ab diesem Monat.`);
+      setCode("");
+      changed();
+    } catch (err) { setError(errorText(err)); } finally { setBusy(false); }
+  };
+
+  if (running) {
+    return (
+      <Alert tone="success" title={`Aktionsrabatt: ${running.code} (−${running.discountPercent} %)`}>
+        <p data-testid="promo-running">Eingelöst am {dateTimeDE(running.redeemedAt)}. Der Rabatt gilt, bis der Anbieter die Aktion beendet;
+          das wird Ihnen vorher mitgeteilt. Danach gilt ab dem folgenden Monat der normale Preis.</p>
+      </Alert>
+    );
+  }
+  if (!owner) return null;
+  return (
+    <Card title="Aktionscode einlösen">
+      <form class="stack-sm" onSubmit={redeem} noValidate>
+        <div class="row" style={{ alignItems: "end", flexWrap: "wrap", gap: "var(--space-3)" }}>
+          <InputField label="Aktionscode" value={code} onValue={(v) => setCode(v.toUpperCase())} maxLength={32} autoComplete="off" />
+          <Button type="submit" icon="check" busy={busy}>Einlösen</Button>
+        </div>
+        <p class="xsmall muted mb-0">Der Rabatt gilt ab dem laufenden Monat, bis der Anbieter die Aktion beendet. Danach wird die Nutzung zum normalen Preis berechnet.</p>
+        {error && <Alert tone="danger" live>{error}</Alert>}
+      </form>
+    </Card>
   );
 }

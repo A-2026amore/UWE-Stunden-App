@@ -5,9 +5,38 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Mitarbeiter-App leichter installieren (ohne App-Store, 30.10.2026):
+  - Startseite: deutlicher Hinweis „Zeiterfassung als App aufs Handy“ mit bebilderten, nummerierten Schritten
+    (Android: Knopf „App installieren“, sonst Browser-Menü; iPhone: Safari-Schritte inkl. „•••“-Menü neuerer
+    iPhones). „Später erinnern“ blendet ihn eine Woche aus statt für immer; nach erfolgreicher Installation
+    (Android meldet das) verschwindet er.
+  - Anmeldeseite auf Handys: „Tipp: Erst als App speichern, dann anmelden“ (das iPhone hält die Anmeldung der
+    installierten App getrennt von Safari).
+  - Erkennt Browser in anderen Apps (Facebook, Instagram, Google-App, Android-WebView) und Chrome/Firefox/Edge auf
+    dem iPhone: erklärt „In Safari/Chrome öffnen“ und bietet „Link kopieren“.
+  - Nach „Einladung annehmen“: „Letzter Schritt: die App aufs Handy holen“ mit Knopf „Weiter zur Mitarbeiter-App“.
+    Einladungs-E-Mail und WhatsApp-Text erklären denselben Weg; die E-Mail nennt zusätzlich die App-Adresse.
+  - Chef-Portal → Mitarbeiter → „Anleitung mit QR-Code“: druckbare Kurzanleitung (eine A4-Seite) mit QR-Code zur
+    Mitarbeiter-App und den Schritten für iPhone und Android, auch als PDF speicherbar.
+- Preis und Aktionscodes (Entscheidung 30.10.2026, Migration `0022_promo_codes_gross_prices.sql`, Doku
+  `docs/preismodell.md`):
+  - Preise sind jetzt **brutto**: 5,00 € inkl. USt. je abrechenbarem Mitarbeiter und Monat. Rechnungen weisen die
+    enthaltene USt. aus (netto = brutto − USt.); bereits erzeugte Rechnungen bleiben unverändert.
+  - Keine kostenlosen Konten mehr für neue Kunden: „Kostenlosen Testkunden anlegen“, die Pilot-Lizenz und
+    „Kostenloses Konto“ sind für neue Kunden entfernt (bestehende bleiben).
+  - Aktionscodes: Super-Admin legt Codes mit 1–100 % Nachlass an (optional Höchstzahl, „einlösbar bis“), der
+    Inhaber löst im Chef-Portal ein. Der Rabatt läuft, bis der Super-Admin ihn je Kunde oder für den ganzen Code
+    beendet; der Monat des Beendens bleibt rabattiert. Protokolliert, gegen Raten gebremst (10 Versuche/15 Min.).
 - Testumgebung per Pull-Verfahren: `deploy/bootstrap-test.sh` (einmalig auf dem Server), `deploy/pull-deploy.sh`
   (systemd-Timer holt den Branch `stunden-test-deploy`), Workflow „Testumgebung prüfen“ mit
   `scripts/check-test-env.mjs`; `/api/health` meldet den Build-Commit. Anleitung `deploy/README.md`.
+- Betrieb ohne GitHub (`docs/betrieb-ohne-github.md`): signierte Release-Pakete (`deploy/release-paket.sh`,
+  Hochladen vom PC mit `deploy/windows/paket-hochladen.ps1`), einmalige Umstellung des Servers auf ein eigenes
+  Repository (`deploy/umstellen-ohne-github.sh`, installiert `stunden-test-paket`; `stunden-test-freigeben` gibt nur
+  noch Commits aus geprüften Paketen frei), Tests ohne GitHub Actions (`deploy/pruefen.sh`) und Online-Prüfung der
+  Testumgebung ohne GitHub (`deploy/test-env-check.sh`).
+- Storage Box für die Testsicherungen: `deploy/storagebox-einrichten.sh` (SSH-Schlüssel für den Sub-Account,
+  restic-Repository, Probe mit Hochladen und Zurückholen).
 
 ### Sicherheit
 - Testumgebung: Der Server stellt nur den mit `stunden-test-freigeben <commit>` freigegebenen Commit bereit;

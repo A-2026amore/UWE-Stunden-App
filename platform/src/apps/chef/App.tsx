@@ -22,6 +22,7 @@ import { AuditPage } from "./pages/Audit";
 import { CorrectionsPage } from "./pages/Corrections";
 import { BillingPage } from "./pages/Billing";
 import { PrivacyPage } from "./pages/Privacy";
+import { AppGuidePage } from "./pages/AppGuide";
 
 const repo = getRepository("chef");
 
@@ -132,6 +133,7 @@ export function ChefApp() {
   let page;
   switch (route.path) {
     case "/mitarbeiter": page = <EmployeesPage />; break;
+    case "/app-anleitung": page = <AppGuidePage />; break;
     case "/stunden": page = <HoursPage initialMonth={route.query.get("m")} initialEmployee={route.query.get("ma")} />; break;
     case "/zeiten": page = <TimesPage />; break;
     case "/nachweise": page = <StatementsPage initialMonth={route.query.get("m")} />; break;

@@ -113,6 +113,8 @@ export function toRevenueRow(r: Row, month: string): PlatformRevenueRow {
     closedAt: isoOrNull(r.closed_at),
     blockSince: isoOrNull(r.block_since),
     blockReason: (r.block_reason as string | null) ?? null,
+    promoCode: (r.promo_code as string | null) ?? null,
+    promoDiscountPercent: r.promo_discount_percent == null ? null : Number(r.promo_discount_percent),
   };
 }
 

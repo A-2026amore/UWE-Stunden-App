@@ -282,3 +282,18 @@ Trigger `billing_periods_invoice_guard`: Solange für Mandant und Monat eine gü
 besteht, lehnt die Datenbank den Wechsel des Abrechnungsmonats auf `open` oder `waived` ab (Fehler 55000 mit
 Rechnungsnummer). `invoiced` → `paid` bleibt möglich. Korrekturweg: Rechnung stornieren (0019), danach Monat
 wieder öffnen oder erlassen.
+
+## Bruttopreise und Aktionscodes (0022)
+
+- `billing_settings.default_price_cents` und `licenses.employee_price_cents` sind **Bruttopreise** (inkl. USt.).
+  `private.invoice_build` rechnet die enthaltene USt. heraus: `vat = round(brutto × Satz / (100 + Satz))`,
+  `net = brutto − vat`. Gespeicherte Rechnungen bleiben unverändert.
+- `promo_codes` (Code `^[A-Z0-9-]{6,32}$`, Nachlass 1–100 %, optional `max_redemptions`, `redeemable_until`,
+  Ende mit Grund) und `promo_redemptions` (je Firma höchstens ein laufender Rabatt, je Code und Firma eine
+  Einlösung, Nachlass wird beim Einlösen kopiert). Beide Tabellen ohne Rechte für `app_user`; Zugriff nur über
+  die SECURITY-DEFINER-Funktionen `platform_promo_codes`, `platform_create_promo_code`, `platform_end_promo_code`,
+  `platform_end_promo_redemption`, `tenant_promo`, `tenant_redeem_promo_code` (alle protokolliert).
+- `private.promo_for(tenant, month)`: Einlösung, deren Laufzeit den Monat berührt (mehrere: höchster Nachlass).
+  `private.billing_condition` wendet den Nachlass auf Standard- oder Sonderpreis an (Kondition `promo`);
+  Sperre, Pilot und kostenloses Konto bleiben 0 €. `tenant_billing` liefert `promo`, `platform_billing_overview`
+  `promo_code`/`promo_discount_percent`. Tests: `tests/db/promo-codes.test.ts`.
