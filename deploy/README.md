@@ -274,3 +274,19 @@ führt die Wiederherstellungsprobe mit `restore-test.sh --docker` aus. `backup.s
 `restore-test.sh --local/--server-url` laufen zusätzlich in `tests/server/backup-restore.test.ts`.
 `prod-bereitstellen.sh` ist nur in seinen Prüfungen ohne Docker getestet (`tests/unit/prod-setup-script.test.ts`);
 der Ablauf mit Docker und Caddy wurde vor dem ersten Einsatz nicht durchgespielt.
+
+## Caddy-Wächter (seit 05.11.2026)
+
+Nach einem Neustart des Servers kann ein App-Container die feste Caddy-Adresse 172.30.0.2 im Netz `proxy` bekommen.
+Caddy startet dann nicht („Address already in use“), alle Seiten sind weg (so am 05.11.2026 passiert). Einmalig
+einrichten:
+
+```bash
+sudo bash /srv/stunden-test/deploy/caddy-waechter-einrichten.sh
+```
+
+Der Timer `caddy-waechter.timer` prüft 1 Minute nach dem Start und dann alle 2 Minuten: Läuft Caddy nicht, wird der
+Container, der Caddys Adresse belegt, kurz aus `proxy` genommen, Caddy gestartet und der Container wieder verbunden
+(andere freie Adresse, kein Neustart). Protokoll: `journalctl -t caddy-waechter`. Abschalten:
+`systemctl disable --now caddy-waechter.timer`. Test: `tests/unit/caddy-watchdog.test.ts` (mit nachgebildetem
+`docker`, nicht auf dem Server durchgespielt).

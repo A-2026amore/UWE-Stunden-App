@@ -17,6 +17,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   Vorlauf zum Monatsende. AGB / Anlage A Entwurf 0.9.6 (§ 1d).
 
 ### Hinzugefügt (Betrieb)
+- Caddy-Wächter (`deploy/caddy-waechter-einrichten.sh`): Ausfall am 05.11.2026 – nach einem Neustart hatte die
+  Produktions-App die feste Caddy-Adresse 172.30.0.2 bekommen, Caddy startete nicht, alle Seiten waren ca. 9 Stunden
+  nicht erreichbar. Der Timer startet Caddy künftig automatisch und gibt seine Adresse vorher frei. Test:
+  `tests/unit/caddy-watchdog.test.ts`.
 - Produktionsumgebung: `deploy/prod-bereitstellen.sh <commit>` richtet `app.schichtklar24.de` als eigene, leere
   Umgebung neben dem Test ein und aktualisiert sie später (nur der Commit, der auf dem Test läuft und aus einem
   signierten Paket stammt; vor Updates Sicherung). Eigene Geheimnisse, eigene Datenbank, eigenes
