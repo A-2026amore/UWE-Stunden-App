@@ -35,6 +35,13 @@ test("dashboard: Soll / Ist, differences and hours account per person", async ({
   await expect(deniz).toContainText("ohne Limit");
   await expect(deniz).toContainText("Stunden offen");
   await expect(page.getByTestId("employment-summary")).toContainText("über Soll");
+  // Rough employer costs: Minijob flat rates, Teilzeit (1.740 € expected) in the Übergangsbereich, none for "offen"
+  await expect(ben.getByTestId("employer-costs-30000000-0000-4000-8000-000000000102")).toContainText("Lohnnebenkosten ca.: +");
+  await expect(ben.getByTestId("employer-costs-30000000-0000-4000-8000-000000000102")).toContainText("(31 %)");
+  await expect(anna.getByTestId(`employer-costs-${ANNA_ID}`)).toContainText("Gesamt ca.:");
+  await expect(anna.getByTestId(`employer-costs-${ANNA_ID}`)).toHaveAttribute("title", /Übergangsbereich/);
+  await expect(deniz.getByText("Lohnnebenkosten ca.")).toHaveCount(0);
+  await expect(page.getByTestId("employer-costs-summary")).toContainText("grobe Schätzung");
 });
 
 test("chef records contract data in the employee dialog (Minijob suggestion) and removes a version", async ({ page }) => {

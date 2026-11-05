@@ -5,6 +5,12 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Lohnnebenkosten grob im Chef-Dashboard (Entscheidung 05.11.2026): In der Karte „Soll / Ist laut Arbeitsvertrag“
+  stehen unter „Lohn Ist“ die geschätzten Arbeitgeberanteile und die Gesamtkosten, oben die Summe der
+  Personalkosten des Monats. Minijob ca. 31 % (Pauschalen, Pauschsteuer, Umlagen), Übergangsbereich (Midijob)
+  nach der Formel des § 20 Abs. 2a SGB IV von ca. 30 % bis 23 %, Teilzeit/Vollzeit ca. 23 %. Die Einordnung richtet
+  sich nach dem erwarteten Monatslohn laut Vertrag; „Sonstiges“ bekommt keine Schätzung. Ohne Berufsgenossenschaft,
+  Beitragsbemessungsgrenzen und Sonderfälle – ausdrücklich keine Lohnabrechnung (`platform/src/core/employerCosts.ts`).
 - „Alles kostenlos“ (Entscheidung 02.11.2026, Migration 0029): Der Super-Admin stellt die Nutzung für alle Firmen
   bis auf Weiteres kostenlos (Preismodell → „Alles kostenlos“). Kostenlose Monate kosten 0 €, alle Firmen haben alle
   Pro-Funktionen, Chef-Portal und Vertragsabschluss zeigen „Zurzeit kostenlos“. Beenden mit mindestens einem Monat

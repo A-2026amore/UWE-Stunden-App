@@ -13,6 +13,16 @@ import { CORRECTION_KIND_LABEL, requestDate } from "../../shared/corrections";
 import { IS_DEMO } from "../../shared/repo";
 import { targetState, type EmploymentMonth } from "../../../core/employment";
 import { contractText, loadEmploymentOverview, type EmploymentRow } from "../employment";
+import { EMPLOYER_COST_CATEGORY_LABEL, estimateEmployerCosts, formatRate, type EmployerCostEstimate } from "../../../core/employerCosts";
+
+/** Rough employer costs of the current month (category by the expected pay of the contract). */
+function employerCostsOf(r: EmploymentRow): EmployerCostEstimate | null {
+  const c = r.account.current;
+  if (!c) return null;
+  const k = c.contract;
+  const expected = k.hourlyWageCents !== null && k.monthlyTargetMinutes !== null ? Math.round((k.hourlyWageCents * k.monthlyTargetMinutes) / 60) : null;
+  return estimateEmployerCosts({ employmentType: k.employmentType, earningsCents: c.earningsCents, expectedMonthlyCents: expected, month: c.month });
+}
 
 /** Over / under target of one month as a badge (with the value at the hourly wage). */
 function TargetBadge({ m }: { m: EmploymentMonth }) {
@@ -34,6 +44,10 @@ function EmploymentCard({ rows, month }: { rows: EmploymentRow[]; month: string 
   const total = withAccount.reduce((sum, r) => sum + r.account.balanceMinutes, 0);
   const over = rows.filter((r) => r.account.current && targetState(r.account.current) === "over").length;
   const overLimit = rows.filter((r) => r.account.current?.overMinijobLimit).length;
+  const costs = rows.map(employerCostsOf).filter((c): c is EmployerCostEstimate => c !== null);
+  const wages = rows.reduce((sum, r) => sum + (r.account.current?.earningsCents ?? 0), 0);
+  const extra = costs.reduce((sum, c) => sum + c.costCents, 0);
+  const withoutEstimate = rows.filter((r) => r.account.current?.earningsCents != null && employerCostsOf(r) === null).length;
   return (
     <Card title={`Soll / Ist laut Arbeitsvertrag · ${monthLabelDE(month)}`} actions={<LinkButton href="#/mitarbeiter" size="sm">Verträge bearbeiten</LinkButton>}>
       <div data-testid="employment-overview">
@@ -41,6 +55,12 @@ function EmploymentCard({ rows, month }: { rows: EmploymentRow[]; month: string 
           <p class="mb-0" data-testid="employment-summary">
             Summe Arbeitszeitkonten: <strong class="num">{signedHours(total)}</strong>
             {" · "}{over} über Soll{overLimit > 0 && <> · <Badge tone="danger">{overLimit} über Minijob-Grenze</Badge></>}
+          </p>
+        )}
+        {costs.length > 0 && (
+          <p class="mb-0" data-testid="employer-costs-summary">
+            Personalkosten {monthLabelDE(month)} ca.: <strong class="num">{formatEuro(wages + extra)}</strong>
+            <span class="muted"> (Lohn {formatEuro(wages)} + Lohnnebenkosten ca. {formatEuro(extra)}, grobe Schätzung{withoutEstimate > 0 && `, ${withoutEstimate} × Sonstiges ohne Nebenkosten`})</span>
           </p>
         )}
         <Table<EmploymentRow>
@@ -69,9 +89,17 @@ function EmploymentCard({ rows, month }: { rows: EmploymentRow[]; month: string 
             { key: "h", header: "Hinweis", render: (r) => {
               const c = r.account.current;
               if (!c) return null;
+              const cost = employerCostsOf(r);
               return (
                 <div class="stack-sm">
                   {c.earningsCents !== null && <span class="small muted">Lohn Ist: {formatEuro(c.earningsCents)}</span>}
+                  {cost && (
+                    <span class="small muted" data-testid={`employer-costs-${r.employee.id}`}
+                      title={`Grobe Schätzung: ${EMPLOYER_COST_CATEGORY_LABEL[cost.category]} ca. ${formatRate(cost.rateBp)}${cost.likeMinijob ? " (Lohn bis zur Minijob-Grenze, wie Minijob gerechnet)" : ""}. Ohne Berufsgenossenschaft.`}>
+                      Lohnnebenkosten ca.: +{formatEuro(cost.costCents)} ({formatRate(cost.rateBp)})<br />
+                      Gesamt ca.: <strong>{formatEuro(cost.totalCents)}</strong>
+                    </span>
+                  )}
                   {c.overMinijobLimit && <span title={`Minijob-Grenze ${formatEuro(c.minijobLimitCents!)} im Monat`}><Badge tone="danger">über Minijob-Grenze</Badge></span>}
                   {c.belowMinimumWage && <Badge tone="warning">unter Mindestlohn</Badge>}
                 </div>
@@ -80,7 +108,9 @@ function EmploymentCard({ rows, month }: { rows: EmploymentRow[]; month: string 
           ]}
         />
         <p class="muted small mb-0">Mehrstunden kommen sofort ins Arbeitszeitkonto, Minderstunden erst am Monatsende. Ist = abrechenbare Stunden.
-          Hinweise zu Mindestlohn und Minijob-Grenze ersetzen keine Lohnabrechnung.</p>
+          Hinweise zu Mindestlohn und Minijob-Grenze ersetzen keine Lohnabrechnung.
+          Lohnnebenkosten sind eine grobe Schätzung der Arbeitgeberanteile (Minijob ca. 31 %, Midijob ca. 30–23 %, Teilzeit/Vollzeit ca. 23 %),
+          ohne Berufsgenossenschaft und Sonderfälle.</p>
       </div>
     </Card>
   );
