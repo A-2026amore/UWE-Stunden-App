@@ -9,7 +9,7 @@ import {
 } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, todayISO, weekdayShort } from "../../shared/format";
-import { buildStatementFilesWithLogo, contractsForSheets, downloadAll } from "../../shared/statement";
+import { NO_OVERTIME_TEXT, buildSheetWithLogo, contractsForSheets, type SheetKind } from "../../shared/statement";
 import { monthRange, useChef } from "../context";
 import { EntryHistoryDialog } from "./Corrections";
 
@@ -73,16 +73,18 @@ export function TimesPage() {
     toast("CSV-Datei wurde erstellt.");
   };
 
-  const exportPdf = async () => {
+  const sheets = tenant.settings.overtimeSheet === true;
+  const exportPdf = async (kind: SheetKind = "statement") => {
     const emp = byId.get(employeeId);
     if (!emp) return;
     const month = date.slice(0, 7);
     try {
       const [entries, allocations, statement, contracts] = await Promise.all([repo.listTimeEntries(emp.id, month), repo.listAllocations(emp.id), repo.getStatement(emp.id, month),
         contractsForSheets(tenant, () => repo.listEmployeeContracts(emp.id))]);
-      const files = await buildStatementFilesWithLogo({ tenant, employee: emp, month, entries, allocations, statement, contracts });
-      downloadAll(files);
-      toast(`PDF erstellt: ${files.map((f) => f.fileName).join(", ")}`);
+      const file = await buildSheetWithLogo({ tenant, employee: emp, month, entries, allocations, statement, contracts }, kind);
+      if (!file) { toast(NO_OVERTIME_TEXT, "info"); return; }
+      downloadBlob(file.blob, file.fileName);
+      toast(`PDF erstellt: ${file.fileName}`);
     } catch (e) {
       toast(errorText(e), "error");
     }
@@ -128,9 +130,14 @@ export function TimesPage() {
           </div>
           <div class="btn-row">
             <Button variant="secondary" icon="download" onClick={exportCsv} disabled={!rows.length}>CSV exportieren</Button>
-            <Button variant="secondary" icon="fileCheck" onClick={exportPdf} disabled={employeeId === "all"} title={employeeId === "all" ? "Bitte zuerst einen Mitarbeiter wählen" : undefined}>
+            <Button variant="secondary" icon="fileCheck" onClick={() => exportPdf()} disabled={employeeId === "all"} title={employeeId === "all" ? "Bitte zuerst einen Mitarbeiter wählen" : undefined}>
               PDF {monthLabelDE(date.slice(0, 7))}
             </Button>
+            {sheets && (
+              <Button variant="secondary" icon="fileCheck" onClick={() => exportPdf("overtime")} disabled={employeeId === "all"} title={employeeId === "all" ? "Bitte zuerst einen Mitarbeiter wählen" : undefined}>
+                Überstundenzettel
+              </Button>
+            )}
           </div>
         </div>
         {q.error && <Alert tone="danger" live>{q.error}</Alert>}

@@ -7,7 +7,8 @@ import { Alert, BarChart, Button, Card, EmptyState, LinkButton, StatusPill, useD
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, formatDateDE, hoursLabel, monthLabelDE, todayISO } from "../../shared/format";
 import { dailyBars, hoursAxis } from "../../shared/charts";
-import { buildStatementFiles, contractsForSheets, downloadAll, preparePdfLogo, shareOrDownloadAll } from "../../shared/statement";
+import { buildOvertimeSheet, buildStatement, buildStatementFiles, contractsForSheets, overtimeOf, preparePdfLogo, shareOrDownloadAll } from "../../shared/statement";
+import { downloadBlob } from "../../shared/format";
 import { navigate } from "../../shared/router";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { useEmployee } from "../context";
@@ -55,15 +56,23 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   const byDay = new Map<string, TimeEntry[]>();
   for (const e of data?.entries ?? []) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
 
-  const pdf = async (mode: "share" | "download") => {
-    if (!data) return;
+  const sheetArgs = data ? { tenant, employee: me, month, entries: data.entries, allocations: data.allocations, statement: data.statement, contracts: data.contracts } : null;
+  const hasOvertimeSheet = sheetArgs !== null && overtimeOf(sheetArgs) !== null;
+  const pdf = async (mode: "share" | "download" | "overtime") => {
+    if (!sheetArgs) return;
     setBusy(mode);
     try {
-      const files = buildStatementFiles({ tenant, employee: me, month, entries: data.entries, allocations: data.allocations, statement: data.statement, contracts: data.contracts });
-      if (mode === "download") { downloadAll(files); toast(`PDF gespeichert: ${files.map((f) => f.fileName).join(", ")}`); }
+      // Share sheet: both PDFs at once. Downloads one per click (browsers block a second automatic download).
+      const files = mode === "share" ? buildStatementFiles(sheetArgs) : [];
+      if (mode === "download") { const f = buildStatement(sheetArgs); downloadBlob(f.blob, f.fileName); toast(`PDF gespeichert: ${f.fileName}`); }
+      else if (mode === "overtime") {
+        const f = buildOvertimeSheet(sheetArgs);
+        if (f) { downloadBlob(f.blob, f.fileName); toast(`PDF gespeichert: ${f.fileName}`); }
+      }
       else {
         const r = await shareOrDownloadAll(files, `Stundennachweis ${monthLabelDE(month)}`);
-        if (r === "downloaded") toast("Teilen wird auf diesem Gerät nicht unterstützt – die PDF wurde heruntergeladen.", "info");
+        if (r === "downloaded") toast("Teilen wird auf diesem Gerät nicht unterstützt – die PDF wurde heruntergeladen." +
+          (files.length > 1 ? " Den Überstundenzettel bitte über „Überstundenzettel speichern“ holen." : ""), "info");
       }
     } catch (err) {
       toast(errorText(err), "error");
@@ -154,6 +163,7 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
         <div class="btn-row btn-row-stack">
           <Button icon="share" onClick={() => pdf("share")} busy={busy === "share"} disabled={!data?.entries.length}>PDF teilen</Button>
           <Button variant="secondary" icon="download" onClick={() => pdf("download")} busy={busy === "download"} disabled={!data?.entries.length}>PDF speichern</Button>
+          {hasOvertimeSheet && <Button variant="secondary" icon="download" onClick={() => pdf("overtime")} busy={busy === "overtime"}>Überstundenzettel speichern</Button>}
           {canSubmit && <Button variant="secondary" icon="send" onClick={submit} busy={busy === "submit"} disabled={!data?.entries.length}>Monatsnachweis einreichen</Button>}
         </div>
         <p class="muted small" style={{ marginTop: "var(--space-3)" }}>

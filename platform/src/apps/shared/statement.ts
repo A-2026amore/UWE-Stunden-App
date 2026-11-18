@@ -119,12 +119,6 @@ export function buildOvertimeSheet(args: StatementArgs): { blob: Blob; fileName:
   return { blob, fileName, overtimeMinutes: split.overtimeMinutes };
 }
 
-/** Chef-Portal: logo conversion + Überstundenzettel. */
-export async function buildOvertimeSheetWithLogo(args: StatementArgs): Promise<ReturnType<typeof buildOvertimeSheet>> {
-  await preparePdfLogo(args.tenant);
-  return buildOvertimeSheet(args);
-}
-
 export function buildStatement(args: StatementArgs): { blob: Blob; fileName: string } {
   const { tenant, employee, month } = args;
   const policy = tenant.settings.workAccount;
@@ -161,6 +155,19 @@ export function buildStatement(args: StatementArgs): { blob: Blob; fileName: str
   return { blob, fileName };
 }
 
+export type SheetKind = "statement" | "overtime";
+
+/**
+ * One sheet per click: browsers block or ask before a second automatic download, so the
+ * Überstundenzettel has its own button. Null = no overtime in this month.
+ */
+export async function buildSheetWithLogo(args: StatementArgs, kind: SheetKind): Promise<{ blob: Blob; fileName: string } | null> {
+  await preparePdfLogo(args.tenant);
+  return kind === "overtime" ? buildOvertimeSheet(args) : buildStatement(args);
+}
+
+export const NO_OVERTIME_TEXT = "In diesem Monat gibt es keine Überstunden über dem Soll laut Arbeitsvertrag – kein Überstundenzettel nötig.";
+
 /** Stundennachweis plus – when there is overtime to put on a separate sheet – the Überstundenzettel. */
 export function buildStatementFiles(args: StatementArgs): { blob: Blob; fileName: string }[] {
   const files = [buildStatement(args)];
@@ -169,23 +176,15 @@ export function buildStatementFiles(args: StatementArgs): { blob: Blob; fileName
   return files;
 }
 
-/** Chef-Portal: logo conversion + all sheets of the month. */
-export async function buildStatementFilesWithLogo(args: StatementArgs): Promise<{ blob: Blob; fileName: string }[]> {
-  await preparePdfLogo(args.tenant);
-  return buildStatementFiles(args);
-}
-
 /** Contract versions for the overtime split; only loaded when the tenant uses the separate sheet. */
 export async function contractsForSheets(tenant: Tenant, load: () => Promise<EmploymentContract[]>): Promise<EmploymentContract[] | null> {
   return tenant.settings.overtimeSheet ? load() : null;
 }
 
-/** Downloads every file (one after the other). */
-export function downloadAll(files: { blob: Blob; fileName: string }[]): void {
-  for (const f of files) downloadBlob(f.blob, f.fileName);
-}
-
-/** Several PDFs via the share sheet (when supported), otherwise downloads. */
+/**
+ * Several PDFs via the share sheet (when supported). Fallback: only the first file is downloaded –
+ * a second automatic download is blocked by browsers; the caller offers its own button for it.
+ */
 export async function shareOrDownloadAll(files: { blob: Blob; fileName: string }[], title: string): Promise<"shared" | "downloaded" | "cancelled"> {
   if (files.length === 1) return shareOrDownload(files[0]!.blob, files[0]!.fileName, title);
   const list = files.map((f) => new File([f.blob], f.fileName, { type: "application/pdf" }));
@@ -198,7 +197,7 @@ export async function shareOrDownloadAll(files: { blob: Blob; fileName: string }
       if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
     }
   }
-  downloadAll(files);
+  downloadBlob(files[0]!.blob, files[0]!.fileName);
   return "downloaded";
 }
 

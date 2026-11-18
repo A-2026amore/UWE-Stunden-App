@@ -5,8 +5,8 @@ import type { Employee, MonthlyStatement } from "../../../core/types";
 import { shiftMonth } from "../../../data/demo";
 import { Alert, Badge, Button, Card, LinkButton, StatusPill, Table, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
-import { currentMonth, dateTimeDE, hoursLabel, monthLabelDE } from "../../shared/format";
-import { buildStatementFilesWithLogo, contractsForSheets, downloadAll } from "../../shared/statement";
+import { currentMonth, dateTimeDE, downloadBlob, hoursLabel, monthLabelDE } from "../../shared/format";
+import { NO_OVERTIME_TEXT, buildSheetWithLogo, contractsForSheets, type SheetKind } from "../../shared/statement";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { loadTenantMonth, useChef } from "../context";
 import { useStatementActions } from "../statementActions";
@@ -64,13 +64,14 @@ export function StatementsPage({ initialMonth }: { initialMonth?: string | null 
   const reopenStatement = useReopenStatement();
   const reopen = (r: Row) => (r.statement ? reopenStatement(r.employee, r.statement) : undefined);
 
-  const pdf = async (r: Row) => {
+  const sheets = tenant.settings.overtimeSheet === true;
+  const pdf = async (r: Row, kind: SheetKind = "statement") => {
     try {
       const [entries, allocations, contracts] = await Promise.all([repo.listTimeEntries(r.employee.id, month), repo.listAllocations(r.employee.id),
         contractsForSheets(tenant, () => repo.listEmployeeContracts(r.employee.id))]);
-      const files = await buildStatementFilesWithLogo({ tenant, employee: r.employee, month, entries, allocations, statement: r.statement, contracts });
-      downloadAll(files);
-      if (files.length > 1) toast("Stundennachweis und Überstundenzettel wurden erstellt.");
+      const file = await buildSheetWithLogo({ tenant, employee: r.employee, month, entries, allocations, statement: r.statement, contracts }, kind);
+      if (!file) { toast(NO_OVERTIME_TEXT, "info"); return; }
+      downloadBlob(file.blob, file.fileName);
     } catch (e) { toast(errorText(e), "error"); }
   };
 
@@ -131,6 +132,7 @@ export function StatementsPage({ initialMonth }: { initialMonth?: string | null 
                 <div class="btn-row btn-row-wrap" style={{ justifyContent: "flex-end" }}>
                   <LinkButton size="sm" variant="ghost" icon="calendar" href={`#/stunden?m=${month}&ma=${r.employee.id}`} aria-label={`Tage von ${r.employee.displayName} anzeigen`}>Tage</LinkButton>
                   <Button size="sm" variant="ghost" icon="download" onClick={() => pdf(r)} aria-label={`PDF für ${r.employee.displayName}`}>PDF</Button>
+                  {sheets && <Button size="sm" variant="ghost" icon="download" onClick={() => pdf(r, "overtime")} aria-label={`Überstundenzettel für ${r.employee.displayName}`}>Überstunden</Button>}
                   {r.statement?.status === "submitted" && <>
                     <Button size="sm" icon="check" onClick={() => approve(r)} aria-label={`Nachweis von ${r.employee.displayName} freigeben`}>Freigeben</Button>
                     <Button size="sm" variant="secondary" icon="undo" onClick={() => giveBack(r)} aria-label={`Nachweis von ${r.employee.displayName} zurückgeben`}>Zurückgeben</Button>

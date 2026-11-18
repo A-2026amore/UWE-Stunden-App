@@ -16,7 +16,7 @@ import { dayRows, employeeMonthRows, monthSummaryCsv, timeEntriesCsv, STATEMENT_
 import { currentMonth, dateTimeDE, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, signedHours, weekdayShort } from "../../shared/format";
 import { errorText, useAsync } from "../../shared/hooks";
 import { MonthPicker } from "../../shared/MonthPicker";
-import { buildStatementFilesWithLogo, contractsForSheets, downloadAll } from "../../shared/statement";
+import { NO_OVERTIME_TEXT, buildSheetWithLogo, contractsForSheets, type SheetKind } from "../../shared/statement";
 import { loadTenantMonth, useChef } from "../context";
 import { useStatementActions } from "../statementActions";
 
@@ -54,16 +54,18 @@ export function HoursPage({ initialMonth, initialEmployee }: { initialMonth: str
     downloadBlob(new Blob([timeEntriesCsv(entries, byId)], { type: "text/csv;charset=utf-8" }), `Arbeitszeiten_${fileBase}_${who ? who.personnelNumber : "alle"}.csv`);
     toast("CSV-Datei wurde erstellt.");
   };
-  const pdf = async (r: EmployeeMonthRow) => {
+  const sheets = tenant.settings.overtimeSheet === true;
+  const pdf = async (r: EmployeeMonthRow, kind: SheetKind = "statement") => {
     setBusy(true);
     try {
       const entries = (d?.entries ?? []).filter((e) => e.employeeId === r.employee.id);
       const contracts = await contractsForSheets(tenant, () => repo.listEmployeeContracts(r.employee.id));
-      const files = await buildStatementFilesWithLogo({
+      const file = await buildSheetWithLogo({
         tenant, employee: r.employee, month, entries, allocations: d?.allocations.get(r.employee.id) ?? [], statement: r.statement, contracts,
-      });
-      downloadAll(files);
-      toast(`PDF erstellt: ${files.map((f) => f.fileName).join(", ")}`);
+      }, kind);
+      if (!file) { toast(NO_OVERTIME_TEXT, "info"); return; }
+      downloadBlob(file.blob, file.fileName);
+      toast(`PDF erstellt: ${file.fileName}`);
     } catch (e) {
       toast(errorText(e), "error");
     } finally {
@@ -131,6 +133,7 @@ export function HoursPage({ initialMonth, initialEmployee }: { initialMonth: str
                   <div class="btn-row" style={{ justifyContent: "flex-end" }}>
                     <Button size="sm" variant="secondary" icon="calendar" onClick={() => setEmployeeId(r.employee.id)} aria-label={`Tage von ${r.employee.displayName} anzeigen`}>Tage</Button>
                     <Button size="sm" variant="ghost" icon="download" onClick={() => pdf(r)} disabled={busy || !r.shifts} aria-label={`PDF-Stundenzettel für ${r.employee.displayName}`}>PDF</Button>
+                    {sheets && <Button size="sm" variant="ghost" icon="download" onClick={() => pdf(r, "overtime")} disabled={busy || !r.shifts} aria-label={`Überstundenzettel für ${r.employee.displayName}`}>Überstunden</Button>}
                   </div>
                 ) },
               ]}
@@ -141,17 +144,17 @@ export function HoursPage({ initialMonth, initialEmployee }: { initialMonth: str
         <EmployeeMonth row={selected} employee={selectedEmployee} month={month} days={dayRows((d?.entries ?? []).filter((e) => e.employeeId === employeeId))}
           issues={new Map(errorsForMonth(activeShifts((d?.entries ?? []).filter((e) => e.employeeId === employeeId)), month, tenant.settings.breakPolicy).map((i) => [i.date, i.message]))}
           withAccount={withAccount} busy={busy} loading={!d}
-          onBack={() => setEmployeeId("all")} onPdf={pdf} onCsv={csvEntries}
+          onBack={() => setEmployeeId("all")} onPdf={pdf} onOvertimePdf={sheets ? (r) => pdf(r, "overtime") : null} onCsv={csvEntries}
           onApprove={(r) => r.statement && approve(r.employee, r.statement)} onReturn={(r) => r.statement && giveBack(r.employee, r.statement)} />
       )}
     </div>
   );
 }
 
-function EmployeeMonth({ row, employee, month, days, issues, withAccount, busy, loading, onBack, onPdf, onCsv, onApprove, onReturn }: {
+function EmployeeMonth({ row, employee, month, days, issues, withAccount, busy, loading, onBack, onPdf, onOvertimePdf, onCsv, onApprove, onReturn }: {
   row: EmployeeMonthRow | null; employee: Employee | null; month: string; days: DayRow[]; issues: Map<string, string>; withAccount: boolean;
   busy: boolean; loading: boolean;
-  onBack: () => void; onPdf: (r: EmployeeMonthRow) => void; onCsv: (e: Employee) => void;
+  onBack: () => void; onPdf: (r: EmployeeMonthRow) => void; onOvertimePdf: ((r: EmployeeMonthRow) => void) | null; onCsv: (e: Employee) => void;
   onApprove: (r: EmployeeMonthRow) => void; onReturn: (r: EmployeeMonthRow) => void;
 }) {
   if (loading) return <Skeleton title={false} lines={5} />;
@@ -166,6 +169,7 @@ function EmployeeMonth({ row, employee, month, days, issues, withAccount, busy, 
         <Button variant="ghost" size="sm" icon="chevronLeft" onClick={onBack}>Alle Mitarbeitenden</Button>
         <div class="btn-row">
           <Button icon="fileCheck" onClick={() => onPdf(r)} busy={busy} disabled={!r.shifts}>PDF-Stundenzettel</Button>
+          {onOvertimePdf && <Button variant="secondary" icon="fileCheck" onClick={() => onOvertimePdf(r)} busy={busy} disabled={!r.shifts}>Überstundenzettel</Button>}
           <Button variant="secondary" icon="download" onClick={() => onCsv(employee)} disabled={!r.shifts}>CSV</Button>
         </div>
       </div>
