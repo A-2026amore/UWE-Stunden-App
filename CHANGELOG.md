@@ -5,6 +5,20 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
 ### Hinzugefügt
+- Überstunden auf eigenem Zettel (Wunsch des Inhabers 18.11.2026, Einstellung je Firma „Überstunden“, Pro, nur
+  Inhaber, Standard aus): Der Stundennachweis zeigt bei Mitarbeitenden mit Soll laut Arbeitsvertrag nur die Stunden
+  bis zum Soll („GESAMT BIS SOLL“); die Mehrstunden des Monats stehen auf einem separaten „Überstundenzettel“
+  (`…-Ueberstundenzettel-<Nr>-<Monat>.pdf`). Als Überstunden zählen die letzten Stunden des Monats; der Einsatz, der
+  das Soll überschreitet, steht anteilig auf beiden Zetteln. Beide Zettel zusammen enthalten jede geleistete Minute,
+  keine Zeit wird gelöscht. „PDF“ im Chef-Portal und in der Mitarbeiter-App liefert beide Dateien. Sobald der Monat
+  freigegeben ist (Entscheidung 18.11.2026), werden seine Mehrstunden nicht mehr ins Arbeitszeitkonto laut Vertrag
+  gebucht – das Konto geht für sie auf 0; Minderstunden bleiben wie bisher. Wird der Monat wieder geöffnet, zählen
+  die Mehrstunden bis zur erneuten Freigabe wieder. (`platform/src/core/overtime.ts`, `employmentAccount`
+  `overtimeSettled`). Ohne Verbindung druckt die Mitarbeiter-App den vollständigen Nachweis (Vertrag nicht offline).
+- Demo-/Test-Kennzeichen nachträglich ändern (Migration 0031): Firmen, die als „Demo-/Testmandant“ angelegt wurden,
+  drucken „TESTDATEN – NICHT FUER LOHNABRECHNUNG“ auf jeden Nachweis. Der Super-Admin kann das jetzt im
+  Admin-Bereich (Mandant → „Als echte Firma kennzeichnen“) mit Begründung ändern; protokolliert.
+  `PUT /api/platform/tenants/:id/demo`.
 - Lohnnebenkosten grob im Chef-Dashboard (Entscheidung 05.11.2026): In der Karte „Soll / Ist laut Arbeitsvertrag“
   stehen unter „Lohn Ist“ die geschätzten Arbeitgeberanteile und die Gesamtkosten, oben die Summe der
   Personalkosten des Monats. Minijob ca. 31 % (Pauschalen, Pauschsteuer, Umlagen), Übergangsbereich (Midijob)

@@ -3,7 +3,8 @@ import { createStatementPdf, statementFileName, type StatementPdfArgs, type Stat
 import { PRODUCT_NAME, resolveAsset } from "../../design/branding";
 import { activeShifts } from "../../core/time";
 import { summarizeMonth } from "../../core/workAccount";
-import type { Employee, MonthAllocation, MonthlyStatement, Tenant, TimeEntry } from "../../core/types";
+import { splitOvertime, targetForMonth } from "../../core/overtime";
+import type { Employee, EmploymentContract, MonthAllocation, MonthlyStatement, Tenant, TimeEntry } from "../../core/types";
 import { downloadBlob } from "./format";
 
 // ---------------------------------------------------------------- company logo for the PDF
@@ -69,14 +70,67 @@ export async function buildStatementWithLogo(args: Parameters<typeof buildStatem
   return buildStatement(args);
 }
 
-export function buildStatement(args: {
+export interface StatementArgs {
   tenant: Tenant; employee: Employee; month: string; entries: TimeEntry[];
   allocations: MonthAllocation[]; statement: MonthlyStatement | null;
-}): { blob: Blob; fileName: string } {
+  /**
+   * Contract versions of the employee (listEmployeeContracts). With the tenant setting
+   * "overtimeSheet" and a target, the statement shows the hours up to the target and the
+   * overtime goes onto the separate Überstundenzettel (core/overtime.ts).
+   */
+  contracts?: readonly EmploymentContract[] | null;
+}
+
+/** Overtime split of the month, or null (setting off, no target or no overtime). */
+export function overtimeOf(args: StatementArgs) {
+  const { tenant, month } = args;
+  if (!tenant.settings.overtimeSheet || !args.contracts?.length) return null;
+  const summary = summarizeMonth({ entries: activeShifts(args.entries), allocations: args.allocations, month, policy: tenant.settings.workAccount });
+  const active = new Set(activeShifts(args.entries).map((e) => e.id));
+  return splitOvertime({
+    entries: args.entries.filter((e) => active.has(e.id)),
+    targetMinutes: targetForMonth(args.contracts, month),
+    payableMinutes: summary.billingMinutes,
+  });
+}
+
+function pdfTenantOf(tenant: Tenant): StatementPdfArgs["tenant"] {
+  return { name: tenant.name, primaryColor: tenant.branding.primaryColor, contact: tenant.contact, logo: pdfLogo(tenant) };
+}
+
+/** The separate Überstundenzettel of the month; null when there is no overtime to print. */
+export function buildOvertimeSheet(args: StatementArgs): { blob: Blob; fileName: string; overtimeMinutes: number } | null {
+  const split = overtimeOf(args);
+  if (!split) return null;
+  const { tenant, employee, month } = args;
+  const pdfTenant = pdfTenantOf(tenant);
+  const blob = createStatementPdf({
+    tenant: pdfTenant,
+    employee: { name: employee.displayName, personnelNumber: employee.personnelNumber },
+    month,
+    kind: "overtime",
+    entries: split.overtime,
+    overtime: { targetMinutes: split.targetMinutes, payableMinutes: split.payableMinutes, overtimeMinutes: split.overtimeMinutes },
+    status: args.statement?.status ?? "draft",
+    test: tenant.isDemo,
+    productName: PRODUCT_NAME,
+  });
+  const fileName = statementFileName({ tenant: pdfTenant, personnelNumber: employee.personnelNumber, month, test: tenant.isDemo, kind: "overtime" });
+  return { blob, fileName, overtimeMinutes: split.overtimeMinutes };
+}
+
+/** Chef-Portal: logo conversion + Überstundenzettel. */
+export async function buildOvertimeSheetWithLogo(args: StatementArgs): Promise<ReturnType<typeof buildOvertimeSheet>> {
+  await preparePdfLogo(args.tenant);
+  return buildOvertimeSheet(args);
+}
+
+export function buildStatement(args: StatementArgs): { blob: Blob; fileName: string } {
   const { tenant, employee, month } = args;
   const policy = tenant.settings.workAccount;
   const summary = summarizeMonth({ entries: activeShifts(args.entries), allocations: args.allocations, month, policy });
-  const pdfTenant: StatementPdfArgs["tenant"] = { name: tenant.name, primaryColor: tenant.branding.primaryColor, contact: tenant.contact, logo: pdfLogo(tenant) };
+  const split = overtimeOf(args);
+  const pdfTenant = pdfTenantOf(tenant);
   const account: StatementPdfArgs["account"] = policy.enabled && summary.cycle
     ? {
         cycleLabel: summary.cycle.label,
@@ -95,8 +149,9 @@ export function buildStatement(args: {
     tenant: pdfTenant,
     employee: { name: employee.displayName, personnelNumber: employee.personnelNumber },
     month,
-    entries: args.entries.map((e) => ({ ...e, note: e.note })),
-    totals: { workedMinutes: summary.workedMinutes },
+    entries: split ? split.regular : args.entries.map((e) => ({ ...e, note: e.note })),
+    totals: { workedMinutes: summary.workedMinutes - (split?.overtimeMinutes ?? 0) },
+    overtime: split ? { targetMinutes: split.targetMinutes, payableMinutes: split.payableMinutes, overtimeMinutes: split.overtimeMinutes } : null,
     account,
     status: args.statement?.status ?? "draft",
     test: tenant.isDemo,
@@ -104,6 +159,47 @@ export function buildStatement(args: {
   });
   const fileName = statementFileName({ tenant: pdfTenant, personnelNumber: employee.personnelNumber, month, test: tenant.isDemo });
   return { blob, fileName };
+}
+
+/** Stundennachweis plus – when there is overtime to put on a separate sheet – the Überstundenzettel. */
+export function buildStatementFiles(args: StatementArgs): { blob: Blob; fileName: string }[] {
+  const files = [buildStatement(args)];
+  const overtime = buildOvertimeSheet(args);
+  if (overtime) files.push({ blob: overtime.blob, fileName: overtime.fileName });
+  return files;
+}
+
+/** Chef-Portal: logo conversion + all sheets of the month. */
+export async function buildStatementFilesWithLogo(args: StatementArgs): Promise<{ blob: Blob; fileName: string }[]> {
+  await preparePdfLogo(args.tenant);
+  return buildStatementFiles(args);
+}
+
+/** Contract versions for the overtime split; only loaded when the tenant uses the separate sheet. */
+export async function contractsForSheets(tenant: Tenant, load: () => Promise<EmploymentContract[]>): Promise<EmploymentContract[] | null> {
+  return tenant.settings.overtimeSheet ? load() : null;
+}
+
+/** Downloads every file (one after the other). */
+export function downloadAll(files: { blob: Blob; fileName: string }[]): void {
+  for (const f of files) downloadBlob(f.blob, f.fileName);
+}
+
+/** Several PDFs via the share sheet (when supported), otherwise downloads. */
+export async function shareOrDownloadAll(files: { blob: Blob; fileName: string }[], title: string): Promise<"shared" | "downloaded" | "cancelled"> {
+  if (files.length === 1) return shareOrDownload(files[0]!.blob, files[0]!.fileName, title);
+  const list = files.map((f) => new File([f.blob], f.fileName, { type: "application/pdf" }));
+  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+  if (typeof nav.share === "function" && nav.canShare?.({ files: list })) {
+    try {
+      await nav.share({ files: list, title });
+      return "shared";
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return "cancelled";
+    }
+  }
+  downloadAll(files);
+  return "downloaded";
 }
 
 /** Web Share API with file (iOS/Android share sheet) → fallback download. Returns what happened. */

@@ -1378,6 +1378,11 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
           if (!isValidMonth(w.startMonth)) throw new Error("Ungültiger Startmonat.");
           t.settings.workAccount = w;
         }
+        if (settings.overtimeSheet !== undefined) {
+          if (typeof settings.overtimeSheet !== "boolean") throw new Error("Ungültige Einstellung für den Überstundenzettel.");
+          if (settings.overtimeSheet) t.settings.overtimeSheet = true;
+          else delete t.settings.overtimeSheet;
+        }
         addAudit(db, s, { tenantId, action: "tenant.settings_updated", entity: "tenant", entityId: tenantId, before, after: t.settings, reason: null });
         return t;
       });
@@ -2049,7 +2054,7 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
       return read((db, s) => {
         assertPlatform(s);
         return db.audit
-          .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.legacy_import_updated" || e.action === "tenant.created" || e.entity === "support_grant"
+          .filter((e) => e.entity === "license" || e.action.startsWith("tenant.status") || e.action === "tenant.legacy_import_updated" || e.action === "tenant.demo_updated" || e.action === "tenant.created" || e.entity === "support_grant"
             || e.entity === "billing_period" || e.entity === "billing_settings" || e.entity === "invoice" || e.entity === "invoice_settings"
             || e.entity === "promo_code" || e.entity === "promo_redemption" || e.entity === "subscription")
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -2147,6 +2152,17 @@ export function createDemoRepository(storage: KeyValueStorage = localStorage, op
         const before = { legacyImportEnabled: !!t.legacyImportEnabled };
         t.legacyImportEnabled = enabled;
         addAudit(db, s, { tenantId, action: "tenant.legacy_import_updated", entity: "tenant", entityId: tenantId, before, after: { legacyImportEnabled: enabled }, reason: r });
+        return t;
+      });
+    },
+    async setTenantDemo(tenantId, isDemo, reason) {
+      return tx((db, s) => {
+        assertPlatform(s, true);
+        const r = requireReason(reason);
+        const t = tenantById(db, tenantId);
+        const before = { isDemo: t.isDemo };
+        t.isDemo = isDemo;
+        addAudit(db, s, { tenantId, action: "tenant.demo_updated", entity: "tenant", entityId: tenantId, before, after: { isDemo }, reason: r });
         return t;
       });
     },

@@ -7,11 +7,11 @@ import { Alert, BarChart, Button, Card, EmptyState, LinkButton, StatusPill, useD
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, formatDateDE, hoursLabel, monthLabelDE, todayISO } from "../../shared/format";
 import { dailyBars, hoursAxis } from "../../shared/charts";
-import { buildStatement, preparePdfLogo, shareOrDownload } from "../../shared/statement";
-import { downloadBlob } from "../../shared/format";
+import { buildStatementFiles, contractsForSheets, downloadAll, preparePdfLogo, shareOrDownloadAll } from "../../shared/statement";
 import { navigate } from "../../shared/router";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { useEmployee } from "../context";
+import { getRepository } from "../../shared/repo";
 import { syncStateOf } from "../../../data/sync";
 import type { CorrectionRequest } from "../../../core/types";
 import { requestInMonth } from "../../shared/corrections";
@@ -30,10 +30,12 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
   useEffect(() => { void preparePdfLogo(tenant); }, [tenant.branding.logoUrl]);
 
   const q = useAsync(async () => {
-    const [entries, allocations, statement] = await Promise.all([
+    const [entries, allocations, statement, contracts] = await Promise.all([
       repo.listTimeEntries(me.id, month), repo.listAllocations(me.id), repo.getStatement(me.id, month),
+      // Separate Überstundenzettel: needs the contract target (server only; offline the full statement is printed).
+      pro ? contractsForSheets(tenant, () => getRepository("app").listEmployeeContracts(me.id)).catch(() => null) : Promise.resolve(null),
     ]);
-    return { entries, allocations, statement };
+    return { entries, allocations, statement, contracts };
   }, [month, version]);
 
   // Correction requests need the server (not cached offline): a failure only hides this part.
@@ -57,10 +59,10 @@ export function MonthPage({ initialMonth }: { initialMonth: string | null }) {
     if (!data) return;
     setBusy(mode);
     try {
-      const { blob, fileName } = buildStatement({ tenant, employee: me, month, entries: data.entries, allocations: data.allocations, statement: data.statement });
-      if (mode === "download") { downloadBlob(blob, fileName); toast(`PDF gespeichert: ${fileName}`); }
+      const files = buildStatementFiles({ tenant, employee: me, month, entries: data.entries, allocations: data.allocations, statement: data.statement, contracts: data.contracts });
+      if (mode === "download") { downloadAll(files); toast(`PDF gespeichert: ${files.map((f) => f.fileName).join(", ")}`); }
       else {
-        const r = await shareOrDownload(blob, fileName, `Stundennachweis ${monthLabelDE(month)}`);
+        const r = await shareOrDownloadAll(files, `Stundennachweis ${monthLabelDE(month)}`);
         if (r === "downloaded") toast("Teilen wird auf diesem Gerät nicht unterstützt – die PDF wurde heruntergeladen.", "info");
       }
     } catch (err) {

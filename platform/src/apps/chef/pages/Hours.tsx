@@ -16,7 +16,7 @@ import { dayRows, employeeMonthRows, monthSummaryCsv, timeEntriesCsv, STATEMENT_
 import { currentMonth, dateTimeDE, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, signedHours, weekdayShort } from "../../shared/format";
 import { errorText, useAsync } from "../../shared/hooks";
 import { MonthPicker } from "../../shared/MonthPicker";
-import { buildStatementWithLogo } from "../../shared/statement";
+import { buildStatementFilesWithLogo, contractsForSheets, downloadAll } from "../../shared/statement";
 import { loadTenantMonth, useChef } from "../context";
 import { useStatementActions } from "../statementActions";
 
@@ -58,11 +58,12 @@ export function HoursPage({ initialMonth, initialEmployee }: { initialMonth: str
     setBusy(true);
     try {
       const entries = (d?.entries ?? []).filter((e) => e.employeeId === r.employee.id);
-      const { blob, fileName } = await buildStatementWithLogo({
-        tenant, employee: r.employee, month, entries, allocations: d?.allocations.get(r.employee.id) ?? [], statement: r.statement,
+      const contracts = await contractsForSheets(tenant, () => repo.listEmployeeContracts(r.employee.id));
+      const files = await buildStatementFilesWithLogo({
+        tenant, employee: r.employee, month, entries, allocations: d?.allocations.get(r.employee.id) ?? [], statement: r.statement, contracts,
       });
-      downloadBlob(blob, fileName);
-      toast(`PDF erstellt: ${fileName}`);
+      downloadAll(files);
+      toast(`PDF erstellt: ${files.map((f) => f.fileName).join(", ")}`);
     } catch (e) {
       toast(errorText(e), "error");
     } finally {

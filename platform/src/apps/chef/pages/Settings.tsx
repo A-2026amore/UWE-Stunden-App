@@ -77,6 +77,27 @@ export function SettingsPage() {
 
   useEffect(() => { setWa(tenant.settings.workAccount); }, [tenant]);
 
+  const [otBusy, setOtBusy] = useState(false);
+  const [otError, setOtError] = useState<string | null>(null);
+  const overtimeSheet = tenant.settings.overtimeSheet === true;
+  const toggleOvertimeSheet = async () => {
+    setOtError(null);
+    const on = !overtimeSheet;
+    const ok = await dialogs.confirm(on
+      ? { title: "Überstunden auf eigenen Zettel?", message: "Der Stundennachweis zeigt dann nur noch die Stunden bis zum Soll laut Arbeitsvertrag. Die Überstunden kommen auf einen separaten Überstundenzettel. Sobald Sie den Monat freigeben, gelten die Überstunden als erledigt und das Arbeitszeitkonto zählt sie nicht mehr (es geht für sie auf 0). Alle Zeiten bleiben gespeichert, beide Zettel können jederzeit erneut gedruckt werden.", confirmLabel: "Einschalten" }
+      : { title: "Überstundenzettel ausschalten?", message: "Der Stundennachweis zeigt dann wieder alle Stunden, und Mehrstunden bleiben im Arbeitszeitkonto stehen – auch für bereits freigegebene Monate.", confirmLabel: "Ausschalten" });
+    if (!ok) return;
+    setOtBusy(true);
+    try {
+      setTenant(await repo.updateSettings(tenant.id, { overtimeSheet: on }));
+      toast(on ? "Überstunden kommen jetzt auf einen eigenen Zettel." : "Überstundenzettel ausgeschaltet.");
+    } catch (err) {
+      setOtError(errorText(err));
+    } finally {
+      setOtBusy(false);
+    }
+  };
+
   const save = async (e: Event) => {
     e.preventDefault();
     setError(null);
@@ -175,6 +196,19 @@ export function SettingsPage() {
           {error && <Alert tone="danger" live>{error}</Alert>}
           <div><Button type="submit" busy={busy} icon="check">Einstellungen speichern</Button></div>
         </form>
+      </Card>}
+
+      {pro && <Card title="Überstunden">
+        <div class="stack" data-testid="overtime-sheet-setting">
+          <p class="muted small mb-0">Gilt für Mitarbeitende mit Soll-Stunden im Arbeitsvertrag (unter „Mitarbeiter“ → „Bearbeiten“).</p>
+          {overtimeSheet
+            ? <Alert tone="success"><p>Eingeschaltet: Der Stundennachweis zeigt die Stunden bis zum Soll, die Überstunden stehen auf einem eigenen Überstundenzettel. Mit der Freigabe des Monats gehen sie im Arbeitszeitkonto auf 0.</p></Alert>
+            : <Alert tone="info"><p>Ausgeschaltet: Der Stundennachweis zeigt alle Stunden, Mehrstunden bleiben im Arbeitszeitkonto.</p></Alert>}
+          {otError && <Alert tone="danger" live>{otError}</Alert>}
+          {me.role === "owner"
+            ? <div><Button variant="secondary" busy={otBusy} onClick={toggleOvertimeSheet}>{overtimeSheet ? "Ausschalten" : "Überstunden auf eigenen Zettel"}</Button></div>
+            : <p class="muted small mb-0">Nur der Inhaber kann diese Einstellung ändern.</p>}
+        </div>
       </Card>}
 
       <TwoFactorCard repo={repo} account={session.email} />

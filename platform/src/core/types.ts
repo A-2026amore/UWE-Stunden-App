@@ -72,6 +72,12 @@ export interface WorkAccountPolicy {
 export interface TenantSettings {
   breakPolicy: BreakPolicy;
   workAccount: WorkAccountPolicy;
+  /**
+   * Owner setting (core/overtime.ts): the monthly statement shows the hours only up to the contract
+   * target; the overtime goes onto a separate Überstundenzettel and, once the month is approved,
+   * is not booked into the hours account. Missing = false.
+   */
+  overtimeSheet?: boolean;
 }
 
 export type TenantStatus = "active" | "suspended" | "pending" | "deactivated";

@@ -158,3 +158,25 @@ describe("employmentAccount", () => {
     expect(later.current).toBeNull();
   });
 });
+
+describe("employmentAccount with a separate overtime sheet", () => {
+  const version = {
+    employeeId: "e", tenantId: "t", validFrom: "2026-10", employmentType: "minijob" as const, hourlyWageCents: 1500,
+    monthlyTargetMinutes: 28 * 60, carryOverMinutes: 0, updatedAt: "",
+  };
+  const payable = (m: string) => (m === "2026-10" ? 30 * 60 + 15 : m === "2026-11" ? 27 * 60 : 29 * 60);
+
+  it("does not book the Mehrstunden of an approved (settled) month; Minderstunden stay", () => {
+    const acc = employmentAccount({ versions: [version], payableMinutes: payable, currentMonth: "2026-12", overtimeSettled: (m) => m === "2026-10" });
+    expect(acc.months.map((m) => [m.month, m.bookedMinutes, m.settledOvertimeMinutes])).toEqual([
+      ["2026-10", 0, 135], ["2026-11", -60, 0], ["2026-12", 60, 0],
+    ]);
+    expect(acc.balanceMinutes).toBe(0);
+  });
+
+  it("books the Mehrstunden as before while the month is not settled", () => {
+    const acc = employmentAccount({ versions: [version], payableMinutes: payable, currentMonth: "2026-10", overtimeSettled: () => false });
+    expect(acc.balanceMinutes).toBe(135);
+    expect(acc.current?.settledOvertimeMinutes).toBe(0);
+  });
+});

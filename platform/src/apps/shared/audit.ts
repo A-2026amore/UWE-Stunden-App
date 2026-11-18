@@ -39,6 +39,7 @@ export const ACTION_LABEL: Record<string, string> = {
   "tenant.renamed": "Firmenname geändert",
   "tenant.two_factor_policy_updated": "Zwei-Faktor-Pflicht geändert",
   "tenant.legacy_import_updated": "Übernahme aus alter Stunden-App geändert",
+  "tenant.demo_updated": "Demo-/Test-Kennzeichen geändert",
   "invitation.created": "Einladung erstellt",
   "statement.submit": "Monatsnachweis eingereicht",
   "statement.approve": "Monatsnachweis freigegeben",

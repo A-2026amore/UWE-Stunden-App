@@ -255,7 +255,15 @@ export interface StatementPdfArgs {
   tenant: StatementPdfTenant;
   employee: { name: string; personnelNumber: string };
   month: ISOMonth;
-  entries: readonly (ShiftInput & { note?: string | null })[];
+  /**
+   * `minutes`/`partial`: share of the entry shown on this sheet when the month is split at the
+   * contract target (core/overtime.ts); without them the full entry is shown.
+   */
+  entries: readonly (ShiftInput & { note?: string | null; minutes?: number; partial?: boolean })[];
+  /** "statement" (default) = Stundennachweis, "overtime" = separate Überstundenzettel. */
+  kind?: "statement" | "overtime";
+  /** Month split at the contract target: the overtime is on the separate Überstundenzettel. */
+  overtime?: { targetMinutes: number; payableMinutes: number; overtimeMinutes: number } | null;
   /** Optional cross-check: must match the sum of the entries (±1 min). */
   totals?: { workedMinutes: number } | null;
   account?: StatementPdfAccount | null;
@@ -307,7 +315,12 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   if (!employee || !employee.name || !employee.personnelNumber || !/^\d{4}-\d{2}$/.test(month) || !Array.isArray(args.entries) || !args.entries.length)
     throw new Error("Für diesen Monat sind keine gültigen Arbeitszeiten zum Export vorhanden.");
   const pal = paletteFromPrimary(tenant.primaryColor);
-  const records = args.entries.map((e) => ({ ...asShift(e), note: e.note ?? "" }));
+  const kind = args.kind ?? "statement";
+  const ot = args.overtime ?? null;
+  if (kind === "overtime" && !ot) throw new Error("Für den Überstundenzettel fehlen Soll und Überstunden.");
+  if (ot && ![ot.targetMinutes, ot.payableMinutes, ot.overtimeMinutes].every((x) => Number.isSafeInteger(x) && x >= 0))
+    throw new Error("Ungültige Überstunden-Angaben.");
+  const records = args.entries.map((e) => ({ ...asShift(e), note: e.note ?? "", minutes: e.minutes, partial: e.partial === true }));
   const entries = records.slice().sort((a, b) =>
     String(a.date).localeCompare(String(b.date)) || String(a.start).localeCompare(String(b.start)) || String(a.end).localeCompare(String(b.end)));
 
@@ -332,8 +345,8 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
       s += txt(M, H - 50, name, 20, true, pal.accent);
     }
     // Document title (right) and accent rule.
-    s += txtRight(W - M, H - 46, "STUNDENNACHWEIS", 15, true, pal.strong);
-    s += txtRight(W - M, H - 62, "Arbeitszeitnachweis " + monthLabelDE(month), 9, false, pal.muted);
+    s += txtRight(W - M, H - 46, kind === "overtime" ? "ÜBERSTUNDENZETTEL" : "STUNDENNACHWEIS", 15, true, pal.strong);
+    s += txtRight(W - M, H - 62, (kind === "overtime" ? "Überstunden " : "Arbeitszeitnachweis ") + monthLabelDE(month), 9, false, pal.muted);
     s += rect(M, H - 86, WIDTH, 2, pal.accent);
     if (test) {
       s += rect(M, H - 123, WIDTH, 27, "1 0.92 0.73");
@@ -387,8 +400,14 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   let pauseSum = 0;
   const days = new Set<string>();
   for (const r of entries) {
-    const minutes = entryMinutes(r);
-    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) throw new Error("Ungültige Stundenangabe im Eintrag.");
+    const full = entryMinutes(r);
+    if (!Number.isFinite(full) || full <= 0 || full > 1440) throw new Error("Ungültige Stundenangabe im Eintrag.");
+    const minutes = r.minutes ?? full;
+    if (!Number.isSafeInteger(minutes) || minutes <= 0 || minutes > full) throw new Error("Ungültige Stundenangabe im Eintrag.");
+    if (r.partial) {
+      const share = "anteilig " + formatHours(minutes) + " von " + formatHours(full) + " Std., Rest auf " + (kind === "overtime" ? "Stundennachweis" : "Überstundenzettel");
+      r.note = r.note ? share + " | " + r.note : share;
+    }
     sum += minutes;
     pauseSum += Number(r.pause || 0);
     days.add(String(r.date));
@@ -410,21 +429,33 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
   }
   if (args.totals && Math.abs(sum - args.totals.workedMinutes) > 1)
     throw new Error("Die Monatsstunden stimmen nicht mit dem Stundennachweis überein.");
-  if (acc && Math.abs(sum - acc.workedMinutes) > 1)
+  if (acc && Math.abs(sum + (ot?.overtimeMinutes ?? 0) - acc.workedMinutes) > 1)
     throw new Error("Die Monatsstunden im Arbeitszeitkonto stimmen nicht mit dem Stundennachweis überein.");
-  if (y < (acc ? 225 : 133)) openPage();
+  const otExtra = ot && kind === "statement" ? 16 : 0;
+  if (y < (kind === "statement" && acc ? 225 + otExtra : 133 + otExtra)) openPage();
   y -= 24;
-  if (acc) {
+  if (kind === "overtime" && ot) {
+    sections.push(rect(M, y - 42, WIDTH, 69, pal.tint));
+    sections.push(rect(M, y - 42, 3, 69, pal.accent));
+    sections.push(txt(M + 14, y + 6, "ÜBERSTUNDEN: " + formatHours(sum) + " Stunden", 15, true, pal.strong));
+    sections.push(txt(M + 14, y - 13, "Soll laut Arbeitsvertrag: " + formatHours(ot.targetMinutes) + " Std.   |   Abrechenbar im Monat: " +
+      formatHours(ot.payableMinutes) + " Std.   |   Auf dem Stundennachweis: " + formatHours(ot.payableMinutes - ot.overtimeMinutes) + " Std.", 8.5, false, "0.20 0.26 0.32"));
+    sections.push(txt(M + 14, y - 30, "Stundennachweis und Überstundenzettel zusammen enthalten alle geleisteten Stunden des Monats.", 7.5, false, "0.35 0.36 0.36"));
+  } else if (acc) {
     // Work shifts stay in the readable full-width table; the account appears
     // only in a separate labelled section.
     const schoolYear = (acc.model ?? "school-year") === "school-year";
     const cycleWord = schoolYear ? "Schuljahr" : "Kalenderjahr";
-    sections.push(rect(M, y - 100, WIDTH, 127, pal.tint));
-    sections.push(rect(M, y - 100, 3, 127, pal.accent));
-    sections.push(txt(M + 12, y + 5, "GESAMT GELEISTET: " + formatHours(sum) + " Stunden", 14, true, pal.strong));
+    sections.push(rect(M, y - 100 - otExtra, WIDTH, 127 + otExtra, pal.tint));
+    sections.push(rect(M, y - 100 - otExtra, 3, 127 + otExtra, pal.accent));
+    sections.push(txt(M + 12, y + 5, (ot ? "GESAMT BIS SOLL: " : "GESAMT GELEISTET: ") + formatHours(sum) + " Stunden", 14, true, pal.strong));
     sections.push(txt(M + 12, y - 16, "ARBEITSZEITKONTO" + (acc.test ? " - TEST" : "") + " | " + cycleWord + " " + acc.cycleLabel, 9, true, "0.14 0.36 0.38"));
     sections.push(txt(M + 12, y - 34, "Ins Konto: " + formatHours(acc.allocatedMinutes) + " Std.   |   Zur Abrechnung vorgemerkt: " +
-      formatHours(acc.billingMinutes) + " Std.", 9, false, "0.12 0.23 0.25"));
+      formatHours(acc.billingMinutes - (ot?.overtimeMinutes ?? 0)) + " Std." + (ot ? " (Soll laut Arbeitsvertrag)" : ""), 9, false, "0.12 0.23 0.25"));
+    if (ot) {
+      sections.push(txt(M + 12, y - 50, "Überstunden: " + formatHours(ot.overtimeMinutes) + " Std. - stehen auf dem separaten Überstundenzettel", 9, true, "0.12 0.23 0.25"));
+      y -= otExtra;
+    }
     sections.push(txt(M + 12, y - 51, (schoolYear ? "Anrechenbare Schulzeit in diesem Monat: " : "Anrechenbare Arbeitszeit in diesem Monat: ") +
       formatHours(acc.eligibleMinutes) + " Std.", 9, false, "0.12 0.23 0.25"));
     sections.push(txt(M + 12, y - 67, "Jahresstand nach diesem Monat: " + formatHours(acc.balanceMinutes) +
@@ -440,7 +471,12 @@ export function createStatementPdfBytes(args: StatementPdfArgs): Uint8Array {
     // Summary block: total, number of shifts, working days and breaks.
     sections.push(rect(M, y - 26, WIDTH, 53, pal.tint));
     sections.push(rect(M, y - 26, 3, 53, pal.accent));
-    sections.push(txt(M + 14, y + 6, "GESAMT: " + formatHours(sum) + " Stunden", 15, true, pal.strong));
+    if (ot) {
+      sections.push(rect(M, y - 42, WIDTH, 16, pal.tint));
+      sections.push(txt(M + 14, y - 35, "Soll laut Arbeitsvertrag: " + formatHours(ot.targetMinutes) + " Std.   |   Überstunden: " +
+        formatHours(ot.overtimeMinutes) + " Std. - stehen auf dem separaten Überstundenzettel", 8.5, true, "0.20 0.26 0.32"));
+    }
+    sections.push(txt(M + 14, y + 6, (ot ? "GESAMT BIS SOLL: " : "GESAMT: ") + formatHours(sum) + " Stunden", 15, true, pal.strong));
     sections.push(txt(M + 14, y - 13, "Einsätze: " + entries.length + "   |   Arbeitstage: " + days.size + "   |   Pausen gesamt: " +
       formatHours(pauseSum) + " Std.", 8.5, false, "0.20 0.26 0.32"));
   }
@@ -524,9 +560,9 @@ export function createStatementPdf(args: StatementPdfArgs): Blob {
  * File name "<prefix>-Stundenzettel-<personnel number>-<month>.pdf" like the old app
  * (with "TEST-" for test data). Prefix: tenant.filePrefix, otherwise the cleaned company name.
  */
-export function statementFileName(args: { tenant: Pick<StatementPdfTenant, "name" | "filePrefix">; personnelNumber: string; month: ISOMonth; test?: boolean }): string {
+export function statementFileName(args: { tenant: Pick<StatementPdfTenant, "name" | "filePrefix">; personnelNumber: string; month: ISOMonth; test?: boolean; kind?: "statement" | "overtime" }): string {
   const clean = (s: string) => String(s).replace(/[^a-zA-Z0-9_-]/g, "");
   const ascii = (s: string) => s.replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss");
   const prefix = clean(args.tenant.filePrefix ?? ascii(args.tenant.name).replace(/\s+/g, "-")).slice(0, 40) || "Zeiterfassung";
-  return prefix + "-" + (args.test ? "TEST-" : "") + "Stundenzettel-" + clean(args.personnelNumber) + "-" + args.month + ".pdf";
+  return prefix + "-" + (args.test ? "TEST-" : "") + (args.kind === "overtime" ? "Ueberstundenzettel-" : "Stundenzettel-") + clean(args.personnelNumber) + "-" + args.month + ".pdf";
 }

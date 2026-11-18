@@ -4,7 +4,7 @@
  */
 import type { Employee, EmploymentContract, EmploymentType, Tenant, TimeEntry } from "../../core/types";
 import {
-  EMPLOYMENT_TYPE_LABEL, contractForMonth, employmentAccount, statutoryLimitsFor, suggestedMinijobTargetMinutes,
+  EMPLOYMENT_TYPE_LABEL, contractForMonth, employmentAccount, monthsBetween, statutoryLimitsFor, suggestedMinijobTargetMinutes,
   type EmploymentAccount, type EmploymentInput,
 } from "../../core/employment";
 import { formatEuro, parseEuro } from "../../core/billing";
@@ -43,15 +43,20 @@ export async function loadEmploymentOverview(repo: AreaRepository, tenant: Tenan
   if (!people.length || !starts[0] || starts[0] > month) {
     return people.map((e) => ({ employee: e, versions: contracts.filter((c) => c.employeeId === e.id), account: employmentAccount({ versions: [], payableMinutes: () => 0, currentMonth: month }) }));
   }
-  const [entries, allocLists] = await Promise.all([
+  // Separate Überstundenzettel (core/overtime.ts): Mehrstunden of approved months are settled.
+  const sheetMonths = tenant.settings.overtimeSheet ? monthsBetween(starts[0], month) : [];
+  const [entries, allocLists, statementLists] = await Promise.all([
     entriesBetween(repo, tenant.id, starts[0], month),
     Promise.all(people.map((e) => repo.listAllocations(e.id))),
+    Promise.all(sheetMonths.map((m) => repo.listStatements(tenant.id, m))),
   ]);
+  const approved = new Set(statementLists.flat().filter((st) => st.status === "approved").map((st) => st.employeeId + "|" + st.month));
   return people.map((e, i) => {
     const own = activeShifts(entries.filter((x) => x.employeeId === e.id));
     const versions = contracts.filter((c) => c.employeeId === e.id);
     const payable = (m: string) => summarizeMonth({ entries: own, allocations: allocLists[i]!, month: m, policy: tenant.settings.workAccount }).billingMinutes;
-    return { employee: e, versions, account: employmentAccount({ versions, payableMinutes: payable, currentMonth: month }) };
+    const overtimeSettled = (m: string) => approved.has(e.id + "|" + m);
+    return { employee: e, versions, account: employmentAccount({ versions, payableMinutes: payable, currentMonth: month, overtimeSettled }) };
   });
 }
 

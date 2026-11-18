@@ -387,6 +387,20 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
     catch (e) { toast(errorText(e), "error"); }
   };
 
+  const toggleDemo = async () => {
+    const demo = !t.isDemo;
+    const reason = await dialogs.askReason({
+      title: demo ? "Als Demo-/Testmandant kennzeichnen?" : "Als echte Firma kennzeichnen?",
+      message: demo
+        ? "Alle Stundennachweise dieses Mandanten tragen dann den Hinweis „TESTDATEN – nicht für Lohnabrechnung“. Der Mandant zählt nicht mehr zum Umsatz."
+        : "Die Stundennachweise tragen dann keinen Hinweis „TESTDATEN“ mehr und gelten als echte Nachweise. Der Mandant zählt zum Umsatz (Tarif und Konditionen wie eingestellt).",
+      confirmLabel: demo ? "Als Demo kennzeichnen" : "Als echte Firma kennzeichnen", danger: false,
+    });
+    if (!reason) return;
+    try { await repo.setTenantDemo(t.id, demo, reason); toast(demo ? "Als Demo-/Testmandant gekennzeichnet." : "Als echte Firma gekennzeichnet."); setTick((x) => x + 1); }
+    catch (e) { toast(errorText(e), "error"); }
+  };
+
   const saveLicense = async (e: Event) => {
     e.preventDefault();
     setError(null);
@@ -438,9 +452,12 @@ function TenantDetail({ id, readOnly }: { id: string; readOnly: boolean }) {
           )}
           <p class="xsmall muted" style={{ marginTop: "var(--space-3)" }}>Gesperrt = vorübergehend, deaktiviert = Vertrag beendet. In beiden Fällen bleiben alle Daten erhalten.</p>
           {!readOnly && (
-            <div style={{ marginTop: "var(--space-3)" }}>
+            <div class="btn-row" style={{ marginTop: "var(--space-3)" }}>
               <Button variant="secondary" size="sm" icon="upload" onClick={toggleLegacyImport}>
                 {t.legacyImportEnabled ? "Übernahme aus alter Stunden-App ausblenden" : "Übernahme aus alter Stunden-App anbieten"}
+              </Button>
+              <Button variant="secondary" size="sm" icon="shield" onClick={toggleDemo} data-testid="tenant-demo-toggle">
+                {t.isDemo ? "Als echte Firma kennzeichnen (kein TESTDATEN mehr)" : "Als Demo-/Testmandant kennzeichnen"}
               </Button>
             </div>
           )}

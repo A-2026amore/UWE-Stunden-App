@@ -211,6 +211,17 @@ describe("demo repository – statements, work account, platform", () => {
     expect(audit.some((e) => e.reason === "Kunde hatte die alte App" && (e.after as { legacyImportEnabled?: boolean } | null)?.legacyImportEnabled === true)).toBe(true);
   });
 
+  it("demo/test flag: only super admins switch it (with reason), audited", async () => {
+    const admin = (await as("admin@plattform.example")).repo;
+    const support = (await as("support@plattform.example")).repo;
+    await expect(support.setTenantDemo(DEMO_TENANT_IDS.pflege, false, "Test")).rejects.toBeInstanceOf(AccessDeniedError);
+    await expect(admin.setTenantDemo(DEMO_TENANT_IDS.pflege, false, "")).rejects.toThrow();
+    const t = await admin.setTenantDemo(DEMO_TENANT_IDS.pflege, false, "Echte Firma");
+    expect(t.isDemo).toBe(false);
+    const audit = await admin.listPlatformAudit();
+    expect(audit.some((e) => e.action === "tenant.demo_updated" && e.reason === "Echte Firma")).toBe(true);
+  });
+
   it("blocks sign-in for suspended tenants", async () => {
     const ctx = await as("admin@plattform.example");
     await ctx.repo.setTenantStatus(DEMO_TENANT_IDS.pflege, "suspended", "Zahlungsklärung (Demo)");
