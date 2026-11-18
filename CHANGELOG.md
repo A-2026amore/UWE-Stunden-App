@@ -10,7 +10,10 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
   bis zum Soll („GESAMT BIS SOLL“); die Mehrstunden des Monats stehen auf einem separaten „Überstundenzettel“
   (`…-Ueberstundenzettel-<Nr>-<Monat>.pdf`). Als Überstunden zählen die letzten Stunden des Monats; der Einsatz, der
   das Soll überschreitet, steht anteilig auf beiden Zetteln. Beide Zettel zusammen enthalten jede geleistete Minute,
-  keine Zeit wird gelöscht. „PDF“ im Chef-Portal und in der Mitarbeiter-App liefert beide Dateien. Sobald der Monat
+  keine Zeit wird gelöscht. Der Überstundenzettel hat einen eigenen Knopf („Überstunden“ in Stundenübersicht und
+  Monatsnachweisen, „Überstundenzettel“ in Arbeitszeiten, „Überstundenzettel speichern“ in der Mitarbeiter-App);
+  „PDF teilen“ am Handy schickt beide Dateien. Zuerst lud „PDF“ beide Dateien nacheinander – Browser blockieren den
+  zweiten automatischen Download, deshalb kam live kein Überstundenzettel an (18.11.2026). Sobald der Monat
   freigegeben ist (Entscheidung 18.11.2026), werden seine Mehrstunden nicht mehr ins Arbeitszeitkonto laut Vertrag
   gebucht – das Konto geht für sie auf 0; Minderstunden bleiben wie bisher. Wird der Monat wieder geöffnet, zählen
   die Mehrstunden bis zur erneuten Freigabe wieder. (`platform/src/core/overtime.ts`, `employmentAccount`

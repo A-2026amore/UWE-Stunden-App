@@ -139,12 +139,16 @@ test("overtime on a separate sheet: two PDFs, and approving the month clears the
 
   // Ben (Minijob, 43 h target, far more hours in October): statement up to the target + Überstundenzettel.
   await go(page, "#/stunden?m=2026-10");
-  const names: string[] = [];
-  page.on("download", (d) => names.push(d.suggestedFilename()));
+  // One PDF per click (browsers block a second automatic download): own button for the Überstundenzettel.
+  const statement = page.waitForEvent("download");
   await page.getByRole("button", { name: "PDF-Stundenzettel für Ben Muster" }).click();
-  await expect.poll(() => names.length).toBe(2);
-  expect(names.some((n) => n.includes("-Stundenzettel-"))).toBe(true);
-  expect(names.some((n) => n.includes("-Ueberstundenzettel-"))).toBe(true);
+  expect((await statement).suggestedFilename()).toContain("-Stundenzettel-");
+  const overtime = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Überstundenzettel für Ben Muster" }).click();
+  expect((await overtime).suggestedFilename()).toContain("-Ueberstundenzettel-");
+  // Without a target (Deniz, open contract) there is no sheet, only a hint.
+  await page.getByRole("button", { name: "Überstundenzettel für Deniz Test" }).click();
+  await expect(page.locator(".toast").filter({ hasText: "kein Überstundenzettel nötig" })).toBeVisible();
 
   // Approving October settles its Mehrstunden: the account no longer contains them.
   await go(page, "#/nachweise");
