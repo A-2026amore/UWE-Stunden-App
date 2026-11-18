@@ -82,7 +82,7 @@ function apiModeTexts(): Plugin {
       if (!existsSync(file)) return;
       const m = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
       m.id = "./?app=stundenwerk-mitarbeiter";
-      m.name = "Zeiterfassung – Mitarbeiter";
+      m.name = "Schichtklar24 – Mitarbeiter";
       m.description = "Arbeitszeiten erfassen, Monatsnachweis senden, Arbeitszeitkonto einsehen.";
       writeFileSync(file, JSON.stringify(m, null, 2) + "\n");
     },

@@ -4,6 +4,16 @@ Format nach [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionen 
 
 ## [Unveröffentlicht] – Plattform 0.1.0 (Branch `develop`)
 
+### Behoben
+- Einheitliches App-Symbol auf dem Handy (Wunsch des Inhabers 18.11.2026): Je nach Seite, von der aus Mitarbeitende
+  die App auf den Startbildschirm legten, kam ein anderes Symbol – Startseite, Einladung, Passwort-neu und
+  Rechtstexte hatten kein `apple-touch-icon` (iPhone nimmt dann ein Bildschirmfoto der Seite) und nur ein SVG-Favicon
+  (Android malt dann einen Buchstaben auf zufälliger Farbe). Jetzt verweisen alle Seiten auf dasselbe
+  Schichtklar24-Symbol (Haken-Uhr) als PNG 180/192 px, dazu `/apple-touch-icon.png` und `/favicon.ico` im
+  Stammverzeichnis. Name auf dem Startbildschirm „Schichtklar24“ (Chef/Admin: „Schichtklar24 Chef/Admin“); die
+  Manifest-`id` bleibt gleich, installierte Apps werden nicht doppelt. Bereits installierte Symbole ändern sich erst
+  nach Entfernen und neu Hinzufügen. Test: `tests/unit/app-icon.test.ts`.
+
 ### Hinzugefügt
 - Überstunden auf eigenem Zettel (Wunsch des Inhabers 18.11.2026, Einstellung je Firma „Überstunden“, Pro, nur
   Inhaber, Standard aus): Der Stundennachweis zeigt bei Mitarbeitenden mit Soll laut Arbeitsvertrag nur die Stunden

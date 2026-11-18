@@ -1,7 +1,7 @@
 {
   "id": "./?app=stundenwerk-mitarbeiter-demo",
-  "name": "Zeiterfassung – Mitarbeiter (Demo)",
-  "short_name": "Zeiterfassung",
+  "name": "Schichtklar24 – Mitarbeiter (Demo)",
+  "short_name": "Schichtklar24",
   "description": "Arbeitszeiten erfassen, Monatsnachweis senden, Arbeitszeitkonto einsehen (Demo-Umgebung).",
   "lang": "de",
   "dir": "ltr",
