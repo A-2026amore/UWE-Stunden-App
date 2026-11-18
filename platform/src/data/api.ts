@@ -441,6 +441,9 @@ export function createApiRepository(baseUrl: string, options: ApiRepositoryOptio
     setLegacyImport(tenantId, enabled, reason) {
       return request<Tenant>("PUT", `/api/platform/tenants/${enc(tenantId)}/legacy-import`, { enabled, reason });
     },
+    setTenantDemo(tenantId, isDemo, reason) {
+      return request<Tenant>("PUT", `/api/platform/tenants/${enc(tenantId)}/demo`, { isDemo, reason });
+    },
     setLicense(tenantId, plan: LicensePlan, patch: LicensePatch = {}) {
       return request<License>("PUT", `/api/platform/tenants/${enc(tenantId)}/license`, { plan, ...patch });
     },

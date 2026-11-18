@@ -14,7 +14,10 @@
  *  - finished months count fully; the running month counts only Mehrstunden
  *    (hours already worked stay worked – Minderstunden are known only at the
  *    end of the month);
- *  - a version's carry-over is booked once in its first month.
+ *  - a version's carry-over is booked once in its first month;
+ *  - tenant setting "overtimeSheet" (core/overtime.ts): Mehrstunden of an approved month are
+ *    printed on a separate Überstundenzettel and therefore NOT booked into the account
+ *    (settledOvertimeMinutes) – the account starts again at 0 for them. Minderstunden stay.
  * Months with an open contract change nothing. The worked minutes themselves are
  * never modified.
  *
@@ -138,6 +141,8 @@ export interface EmploymentMonth {
   /** Booked into the account in this month (difference as described above + carry-over). */
   bookedMinutes: number;
   carryOverMinutes: number;
+  /** Mehrstunden settled on the separate Überstundenzettel (not booked into the account). */
+  settledOvertimeMinutes: number;
   balanceAfterMinutes: number;
   /** payable hours × hourly wage (cents); null without wage. */
   earningsCents: number | null;
@@ -169,6 +174,8 @@ export function employmentAccount(args: {
   versions: readonly EmploymentContract[];
   payableMinutes: (month: ISOMonth) => number;
   currentMonth: ISOMonth;
+  /** True when the Mehrstunden of the month went onto the separate Überstundenzettel (approved month). */
+  overtimeSettled?: (month: ISOMonth) => boolean;
 }): EmploymentAccount {
   const { versions, currentMonth } = args;
   const sorted = [...versions].sort((a, b) => a.validFrom.localeCompare(b.validFrom));
@@ -184,7 +191,9 @@ export function employmentAccount(args: {
       const running = month === currentMonth;
       const differenceMinutes = targetMinutes === null ? null : payableMinutes - targetMinutes;
       const carryOverMinutes = contract.validFrom === month ? contract.carryOverMinutes : 0;
-      const diffBooked = differenceMinutes === null ? 0 : running ? Math.max(0, differenceMinutes) : differenceMinutes;
+      let diffBooked = differenceMinutes === null ? 0 : running ? Math.max(0, differenceMinutes) : differenceMinutes;
+      const settledOvertimeMinutes = diffBooked > 0 && args.overtimeSettled?.(month) ? diffBooked : 0;
+      diffBooked -= settledOvertimeMinutes;
       const bookedMinutes = diffBooked + carryOverMinutes;
       if (targetMinutes !== null || carryOverMinutes !== 0) hasAccount = true;
       balance += bookedMinutes;
@@ -194,7 +203,7 @@ export function employmentAccount(args: {
       const minijobLimitCents = contract.employmentType === "minijob" ? limits?.minijobLimitCents ?? null : null;
       months.push({
         month, contract, targetMinutes, payableMinutes, differenceMinutes, running, bookedMinutes, carryOverMinutes,
-        balanceAfterMinutes: balance, earningsCents, minijobLimitCents,
+        settledOvertimeMinutes, balanceAfterMinutes: balance, earningsCents, minijobLimitCents,
         overMinijobLimit: minijobLimitCents !== null && earningsCents !== null && earningsCents > minijobLimitCents,
         belowMinimumWage: wage !== null && limits !== null && wage < limits.minimumWageCents,
       });

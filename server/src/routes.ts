@@ -241,8 +241,11 @@ function contactPatch(raw: unknown): Record<string, unknown> {
 }
 
 function mergeSettings(current: TenantSettings, raw: unknown): TenantSettings {
-  const s = v.object(raw, ["breakPolicy", "workAccount"], "Einstellung");
+  const s = v.object(raw, ["breakPolicy", "workAccount", "overtimeSheet"], "Einstellung");
   const next: TenantSettings = { breakPolicy: { ...current.breakPolicy }, workAccount: { ...current.workAccount } };
+  // Separate Überstundenzettel (core/overtime.ts); kept as it is unless sent.
+  const overtimeSheet = s.overtimeSheet === undefined ? current.overtimeSheet === true : v.bool(s.overtimeSheet, "Überstundenzettel");
+  if (overtimeSheet) next.overtimeSheet = true;
   if (s.breakPolicy !== undefined) {
     const bp = v.object(s.breakPolicy, ["thresholds", "maxShiftMinutes", "minPauseSegmentMinutes"], "Pausenregel");
     if (bp.maxShiftMinutes !== undefined) next.breakPolicy.maxShiftMinutes = v.int(bp.maxShiftMinutes, "Maximale Einsatzdauer (Minuten)", 60, 720);
@@ -931,6 +934,19 @@ export function registerDomainRoutes(router: Router, app: AppContext): void {
     return app.asUser(ctx, async (q) => {
       await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen die Übernahme aus der bisherigen Stunden-App freischalten.");
       const r = await one(q, "select * from public.platform_set_legacy_import($1, $2, $3)", [id, b.enabled, reason]);
+      return json(200, toTenant(r!));
+    });
+  });
+
+  // Demo/test flag (0031): super admin only, reason required. Demo tenants print "TESTDATEN" on PDFs.
+  router.add("PUT", "/api/platform/tenants/:tenantId/demo", async (ctx) => {
+    const id = v.uuid(ctx.params.tenantId, "Mandanten-ID");
+    const b = v.object(ctx.body, ["isDemo", "reason"]);
+    if (typeof b.isDemo !== "boolean") throw badRequest("isDemo muss true oder false sein.");
+    const reason = v.reason(b.reason, 3, "Bitte einen Grund für die Änderung angeben.");
+    return app.asUser(ctx, async (q) => {
+      await check(q, "private.is_platform_admin(array['super_admin'])", [], "Nur Super-Admins dürfen das Demo-Kennzeichen ändern.");
+      const r = await one(q, "select * from public.platform_set_demo($1, $2, $3)", [id, b.isDemo, reason]);
       return json(200, toTenant(r!));
     });
   });

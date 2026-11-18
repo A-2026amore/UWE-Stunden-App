@@ -257,6 +257,8 @@ export interface Repository {
   setTenantStatus(tenantId: UUID, status: Tenant["status"], reason: string): Promise<Tenant>;
   /** Offer the import from the old Stunden-App in the employee app of this tenant (0024). */
   setLegacyImport(tenantId: UUID, enabled: boolean, reason: string): Promise<Tenant>;
+  /** Demo/test tenant ("TESTDATEN" on PDFs, not counted as revenue) – super admin only (0031). */
+  setTenantDemo(tenantId: UUID, isDemo: boolean, reason: string): Promise<Tenant>;
   setLicense(tenantId: UUID, plan: LicensePlan, patch?: LicensePatch): Promise<License>;
 }
 

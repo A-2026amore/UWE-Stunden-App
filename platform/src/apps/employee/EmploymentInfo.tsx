@@ -22,10 +22,16 @@ export function useEmploymentAccount(): EmploymentAccount | null {
     const start = versions.map((v) => v.validFrom).sort()[0];
     if (!start || start > month) return null;
     const months = monthsBetween(start, month);
-    const [allocations, lists] = await Promise.all([repo.listAllocations(me.id), Promise.all(months.map((m) => repo.listTimeEntries(me.id, m)))]);
+    const sheet = tenant.settings.overtimeSheet === true;
+    const [allocations, lists, statements] = await Promise.all([
+      repo.listAllocations(me.id), Promise.all(months.map((m) => repo.listTimeEntries(me.id, m))),
+      // Separate Überstundenzettel: Mehrstunden of approved months are settled (core/overtime.ts).
+      sheet ? Promise.all(months.map((m) => repo.getStatement(me.id, m).catch(() => null))) : Promise.resolve([]),
+    ]);
+    const approved = new Set(statements.filter((st) => st?.status === "approved").map((st) => st!.month));
     const byMonth = new Map<string, TimeEntry[]>(months.map((m, i) => [m, lists[i]!]));
     return employmentAccount({
-      versions, currentMonth: month,
+      versions, currentMonth: month, overtimeSettled: (m) => approved.has(m),
       payableMinutes: (m) => summarizeMonth({ entries: activeShifts(byMonth.get(m) ?? []), allocations, month: m, policy: tenant.settings.workAccount }).billingMinutes,
     });
   }, [version, me.id, pro]);

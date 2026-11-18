@@ -9,7 +9,7 @@ import {
 } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
 import { dayLabel, downloadBlob, formatDateDE, hoursLabel, monthLabelDE, todayISO, weekdayShort } from "../../shared/format";
-import { buildStatementWithLogo } from "../../shared/statement";
+import { buildStatementFilesWithLogo, contractsForSheets, downloadAll } from "../../shared/statement";
 import { monthRange, useChef } from "../context";
 import { EntryHistoryDialog } from "./Corrections";
 
@@ -78,10 +78,11 @@ export function TimesPage() {
     if (!emp) return;
     const month = date.slice(0, 7);
     try {
-      const [entries, allocations, statement] = await Promise.all([repo.listTimeEntries(emp.id, month), repo.listAllocations(emp.id), repo.getStatement(emp.id, month)]);
-      const { blob, fileName } = await buildStatementWithLogo({ tenant, employee: emp, month, entries, allocations, statement });
-      downloadBlob(blob, fileName);
-      toast(`PDF erstellt: ${fileName}`);
+      const [entries, allocations, statement, contracts] = await Promise.all([repo.listTimeEntries(emp.id, month), repo.listAllocations(emp.id), repo.getStatement(emp.id, month),
+        contractsForSheets(tenant, () => repo.listEmployeeContracts(emp.id))]);
+      const files = await buildStatementFilesWithLogo({ tenant, employee: emp, month, entries, allocations, statement, contracts });
+      downloadAll(files);
+      toast(`PDF erstellt: ${files.map((f) => f.fileName).join(", ")}`);
     } catch (e) {
       toast(errorText(e), "error");
     }

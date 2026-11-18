@@ -177,3 +177,44 @@ describe("pdf: tenant logo (generic brand)", () => {
     expect(broken).not.toContain("/XObject");
   });
 });
+
+describe("pdf with a separate Überstundenzettel (core/overtime.ts)", () => {
+  const employee = { name: "Erika Muster", personnelNumber: "4711" };
+  const ot = { targetMinutes: 28 * 60, payableMinutes: 30 * 60 + 15, overtimeMinutes: 135 };
+  const regular = [
+    { date: "2026-11-02", start: "08:00", end: "18:00", pause: 0, note: "", minutes: 600, partial: false },
+    { date: "2026-11-05", start: "08:00", end: "18:00", pause: 0, note: "", minutes: 600, partial: false },
+    { date: "2026-11-10", start: "08:00", end: "18:00", pause: 0, note: "", minutes: 480, partial: true },
+  ];
+  const overtime = [
+    { date: "2026-11-10", start: "08:00", end: "18:00", pause: 0, note: "", minutes: 60, partial: true },
+    { date: "2026-11-18", start: "15:00", end: "16:15", pause: 0, note: "", minutes: 75, partial: false },
+  ];
+
+  it("statement: total only up to the target, overtime referred to the separate sheet", () => {
+    const text = latin1(createStatementPdfBytes({ tenant: demoTenant, employee, month: "2026-11", entries: regular, overtime: ot, totals: { workedMinutes: 28 * 60 } }));
+    expect(text).toContain("(STUNDENNACHWEIS)");
+    expect(text).toContain("(GESAMT BIS SOLL: 28,00 Stunden)");
+    expect(text).toContain("2,25 Std. - stehen auf dem separaten \xDCberstundenzettel");
+    expect(text).toContain("(anteilig 8,00 von 10,00 Std., Rest auf)");
+  });
+
+  it("statement with work-time account: billing shown up to the target", () => {
+    const account = { cycleLabel: "2026", model: "calendar-year" as const, workedMinutes: 30 * 60 + 15, eligibleMinutes: 30 * 60 + 15, allocatedMinutes: 0,
+      billingMinutes: 30 * 60 + 15, balanceMinutes: 0, openingMinutes: 0, cycleEnd: "2026-12-31" };
+    const text = latin1(createStatementPdfBytes({ tenant: demoTenant, employee, month: "2026-11", entries: regular, overtime: ot, account }));
+    expect(text).toContain("(GESAMT BIS SOLL: 28,00 Stunden)");
+    expect(text).toContain("Zur Abrechnung vorgemerkt: 28,00 Std. \\(Soll laut Arbeitsvertrag\\)");
+    expect(text).toContain("(\xDCberstunden: 2,25 Std. - stehen auf dem separaten \xDCberstundenzettel)");
+  });
+
+  it("overtime sheet: own title, only the overtime rows", () => {
+    const text = latin1(createStatementPdfBytes({ tenant: demoTenant, employee, month: "2026-11", kind: "overtime", entries: overtime, overtime: ot }));
+    expect(text).toContain("(\xDCBERSTUNDENZETTEL)");
+    expect(text).not.toContain("(STUNDENNACHWEIS)");
+    expect(text).toContain("(\xDCBERSTUNDEN: 2,25 Stunden)");
+    expect(text).toContain("(anteilig 1,00 von 10,00 Std., Rest auf)");
+    expect(() => createStatementPdfBytes({ tenant: demoTenant, employee, month: "2026-11", kind: "overtime", entries: overtime })).toThrow();
+    expect(statementFileName({ tenant: demoTenant, personnelNumber: "4711", month: "2026-11", kind: "overtime" })).toBe("DKT-Ueberstundenzettel-4711-2026-11.pdf");
+  });
+});

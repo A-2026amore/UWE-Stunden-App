@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ANNA_ID, APP, CHEF, DEMO_DB_KEY, freeze, go, login, loginEmployee, minutesOf, patchDb } from "./helpers";
+import { ANNA_ID, APP, CHEF, DEMO_DB_KEY, confirmDialog, freeze, go, login, loginEmployee, minutesOf, patchDb } from "./helpers";
 
 // Employment contract data (migration 0025): the demo seeds contracts from October 2026 (month before "today").
 const CARLA_ID = "30000000-0000-4000-8000-000000000103";
@@ -123,4 +123,35 @@ test("employee without contract data sees no contract card", async ({ page }) =>
   await loginEmployee(page);
   await expect(page.getByRole("heading", { name: "Heute" })).toBeVisible();
   await expect(page.getByTestId("employment-info")).toHaveCount(0);
+});
+
+test("overtime on a separate sheet: two PDFs, and approving the month clears the overtime from the account", async ({ page }) => {
+  const BEN_ID = "30000000-0000-4000-8000-000000000102";
+  await loginChef(page);
+  const balance = page.getByTestId(`employment-balance-${BEN_ID}`);
+  const before = (await balance.textContent())!;
+
+  await go(page, "#/einstellungen");
+  const setting = page.getByTestId("overtime-sheet-setting");
+  await setting.getByRole("button", { name: "Überstunden auf eigenen Zettel" }).click();
+  await page.getByRole("button", { name: "Einschalten" }).click();
+  await expect(setting).toContainText("Eingeschaltet");
+
+  // Ben (Minijob, 43 h target, far more hours in October): statement up to the target + Überstundenzettel.
+  await go(page, "#/stunden?m=2026-10");
+  const names: string[] = [];
+  page.on("download", (d) => names.push(d.suggestedFilename()));
+  await page.getByRole("button", { name: "PDF-Stundenzettel für Ben Muster" }).click();
+  await expect.poll(() => names.length).toBe(2);
+  expect(names.some((n) => n.includes("-Stundenzettel-"))).toBe(true);
+  expect(names.some((n) => n.includes("-Ueberstundenzettel-"))).toBe(true);
+
+  // Approving October settles its Mehrstunden: the account no longer contains them.
+  await go(page, "#/nachweise");
+  await page.getByRole("button", { name: "Nachweis von Ben Muster freigeben" }).click();
+  await confirmDialog(page, "Freigeben");
+  await expect(page.locator(".toast").filter({ hasText: "Monatsnachweis freigegeben." })).toBeVisible();
+  await go(page, "#/");
+  await expect(balance).toBeVisible();
+  await expect(balance).not.toHaveText(before);
 });

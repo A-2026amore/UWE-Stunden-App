@@ -5,8 +5,8 @@ import type { Employee, MonthlyStatement } from "../../../core/types";
 import { shiftMonth } from "../../../data/demo";
 import { Alert, Badge, Button, Card, LinkButton, StatusPill, Table, useToast } from "../../../design";
 import { errorText, useAsync } from "../../shared/hooks";
-import { currentMonth, dateTimeDE, downloadBlob, hoursLabel, monthLabelDE } from "../../shared/format";
-import { buildStatementWithLogo } from "../../shared/statement";
+import { currentMonth, dateTimeDE, hoursLabel, monthLabelDE } from "../../shared/format";
+import { buildStatementFilesWithLogo, contractsForSheets, downloadAll } from "../../shared/statement";
 import { MonthPicker } from "../../shared/MonthPicker";
 import { loadTenantMonth, useChef } from "../context";
 import { useStatementActions } from "../statementActions";
@@ -66,9 +66,11 @@ export function StatementsPage({ initialMonth }: { initialMonth?: string | null 
 
   const pdf = async (r: Row) => {
     try {
-      const [entries, allocations] = await Promise.all([repo.listTimeEntries(r.employee.id, month), repo.listAllocations(r.employee.id)]);
-      const { blob, fileName } = await buildStatementWithLogo({ tenant, employee: r.employee, month, entries, allocations, statement: r.statement });
-      downloadBlob(blob, fileName);
+      const [entries, allocations, contracts] = await Promise.all([repo.listTimeEntries(r.employee.id, month), repo.listAllocations(r.employee.id),
+        contractsForSheets(tenant, () => repo.listEmployeeContracts(r.employee.id))]);
+      const files = await buildStatementFilesWithLogo({ tenant, employee: r.employee, month, entries, allocations, statement: r.statement, contracts });
+      downloadAll(files);
+      if (files.length > 1) toast("Stundennachweis und Überstundenzettel wurden erstellt.");
     } catch (e) { toast(errorText(e), "error"); }
   };
 
